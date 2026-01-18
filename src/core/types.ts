@@ -10,9 +10,24 @@ export interface OCRResult {
   confidence?: number;
 }
 
-/**
- * 事件类型定义
- */
+export interface CaptchaElementInfo {
+  tagName: string;
+  id: string | null;
+  className: string;
+  width: number;
+  height: number;
+  src?: string;
+}
+
+export interface InputElementInfo {
+  tagName: string;
+  id: string | null;
+  name: string | null;
+  className: string;
+  placeholder: string | null;
+  type: string;
+}
+
 export interface OCREvents {
   'init:start': void;
   'init:complete': void;
@@ -23,9 +38,6 @@ export interface OCREvents {
   'recognize:error': { element: Element; error: Error };
 }
 
-/**
- * 事件发射器
- */
 export class EventEmitter<T extends Record<string, any>> {
   private listeners = new Map<keyof T, Set<(data: any) => void>>();
 
@@ -53,4 +65,40 @@ export class EventEmitter<T extends Record<string, any>> {
   clear(): void {
     this.listeners.clear();
   }
+}
+
+export interface SiteRule {
+  selector: string;
+  inputSelector?: string;
+  submitSelector?: string;
+  agreementSelector?: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface OCRConfig {
+  autoDetect: boolean;
+  captchaSelector: string;
+  inputSelector: string;
+  submitSelector: string;
+  agreementSelector: string;
+  useLocalModel: boolean;
+  localModelPath: string;
+  localCharsetsPath: string;
+  autoDownload: boolean;
+  enableWhitelist: boolean;
+  whitelist: string[];
+  useUploadedModel: boolean;
+  theme: 'light' | 'dark' | 'auto';
+}
+
+export interface ExtensionSettings extends OCRConfig {
+  timeout: number;
+  retryCount: number;
+  autoFill: boolean;
+  autoSubmit: boolean;
+  autoSolveOnRule: boolean;
+  debugMode: boolean;
+  historyRetention: number;
 }

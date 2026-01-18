@@ -1,18 +1,10 @@
-import { CONSTANTS } from './config';
+import { CONSTANTS } from '@core/config';
 
 const WASM_CDN_SOURCES = CONSTANTS.CDN_SOURCES.map(cdn => {
-  if (cdn.includes('jsdelivr')) {
-    return `${cdn}/npm/onnxruntime-web@${CONSTANTS.WASM_VERSION}/dist/`;
-  }
-  if (cdn.includes('unpkg')) {
-    return `${cdn}/onnxruntime-web@${CONSTANTS.WASM_VERSION}/dist/`;
-  }
-  if (cdn.includes('cdnjs')) {
-    return `${cdn}/ajax/libs/onnxruntime-web/${CONSTANTS.WASM_VERSION}/`;
-  }
-  if (cdn.includes('npmmirror')) {
-    return `${cdn}/onnxruntime-web/${CONSTANTS.WASM_VERSION}/files/dist/`;
-  }
+  if (cdn.includes('jsdelivr')) return `${cdn}/npm/onnxruntime-web@${CONSTANTS.WASM_VERSION}/dist/`;
+  if (cdn.includes('unpkg')) return `${cdn}/onnxruntime-web@${CONSTANTS.WASM_VERSION}/dist/`;
+  if (cdn.includes('cdnjs')) return `${cdn}/ajax/libs/onnxruntime-web/${CONSTANTS.WASM_VERSION}/`;
+  if (cdn.includes('npmmirror')) return `${cdn}/onnxruntime-web/${CONSTANTS.WASM_VERSION}/files/dist/`;
   return `${cdn}/onnxruntime-web@${CONSTANTS.WASM_VERSION}/dist/`;
 });
 
@@ -54,7 +46,6 @@ class WASMCacheManager {
 
   async get(filename: string): Promise<ArrayBuffer | null> {
     if (this.memoryCache.has(filename)) {
-      console.log(`✅ 使用内存缓存的 WASM: ${filename}`);
       return this.memoryCache.get(filename)!;
     }
     if (!this.db) await this.init();
@@ -70,12 +61,10 @@ class WASMCacheManager {
           return;
         }
         if (Date.now() - cached.timestamp > CONSTANTS.CACHE_DURATION || cached.version !== CONSTANTS.WASM_VERSION) {
-          console.log(`🗑️ WASM 缓存已过期: ${filename}`);
           this.delete(filename);
           resolve(null);
           return;
         }
-        console.log(`✅ 使用 IndexedDB 缓存的 WASM: ${filename} (${(cached.data.byteLength / 1024).toFixed(2)} KB)`);
         this.memoryCache.set(filename, cached.data);
         resolve(cached.data);
       };
@@ -95,10 +84,7 @@ class WASMCacheManager {
       const store = transaction.objectStore(this.storeName);
       const request = store.put(cached, filename);
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        console.log(`💾 WASM 已缓存: ${filename} (${(data.byteLength / 1024).toFixed(2)} KB)`);
-        resolve();
-      };
+      request.onsuccess = () => resolve();
     });
   }
 
@@ -122,10 +108,7 @@ class WASMCacheManager {
       const store = transaction.objectStore(this.storeName);
       const request = store.clear();
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        console.log('🗑️ 所有 WASM 缓存已清除');
-        resolve();
-      };
+      request.onsuccess = () => resolve();
     });
   }
 }
@@ -136,17 +119,13 @@ async function downloadWASM(filename: string): Promise<ArrayBuffer> {
   for (let i = 0; i < WASM_CDN_SOURCES.length; i++) {
     const url = WASM_CDN_SOURCES[i] + filename;
     try {
-      console.log(`🌐 尝试下载 WASM [${i + 1}/${WASM_CDN_SOURCES.length}]: ${new URL(url).hostname}`);
       const data = await new Promise<ArrayBuffer>((resolve, reject) => {
         GM_xmlhttpRequest({
           method: 'GET',
           url,
           responseType: 'arraybuffer',
           timeout: 30000,
-          headers: {
-            'Accept': 'application/wasm',
-            'Cache-Control': 'max-age=2592000',
-          },
+          headers: { 'Accept': 'application/wasm', 'Cache-Control': 'max-age=2592000' },
           onload: (response) => {
             if (response.status === 200) {
               resolve(response.response as ArrayBuffer);
@@ -158,10 +137,8 @@ async function downloadWASM(filename: string): Promise<ArrayBuffer> {
           ontimeout: () => reject(new Error('下载超时')),
         });
       });
-      console.log(`✅ WASM 下载成功: ${filename} (${(data.byteLength / 1024).toFixed(2)} KB)`);
       return data;
     } catch (error) {
-      console.warn(`❌ WASM CDN ${i + 1} 失败:`, error);
       if (i === WASM_CDN_SOURCES.length - 1) {
         throw new Error(`所有 WASM CDN 均下载失败: ${filename}`);
       }
@@ -172,31 +149,24 @@ async function downloadWASM(filename: string): Promise<ArrayBuffer> {
 
 async function preloadAllWASM(): Promise<void> {
   console.log('📦 开始预下载 WASM 文件');
-  const results = await Promise.allSettled(
+  await Promise.allSettled(
     WASM_FILES.map(async (filename) => {
       const cached = await wasmCache.get(filename);
-      if (cached) {
-        return { filename, cached: true };
-      }
+      if (cached) return;
       try {
         const data = await downloadWASM(filename);
         await wasmCache.set(filename, data);
-        return { filename, cached: false };
       } catch (error) {
-        console.warn(`⚠️ ${filename} 下载失败，将在运行时重试:`, error);
-        return { filename, error };
+        console.warn(`⚠️ ${filename} 下载失败`, error);
       }
     })
   );
-  const successful = results.filter(r => r.status === 'fulfilled').length;
-  console.log(`✅ WASM 预加载完成: ${successful}/${WASM_FILES.length} 个文件`);
 }
 
 export async function setupWASMCache(): Promise<void> {
   await wasmCache.init();
-  preloadAllWASM().catch(err => {
-    console.warn('⚠️ WASM 预加载失败，将使用运行时下载:', err);
-  });
+  preloadAllWASM().catch(() => {});
+
   const originalFetch = window.fetch;
   window.fetch = async function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -204,28 +174,22 @@ export async function setupWASMCache(): Promise<void> {
     if (!filename) {
       return originalFetch.call(this, input, init);
     }
-    console.log(`🔍 拦截 WASM 请求: ${filename}`);
+
     try {
       let data = await wasmCache.get(filename);
       if (!data) {
-        console.log(`📥 缓存未命中，下载 WASM: ${filename}`);
         data = await downloadWASM(filename);
-        wasmCache.set(filename, data).catch(err => {
-          console.warn(`⚠️ 缓存 WASM 失败: ${filename}`, err);
-        });
+        wasmCache.set(filename, data).catch(() => {});
       }
       return new Response(data, {
         status: 200,
-        headers: {
-          'Content-Type': 'application/wasm',
-          'Content-Length': String(data.byteLength),
-        },
+        headers: { 'Content-Type': 'application/wasm', 'Content-Length': String(data.byteLength) },
       });
     } catch (error) {
-      console.error(`❌ WASM 加载失败: ${filename}`, error);
       return originalFetch.call(this, input, init);
     }
   };
+
   console.log('✅ WASM 缓存已启用');
 }
 

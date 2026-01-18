@@ -1,14 +1,81 @@
-import type { DdddOCR } from './ocr';
-import { getConfig, CONSTANTS } from './config';
-import type { EventEmitter, OCREvents } from './types';
+import { OCREngine } from '@core/ocr-engine';
+import { AutoFill } from '@core/auto-fill';
+import { CONSTANTS, DEFAULT_CONFIG } from '@core/config';
+import { EventEmitter, type OCREvents, type OCRConfig } from '@core/types';
+import { loadModel, clearModelCache } from './model-loader';
+import { setupWASMCache, clearWASMCache } from './wasm-cache';
+import { SettingsUI } from './settings-ui';
+import { LoadingIndicator } from './loading-indicator';
+import { Dialog } from './dialog';
 
-export class AutoDetector {
+const CONFIG_KEY = 'ddddocr_config';
+
+function getConfig(): OCRConfig {
+  const stored = GM_getValue(CONFIG_KEY);
+  return stored ? { ...DEFAULT_CONFIG, ...stored } : DEFAULT_CONFIG;
+}
+
+function saveConfig(config: Partial<OCRConfig>): void {
+  const current = getConfig();
+  GM_setValue(CONFIG_KEY, { ...current, ...config });
+}
+
+function isWhitelisted(): boolean {
+  const config = getConfig();
+  if (!config.enableWhitelist) return true;
+  if (!config.whitelist || config.whitelist.length === 0) return false;
+  const currentHost = window.location.hostname;
+  return config.whitelist.some(pattern => {
+    const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$', 'i');
+    return regex.test(currentHost);
+  });
+}
+
+function shouldExecuteScript(): boolean {
+  const config = getConfig();
+  if (config.enableWhitelist) {
+    if (!config.whitelist || config.whitelist.length === 0) {
+      console.log('🚫 白名单为空，脚本不会执行');
+      return false;
+    }
+    if (!isWhitelisted()) {
+      console.log(`🚫 当前站点 ${window.location.hostname} 不在白名单中`);
+      return false;
+    }
+  }
+  return true;
+}
+
+class DdddOCR {
+  private engine: OCREngine;
+
+  constructor() {
+    this.engine = new OCREngine({
+      getModel: loadModel,
+      wasmPaths: 'https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.17.0/',
+    });
+  }
+
+  async init(): Promise<void> {
+    await setupWASMCache();
+    await this.engine.init();
+  }
+
+  async recognize(input: string | Blob | HTMLImageElement) {
+    return this.engine.recognize(input);
+  }
+}
+
+class AutoDetector {
   private ocr: DdddOCR;
   private observer: MutationObserver | null = null;
   private processedElements = new WeakMap<Element, string>();
   private enabled = false;
   private checkInterval: number | null = null;
   private eventEmitter: EventEmitter<OCREvents> | null = null;
+  private autoFill = new AutoFill();
+  private initialScanDone = false;
+  private initialScanTimer: number | null = null;
 
   constructor(ocr: DdddOCR, eventEmitter?: EventEmitter<OCREvents>) {
     this.ocr = ocr;
@@ -20,7 +87,7 @@ export class AutoDetector {
     this.enabled = true;
     console.log('🤖 启动验证码自动检测');
 
-    this.detectExistingCaptchas();
+    this.scheduleInitialDetect();
 
     this.observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -32,14 +99,15 @@ export class AutoDetector {
 
         if (mutation.type === 'attributes') {
           const target = mutation.target;
+
           if (target instanceof HTMLElement) {
-            if (target instanceof HTMLImageElement && mutation.attributeName === 'src') {
-              this.recheckImage(target);
-            }
-            else if (target instanceof HTMLCanvasElement) {
+            if (target instanceof HTMLImageElement) {
+              if (mutation.attributeName === 'src' || mutation.attributeName === 'data-src' || mutation.attributeName === 'srcset') {
+                this.recheckImage(target);
+              }
+            } else if (target instanceof HTMLCanvasElement) {
               this.recheckCanvas(target);
-            }
-            else if (mutation.attributeName === 'style' && target.style.backgroundImage) {
+            } else if (mutation.attributeName === 'style' && target.style.backgroundImage) {
               this.recheckDiv(target);
             }
           }
@@ -55,7 +123,7 @@ export class AutoDetector {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['src', 'style', 'data-src', 'href'],
+      attributeFilter: ['src', 'data-src', 'srcset', 'style', 'href'],
       characterData: true,
     });
 
@@ -74,14 +142,32 @@ export class AutoDetector {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
+
+    if (this.initialScanTimer) {
+      clearTimeout(this.initialScanTimer);
+      this.initialScanTimer = null;
+    }
+  }
+
+  private scheduleInitialDetect(): void {
+    if (this.initialScanDone) return;
+
+    this.detectExistingCaptchas(false);
+
+    this.initialScanTimer = window.setTimeout(() => {
+      if (!this.initialScanDone) {
+        this.detectExistingCaptchas(true);
+      }
+    }, 3000);
   }
 
   private startIntervalCheck(): void {
     this.checkInterval = window.setInterval(() => {
       const canvases = document.querySelectorAll('canvas');
       canvases.forEach((canvas) => {
-        if (this.isCaptchaCanvas(canvas as HTMLCanvasElement)) {
-          this.recheckCanvas(canvas as HTMLCanvasElement);
+        const c = canvas as HTMLCanvasElement;
+        if (this.isCaptchaCanvas(c)) {
+          this.recheckCanvas(c);
         }
       });
     }, CONSTANTS.AUTO_DETECT_INTERVAL);
@@ -89,7 +175,9 @@ export class AutoDetector {
 
   private getElementHash(element: Element): string {
     if (element instanceof HTMLImageElement) {
-      return element.src + '_' + element.naturalWidth + '_' + element.naturalHeight;
+      const ds = element.getAttribute('data-src') || '';
+      const ss = element.getAttribute('srcset') || '';
+      return element.src + '_' + ds + '_' + ss + '_' + element.naturalWidth + '_' + element.naturalHeight;
     } else if (element instanceof HTMLCanvasElement) {
       try {
         return element.toDataURL();
@@ -107,11 +195,7 @@ export class AutoDetector {
   private hasElementChanged(element: Element): boolean {
     const currentHash = this.getElementHash(element);
     const previousHash = this.processedElements.get(element);
-
-    if (!previousHash) {
-      return true;
-    }
-
+    if (!previousHash) return true;
     return currentHash !== previousHash;
   }
 
@@ -120,72 +204,56 @@ export class AutoDetector {
     this.processedElements.set(element, hash);
   }
 
-  private detectExistingCaptchas(): void {
+  private detectExistingCaptchas(triggerRecognize: boolean): void {
     console.log('🔍 检测页面已存在的验证码');
 
     const images = document.querySelectorAll('img');
-    images.forEach((img) => this.checkImage(img as HTMLImageElement));
+    images.forEach((img) => this.checkImage(img as HTMLImageElement, triggerRecognize));
 
     const canvases = document.querySelectorAll('canvas');
-    canvases.forEach((canvas) => this.checkCanvas(canvas as HTMLCanvasElement));
+    canvases.forEach((canvas) => this.checkCanvas(canvas as HTMLCanvasElement, triggerRecognize));
 
     const svgs = document.querySelectorAll('svg');
-    svgs.forEach((svg) => this.checkSVG(svg as SVGElement));
+    svgs.forEach((svg) => this.checkSVG(svg as SVGElement, triggerRecognize));
 
     const divs = document.querySelectorAll('div[style*="background"]');
-    divs.forEach((div) => this.checkDiv(div as HTMLDivElement));
+    divs.forEach((div) => this.checkDiv(div as HTMLDivElement, triggerRecognize));
+
+    if (triggerRecognize) {
+      this.initialScanDone = true;
+    }
   }
 
   private checkElement(element: HTMLElement): void {
-    if (element instanceof HTMLImageElement) {
-      this.checkImage(element);
-    }
+    if (element instanceof HTMLImageElement) this.checkImage(element, true);
+    if (element instanceof HTMLCanvasElement) this.checkCanvas(element, true);
+    if (element instanceof SVGElement) this.checkSVG(element, true);
+    if (element.style.backgroundImage) this.checkDiv(element, true);
 
-    if (element instanceof HTMLCanvasElement) {
-      this.checkCanvas(element);
-    }
-
-    if (element instanceof SVGElement) {
-      this.checkSVG(element);
-    }
-
-    if (element.style.backgroundImage) {
-      this.checkDiv(element);
-    }
-
-    element.querySelectorAll('img').forEach((img) => this.checkImage(img));
-    element.querySelectorAll('canvas').forEach((canvas) => this.checkCanvas(canvas));
-    element.querySelectorAll('svg').forEach((svg) => this.checkSVG(svg));
-    element.querySelectorAll('div[style*="background"]').forEach((div) => this.checkDiv(div as HTMLDivElement));
+    element.querySelectorAll('img').forEach((img) => this.checkImage(img as HTMLImageElement, true));
+    element.querySelectorAll('canvas').forEach((canvas) => this.checkCanvas(canvas as HTMLCanvasElement, true));
+    element.querySelectorAll('svg').forEach((svg) => this.checkSVG(svg as SVGElement, true));
+    element.querySelectorAll('div[style*="background"]').forEach((div) => this.checkDiv(div as HTMLDivElement, true));
   }
 
-  /**
-   * 等待图片完全加载
-   */
   private async waitForImageLoad(img: HTMLImageElement, timeout = 5000): Promise<boolean> {
-    // 如果图片已加载，直接返回
     if (img.complete && img.naturalWidth > 0) {
       return true;
     }
 
-    console.log('⏳ 等待图片加载完成...', img.src);
-
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
         cleanup();
-        console.warn('⚠️ 图片加载超时');
         resolve(false);
       }, timeout);
 
       const onLoad = () => {
         cleanup();
-        console.log('✅ 图片加载完成');
         resolve(true);
       };
 
       const onError = () => {
         cleanup();
-        console.warn('⚠️ 图片加载失败');
         resolve(false);
       };
 
@@ -198,7 +266,6 @@ export class AutoDetector {
       img.addEventListener('load', onLoad);
       img.addEventListener('error', onError);
 
-      // 双重检查：可能在添加监听器前已经加载完成
       if (img.complete && img.naturalWidth > 0) {
         cleanup();
         resolve(true);
@@ -207,53 +274,27 @@ export class AutoDetector {
   }
 
   private async recheckImage(img: HTMLImageElement): Promise<void> {
-    console.log('🔄 检测到图片刷新:', img);
-
-    // 等待图片完全加载
     const loaded = await this.waitForImageLoad(img);
-    if (!loaded) {
-      console.warn('⚠️ 图片未能成功加载，跳过识别');
-      return;
-    }
-
-    // 再次确认图片已加载且有尺寸
-    if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
-      console.warn('⚠️ 图片加载后尺寸异常，跳过识别', {
-        complete: img.complete,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-      });
-      return;
-    }
-
-    await this.checkImage(img);
+    if (!loaded) return;
+    await this.checkImage(img, true);
   }
 
   private async recheckCanvas(canvas: HTMLCanvasElement): Promise<void> {
-    console.log('🔄 检测到Canvas刷新:', canvas);
-
-    // Canvas 需要等待一帧以确保绘制完成
     await new Promise(resolve => requestAnimationFrame(resolve));
-    await this.checkCanvas(canvas);
+    await this.checkCanvas(canvas, true);
   }
 
   private async recheckSVG(svg: SVGElement): Promise<void> {
-    console.log('🔄 检测到SVG刷新:', svg);
-
-    // SVG 也需要等待渲染完成
     await new Promise(resolve => requestAnimationFrame(resolve));
-    await this.checkSVG(svg);
+    await this.checkSVG(svg, true);
   }
 
   private async recheckDiv(div: HTMLElement): Promise<void> {
-    console.log('🔄 检测到背景图刷新:', div);
-
-    // 等待一帧以确保背景图已设置
     await new Promise(resolve => requestAnimationFrame(resolve));
-    await this.checkDiv(div);
+    await this.checkDiv(div, true);
   }
 
-  private async checkImage(img: HTMLImageElement): Promise<void> {
+  private async checkImage(img: HTMLImageElement, triggerRecognize: boolean): Promise<void> {
     const config = getConfig();
 
     if (config.captchaSelector) {
@@ -262,55 +303,46 @@ export class AutoDetector {
       if (!this.isCaptchaImage(img)) return;
     }
 
-    if (!this.hasElementChanged(img)) {
-      return;
-    }
+    if (!this.hasElementChanged(img)) return;
 
-    console.log('🎯 验证码(img):', img);
     this.eventEmitter?.emit('detect:found', { element: img, type: 'img' });
 
-    // 清空关联的输入框
+    if (!triggerRecognize) return;
+
     const input = this.findNearbyInput(img);
     if (input && input.value.trim()) {
-      console.log('🧹 清空旧的验证码输入');
       input.value = '';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // 确保图片已加载
     const loaded = await this.waitForImageLoad(img);
-    if (!loaded) {
-      console.warn('⚠️ 图片加载失败，跳过识别');
-      return;
-    }
-
-    // 验证图片尺寸
-    if (!img.naturalWidth || !img.naturalHeight) {
-      console.warn('⚠️ 图片尺寸异常，跳过识别', {
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-      });
-      return;
-    }
-
-    console.log(`📐 尺寸: ${img.naturalWidth}x${img.naturalHeight}`);
+    if (!loaded) return;
+    if (!img.naturalWidth || !img.naturalHeight) return;
 
     try {
-      console.log('🔍 识别中');
       this.eventEmitter?.emit('recognize:start', { element: img });
       const result = await this.ocr.recognize(img);
-      console.log('✅ 结果:', result.text);
       this.markElementProcessed(img);
       this.eventEmitter?.emit('recognize:complete', { element: img, result });
-      this.fillCaptcha(img, result.text);
+
+      if (input) {
+        await this.autoFill.fill(input, result.text, { simulate: true, autoSubmit: false });
+      }
+
+      if (typeof GM_notification !== 'undefined') {
+        GM_notification({
+          title: '验证码已自动填充',
+          text: `识别结果: ${result.text}`,
+          timeout: 3000,
+        });
+      }
     } catch (error) {
-      console.error('❌ 识别失败:', error);
       this.eventEmitter?.emit('recognize:error', { element: img, error: error as Error });
     }
   }
 
-  private async checkCanvas(canvas: HTMLCanvasElement): Promise<void> {
+  private async checkCanvas(canvas: HTMLCanvasElement, triggerRecognize: boolean): Promise<void> {
     const config = getConfig();
 
     if (config.captchaSelector) {
@@ -319,50 +351,53 @@ export class AutoDetector {
       if (!this.isCaptchaCanvas(canvas)) return;
     }
 
-    if (!this.hasElementChanged(canvas)) {
-      return;
-    }
+    if (!this.hasElementChanged(canvas)) return;
 
-    console.log('🎯 验证码(canvas):', canvas);
     this.eventEmitter?.emit('detect:found', { element: canvas, type: 'canvas' });
 
-    // 清空关联的输入框
+    if (!triggerRecognize) return;
+
     const input = this.findNearbyInput(canvas);
     if (input && input.value.trim()) {
-      console.log('🧹 清空旧的验证码输入');
       input.value = '';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // 等待 Canvas 绘制完成
     await new Promise(resolve => requestAnimationFrame(resolve));
 
     try {
-      console.log('🔍 识别Canvas');
       this.eventEmitter?.emit('recognize:start', { element: canvas });
+
       const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('Canvas转换失败'));
-          }
+        canvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('Canvas转换失败'));
         }, 'image/png');
       });
 
       const result = await this.ocr.recognize(blob);
-      console.log('✅ 结果:', result.text);
+
       this.markElementProcessed(canvas);
       this.eventEmitter?.emit('recognize:complete', { element: canvas, result });
-      this.fillCaptcha(canvas, result.text);
+
+      if (input) {
+        await this.autoFill.fill(input, result.text, { simulate: true, autoSubmit: false });
+      }
+
+      if (typeof GM_notification !== 'undefined') {
+        GM_notification({
+          title: '验证码已自动填充',
+          text: `识别结果: ${result.text}`,
+          timeout: 3000,
+        });
+      }
     } catch (error) {
-      console.error('❌ Canvas识别失败:', error);
       this.eventEmitter?.emit('recognize:error', { element: canvas, error: error as Error });
     }
   }
 
-  private async checkSVG(svg: SVGElement): Promise<void> {
+  private async checkSVG(svg: SVGElement, triggerRecognize: boolean): Promise<void> {
     const config = getConfig();
 
     if (config.captchaSelector) {
@@ -371,31 +406,29 @@ export class AutoDetector {
       if (!this.isCaptchaSVG(svg)) return;
     }
 
-    if (!this.hasElementChanged(svg)) {
-      return;
-    }
+    if (!this.hasElementChanged(svg)) return;
 
-    console.log('🎯 验证码(SVG):', svg);
     this.eventEmitter?.emit('detect:found', { element: svg, type: 'svg' });
 
-    // 清空关联的输入框
+    if (!triggerRecognize) return;
+
     const input = this.findNearbyInput(svg);
     if (input && input.value.trim()) {
-      console.log('🧹 清空旧的验证码输入');
       input.value = '';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     try {
-      console.log('🔍 识别SVG');
       this.eventEmitter?.emit('recognize:start', { element: svg });
+
       const svgData = new XMLSerializer().serializeToString(svg);
       const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
       const url = URL.createObjectURL(svgBlob);
 
       const img = new Image();
       img.src = url;
+
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
@@ -405,33 +438,41 @@ export class AutoDetector {
       const canvas = document.createElement('canvas');
       canvas.width = svg.clientWidth || 150;
       canvas.height = svg.clientHeight || 50;
+
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(img, 0, 0);
 
       URL.revokeObjectURL(url);
 
       const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('SVG转换失败'));
-          }
+        canvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('SVG转换失败'));
         }, 'image/png');
       });
 
       const result = await this.ocr.recognize(blob);
-      console.log('✅ 结果:', result.text);
+
       this.markElementProcessed(svg);
       this.eventEmitter?.emit('recognize:complete', { element: svg, result });
-      this.fillCaptcha(svg, result.text);
+
+      if (input) {
+        await this.autoFill.fill(input, result.text, { simulate: true, autoSubmit: false });
+      }
+
+      if (typeof GM_notification !== 'undefined') {
+        GM_notification({
+          title: '验证码已自动填充',
+          text: `识别结果: ${result.text}`,
+          timeout: 3000,
+        });
+      }
     } catch (error) {
-      console.error('❌ SVG识别失败:', error);
       this.eventEmitter?.emit('recognize:error', { element: svg, error: error as Error });
     }
   }
 
-  private async checkDiv(div: HTMLElement): Promise<void> {
+  private async checkDiv(div: HTMLElement, triggerRecognize: boolean): Promise<void> {
     const config = getConfig();
 
     if (config.captchaSelector) {
@@ -443,29 +484,28 @@ export class AutoDetector {
     const bgImage = div.style.backgroundImage;
     if (!bgImage) return;
 
-    if (!this.hasElementChanged(div)) {
-      return;
-    }
+    if (!this.hasElementChanged(div)) return;
 
-    console.log('🎯 验证码(背景图):', div);
     this.eventEmitter?.emit('detect:found', { element: div, type: 'div' });
 
-    // 清空关联的输入框
+    if (!triggerRecognize) return;
+
     const input = this.findNearbyInput(div);
     if (input && input.value.trim()) {
-      console.log('🧹 清空旧的验证码输入');
       input.value = '';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     try {
-      console.log('🔍 识别背景图');
       this.eventEmitter?.emit('recognize:start', { element: div });
+
       const urlMatch = bgImage.match(/url\(['"]?(.+?)['"]?\)/);
       if (!urlMatch) return;
 
       const imageUrl = urlMatch[1];
+
+      let resultText = '';
 
       if (imageUrl.startsWith('data:')) {
         const base64Data = imageUrl.split(',')[1];
@@ -476,19 +516,27 @@ export class AutoDetector {
         }
         const blob = new Blob([bytes], { type: 'image/png' });
         const result = await this.ocr.recognize(blob);
-        console.log('✅ 结果:', result.text);
-        this.markElementProcessed(div);
-        this.eventEmitter?.emit('recognize:complete', { element: div, result });
-        this.fillCaptcha(div, result.text);
+        resultText = result.text;
       } else {
         const result = await this.ocr.recognize(imageUrl);
-        console.log('✅ 结果:', result.text);
-        this.markElementProcessed(div);
-        this.eventEmitter?.emit('recognize:complete', { element: div, result });
-        this.fillCaptcha(div, result.text);
+        resultText = result.text;
+      }
+
+      this.markElementProcessed(div);
+      this.eventEmitter?.emit('recognize:complete', { element: div, result: { text: resultText } });
+
+      if (input) {
+        await this.autoFill.fill(input, resultText, { simulate: true, autoSubmit: false });
+      }
+
+      if (typeof GM_notification !== 'undefined') {
+        GM_notification({
+          title: '验证码已自动填充',
+          text: `识别结果: ${resultText}`,
+          timeout: 3000,
+        });
       }
     } catch (error) {
-      console.error('❌ 背景图识别失败:', error);
       this.eventEmitter?.emit('recognize:error', { element: div, error: error as Error });
     }
   }
@@ -500,7 +548,7 @@ export class AutoDetector {
     if (width < CONSTANTS.MIN_CAPTCHA_WIDTH || height < CONSTANTS.MIN_CAPTCHA_HEIGHT) return false;
     if (width > CONSTANTS.MAX_CAPTCHA_WIDTH || height > CONSTANTS.MAX_CAPTCHA_HEIGHT) return false;
 
-    const text = (img.src + img.className + img.id + img.alt + (img.getAttribute('data-src') || '')).toLowerCase();
+    const text = (img.src + img.className + img.id + img.alt + (img.getAttribute('data-src') || '') + (img.getAttribute('srcset') || '')).toLowerCase();
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
 
@@ -537,42 +585,14 @@ export class AutoDetector {
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
 
-  private fillCaptcha(element: Element, text: string): void {
+  private findNearbyInput(element: Element): HTMLInputElement | null {
     const config = getConfig();
 
-    let input: HTMLInputElement | null = null;
-
     if (config.inputSelector) {
-      input = document.querySelector(config.inputSelector);
+      const input = document.querySelector(config.inputSelector);
+      if (input instanceof HTMLInputElement) return input;
     }
 
-    if (!input) {
-      input = this.findNearbyInput(element);
-    }
-
-    if (!input) {
-      console.warn('⚠️ 未找到验证码输入框');
-      return;
-    }
-
-    console.log('📝 填充验证码:', input, text);
-
-    input.value = text;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-
-    this.highlightInput(input);
-
-    if (typeof GM_notification !== 'undefined') {
-      GM_notification({
-        title: '验证码已自动填充',
-        text: `识别结果: ${text}`,
-        timeout: 3000,
-      });
-    }
-  }
-
-  private findNearbyInput(element: Element): HTMLInputElement | null {
     const form = element.closest('form');
     if (form) {
       const inputs = form.querySelectorAll('input[type="text"], input[type="password"], input:not([type])');
@@ -601,13 +621,11 @@ export class AutoDetector {
 
     for (const input of allInputs) {
       if (!this.isLikelyCaptchaInput(input as HTMLInputElement)) continue;
-
       const inputRect = input.getBoundingClientRect();
       const distance = Math.sqrt(
         Math.pow(inputRect.left - elemRect.left, 2) +
         Math.pow(inputRect.top - elemRect.top, 2)
       );
-
       if (distance < minDistance) {
         minDistance = distance;
         closest = input as HTMLInputElement;
@@ -621,17 +639,146 @@ export class AutoDetector {
     const text = (input.name + input.id + input.className + input.placeholder).toLowerCase();
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
+}
 
-  private highlightInput(input: HTMLInputElement): void {
-    const originalStyle = input.style.cssText;
-    input.style.cssText += `
-      transition: all 0.3s ease;
-      box-shadow: 0 0 10px rgba(255, 105, 180, 0.8);
-      border-color: #FF69B4 !important;
-    `;
+class OCRApp {
+  private ocr: DdddOCR;
+  private detector: AutoDetector;
+  private settingsUI: SettingsUI;
+  private loadingIndicator: LoadingIndicator | null = null;
+  private initialized = false;
+  private eventEmitter: EventEmitter<OCREvents>;
 
-    setTimeout(() => {
-      input.style.cssText = originalStyle;
-    }, 2000);
+  constructor() {
+    this.eventEmitter = new EventEmitter<OCREvents>();
+    this.ocr = new DdddOCR();
+    this.detector = new AutoDetector(this.ocr, this.eventEmitter);
+    this.settingsUI = new SettingsUI();
+    this.registerMenuCommands();
+    this.settingsUI.setOnConfigChange((config) => this.handleConfigChange(config));
   }
+
+  async init(): Promise<void> {
+    if (!shouldExecuteScript()) {
+      console.log('🚫 当前站点不满足执行条件');
+      return;
+    }
+    if (this.initialized) return;
+
+    const config = getConfig();
+    this.initialized = true;
+    this.loadingIndicator = new LoadingIndicator();
+    console.log('🔤 DDDD OCR 启动');
+
+    try {
+      this.loadingIndicator.show('正在初始化 DDDD OCR');
+      this.loadingIndicator.updateText('正在加载模型文件');
+      await this.ocr.init();
+      console.log('✅ OCR 已就绪');
+      this.loadingIndicator.updateText('DDDD OCR 已就绪');
+
+      if (config.autoDetect) {
+        this.detector.start();
+        console.log('🤖 自动检测已启动');
+      }
+
+      setTimeout(() => this.loadingIndicator?.hide(), 2000);
+      this.showNotification('DDDD OCR 已就绪', config.autoDetect ? '自动检测已启用' : '点击菜单启用自动检测');
+    } catch (error) {
+      console.error('❌ 初始化失败:', error);
+      this.loadingIndicator?.updateText('初始化失败: ' + String(error));
+      setTimeout(() => this.loadingIndicator?.hide(), 3000);
+      this.showNotification('初始化失败', String(error), true);
+    }
+  }
+
+  private registerMenuCommands(): void {
+    GM_registerMenuCommand('⚙️ 打开设置', () => this.settingsUI.show(), 's');
+    GM_registerMenuCommand('🤖 切换自动检测', () => this.toggleAutoDetect(), 'a');
+    GM_registerMenuCommand('🗑️ 清除所有缓存', async () => {
+      Dialog.confirm({
+        title: '清除缓存',
+        content: '确定要清除所有缓存吗（包括模型和 WASM）？下次启动将重新下载。',
+        icon: '🗑️',
+        confirmText: '确定清除',
+        cancelText: '取消',
+        onConfirm: async () => {
+          await clearModelCache();
+          await clearWASMCache();
+          this.showNotification('缓存已清除', '请刷新页面');
+        },
+      });
+    }, 'd');
+    GM_registerMenuCommand('ℹ️ 查看状态', () => this.showStatus(), 'i');
+  }
+
+  private showStatus(): void {
+    const config = getConfig();
+    const whitelisted = isWhitelisted();
+    let content = `
+<b>脚本状态:</b> ${this.initialized ? '✅ 已初始化' : '❌ 未初始化'}
+<b>当前站点:</b> ${window.location.hostname}
+<b>白名单状态:</b> ${config.enableWhitelist ? '✅ 已启用' : '❌ 已禁用'}
+<b>白名单数量:</b> ${config.whitelist?.length || 0} 个站点
+<b>当前站点匹配:</b> ${whitelisted ? '✅ 在白名单中' : '❌ 不在白名单中'}
+<b>自动检测:</b> ${config.autoDetect ? '✅ 已启用' : '❌ 已禁用'}
+<b>上传模型:</b> ${config.useUploadedModel ? '✅ 已启用' : '❌ 未启用'}
+<b>自动下载:</b> ${config.autoDownload ? '✅ 已启用' : '❌ 已禁用'}`;
+    Dialog.show({ title: '当前状态', content, icon: 'ℹ️' });
+  }
+
+  private toggleAutoDetect(): void {
+    const config = getConfig();
+    const newState = !config.autoDetect;
+
+    if (newState) {
+      if (!this.initialized) {
+        Dialog.show({ title: '需要初始化', content: '启用自动检测需要先初始化 OCR 引擎，请稍候', icon: '⏳' });
+        this.init().then(() => {
+          this.detector.start();
+          this.showNotification('自动检测已启用', '将自动识别并填充验证码');
+        });
+      } else {
+        this.detector.start();
+        this.showNotification('自动检测已启用', '将自动识别并填充验证码');
+      }
+    } else {
+      this.detector.stop();
+      this.showNotification('自动检测已关闭', '不再自动处理验证码');
+    }
+
+    saveConfig({ autoDetect: newState });
+  }
+
+  private handleConfigChange(config: OCRConfig): void {
+    if (config.autoDetect && !this.initialized) {
+      this.init();
+    }
+    if (config.autoDetect) {
+      this.detector.start();
+    } else {
+      this.detector.stop();
+    }
+  }
+
+  private showNotification(title: string, text: string, isError = false): void {
+    if (typeof GM_notification !== 'undefined') {
+      GM_notification({ title, text, timeout: isError ? 5000 : 3000 });
+    }
+  }
+}
+
+function bootstrap(): void {
+  const app = new OCRApp();
+  if (!shouldExecuteScript()) {
+    console.log('🚫 DDDD OCR 不满足执行条件，仅注册菜单命令');
+    return;
+  }
+  setTimeout(() => app.init(), 500);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrap);
+} else {
+  bootstrap();
 }

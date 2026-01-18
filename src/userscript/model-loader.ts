@@ -1,8 +1,14 @@
-import type { CachedModel } from './types';
-import { getConfig, CONSTANTS } from './config';
+import { CONSTANTS } from '@core/config';
+import type { CachedModel, OCRConfig } from '@core/types';
 
 const CACHE_KEY = 'ddddocr_model_cache';
 const UPLOADED_MODEL_KEY = 'ddddocr_uploaded_model';
+const CONFIG_KEY = 'ddddocr_config';
+
+function getConfig(): Partial<OCRConfig> {
+  const stored = GM_getValue(CONFIG_KEY);
+  return stored || {};
+}
 
 export class ModelCache {
   private dbName = 'DdddOCRDB';
@@ -40,13 +46,11 @@ export class ModelCache {
           return;
         }
         if (Date.now() - cached.timestamp > CONSTANTS.CACHE_DURATION) {
-          console.log('🗑️ 模型缓存已过期');
           this.delete();
           resolve(null);
           return;
         }
         if (cached.version !== CONSTANTS.MODEL_VERSION) {
-          console.log('🔄 模型版本已更新');
           this.delete();
           resolve(null);
           return;
@@ -91,9 +95,7 @@ export class ModelCache {
       const store = transaction.objectStore(this.storeName);
       const request = store.get(UPLOADED_MODEL_KEY);
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        resolve(request.result || null);
-      };
+      request.onsuccess = () => resolve(request.result || null);
     });
   }
 
@@ -133,9 +135,7 @@ function downloadFile(url: string, timeout = 30000): Promise<ArrayBuffer> {
       url,
       responseType: 'arraybuffer',
       timeout,
-      headers: {
-        'Cache-Control': 'max-age=2592000',
-      },
+      headers: { 'Cache-Control': 'max-age=2592000' },
       onload: (response) => {
         if (response.status === 200) {
           resolve(response.response as ArrayBuffer);
@@ -156,9 +156,7 @@ function downloadJSON<T>(url: string, timeout = 30000): Promise<T> {
       url,
       responseType: 'json',
       timeout,
-      headers: {
-        'Cache-Control': 'max-age=2592000',
-      },
+      headers: { 'Cache-Control': 'max-age=2592000' },
       onload: (response) => {
         if (response.status === 200) {
           resolve(response.response as T);
@@ -183,61 +181,43 @@ export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: strin
   const config = getConfig();
   const cache = new ModelCache();
 
-  // 优先级1：用户上传的模型
   if (config.useUploadedModel) {
-    console.log('📤 检查上传的模型');
     const uploaded = await cache.getUploadedModel();
     if (uploaded) {
       console.log('✅ 使用上传的模型');
-      console.log(`   模型: ${(uploaded.model.byteLength / 1024 / 1024).toFixed(2)} MB`);
-      console.log(`   字符集: ${uploaded.charsets.length} 字符`);
       return { model: uploaded.model, charsets: uploaded.charsets };
-    } else {
-      // 设置了使用上传模型但实际没有，尝试降级到在线下载
-      console.warn('⚠️ 未找到上传的模型，尝试在线下载');
-      // 继续执行下面的在线下载逻辑
     }
   }
 
-  // 优先级2：在线下载
-  if (!config.autoDownload) {
+  if (config.autoDownload === false) {
     throw new Error('自动下载已禁用，请上传模型文件或启用自动下载');
   }
 
-  console.log('🔍 检查模型缓存');
   const cached = await cache.get();
   if (cached) {
     console.log('✅ 使用缓存的模型');
-    console.log(`   模型: ${(cached.model.byteLength / 1024 / 1024).toFixed(2)} MB`);
-    console.log(`   字符集: ${cached.charsets.length} 字符`);
     return { model: cached.model, charsets: cached.charsets };
   }
 
   console.log('📥 开始下载模型');
+
   let model: ArrayBuffer | null = null;
   let charsets: string[] | null = null;
-  let successMirror = '';
 
   for (let i = 0; i < CONSTANTS.GITHUB_MIRRORS.length; i++) {
     const mirror = CONSTANTS.GITHUB_MIRRORS[i];
     try {
-      const mirrorName = new URL(mirror.includes('raw.githubusercontent') ? `https://${mirror.split('/')[2]}` : mirror).hostname;
-      console.log(`🌐 镜像 [${i + 1}/${CONSTANTS.GITHUB_MIRRORS.length}]: ${mirrorName}`);
-
+      console.log(`🌐 镜像 [${i + 1}/${CONSTANTS.GITHUB_MIRRORS.length}]`);
       const [modelData, charsetsData] = await Promise.all([
         downloadFile(buildURL(mirror, CONSTANTS.MODEL_PATH)),
         downloadJSON<string[]>(buildURL(mirror, CONSTANTS.CHARSETS_PATH)),
       ]);
-
       model = modelData;
       charsets = charsetsData;
-      successMirror = mirrorName;
-      console.log(`✅ ${mirrorName}`);
-      console.log(`   模型: ${(model.byteLength / 1024 / 1024).toFixed(2)} MB`);
-      console.log(`   字符集: ${charsets.length} 字符`);
+      console.log(`✅ 下载成功 (${(model.byteLength / 1024 / 1024).toFixed(2)} MB)`);
       break;
     } catch (error) {
-      console.warn(`❌ 镜像 ${i + 1} 失败:`, error);
+      console.warn(`❌ 镜像 ${i + 1} 失败`, error);
       if (i === CONSTANTS.GITHUB_MIRRORS.length - 1) {
         throw new Error('所有镜像均失败，请检查网络或上传模型文件');
       }
@@ -248,17 +228,8 @@ export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: strin
     throw new Error('模型下载失败');
   }
 
-  console.log('💾 缓存模型到 IndexedDB');
   await cache.set(model, charsets);
-  console.log('✅ 模型已缓存');
-
-  if (typeof GM_notification !== 'undefined') {
-    GM_notification({
-      title: 'DDDD OCR',
-      text: `模型下载成功 (${successMirror})`,
-      timeout: 3000,
-    });
-  }
+  console.log('💾 模型已缓存');
 
   return { model, charsets };
 }
@@ -270,15 +241,12 @@ export async function clearModelCache(): Promise<void> {
 }
 
 export async function saveUploadedModel(modelFile: File, charsetsFile: File): Promise<void> {
-  console.log('📤 保存上传的模型文件');
   const modelData = await modelFile.arrayBuffer();
   const charsetsText = await charsetsFile.text();
   const charsets = JSON.parse(charsetsText) as string[];
   const cache = new ModelCache();
   await cache.setUploadedModel(modelData, charsets);
   console.log('✅ 上传的模型已保存');
-  console.log(`   模型: ${(modelData.byteLength / 1024 / 1024).toFixed(2)} MB`);
-  console.log(`   字符集: ${charsets.length} 字符`);
 }
 
 export async function deleteUploadedModel(): Promise<void> {

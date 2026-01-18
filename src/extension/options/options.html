@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DDDD OCR - 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+
+<body>
+  <div class="options-container">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" />
+          <path d="M2 17L12 22L22 17" />
+          <path d="M2 12L12 17L22 12" />
+        </svg>
+        <h1>DDDD OCR</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#general" class="nav-item active" data-section="general">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>基本设置</span>
+        </a>
+        <a href="#rules" class="nav-item" data-section="rules">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <span>网站规则</span>
+        </a>
+        <a href="#advanced" class="nav-item" data-section="advanced">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+          <span>高级选项</span>
+        </a>
+        <a href="#about" class="nav-item" data-section="about">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>关于</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="version">v1.0.0</span>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <section id="general" class="section active">
+        <div class="section-header">
+          <h2>基本设置</h2>
+          <p>配置验证码识别的基本行为</p>
+        </div>
+
+        <div class="card">
+          <h3>外观</h3>
+          <div class="form-group">
+            <label for="theme">主题</label>
+            <select id="theme">
+              <option value="auto">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>自动填充</h3>
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label>识别成功后自动填充</label>
+              <span class="hint">将识别结果自动填入输入框</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoFill" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label>匹配规则时自动识别</label>
+              <span class="hint">检测到保存的规则时自动开始识别</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoSolveOnRule">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label>自动提交表单</label>
+              <span class="hint">填充后自动提交（谨慎使用）</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoSubmit">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>默认选择器</h3>
+          <div class="form-group">
+            <label for="captchaSelector">验证码选择器</label>
+            <input type="text" id="captchaSelector" placeholder="例如: img.captcha, #captchaImage">
+            <span class="hint">留空则自动检测</span>
+          </div>
+          <div class="form-group">
+            <label for="inputSelector">输入框选择器</label>
+            <input type="text" id="inputSelector" placeholder="例如: input#captcha">
+            <span class="hint">留空则自动查找</span>
+          </div>
+          <div class="form-group">
+            <label for="submitSelector">提交按钮选择器</label>
+            <input type="text" id="submitSelector" placeholder="例如: button[type=submit]">
+            <span class="hint">留空则自动查找</span>
+          </div>
+          <div class="form-group">
+            <label for="agreementSelector">用户协议选择器</label>
+            <input type="text" id="agreementSelector" placeholder="例如: input#agree">
+            <span class="hint">自动勾选用户协议复选框</span>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button id="btn-save-general" class="btn btn-primary">保存设置</button>
+        </div>
+      </section>
+
+      <section id="rules" class="section">
+        <div class="section-header">
+          <h2>网站规则</h2>
+          <p>管理已保存的网站验证码规则</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>已保存的规则</h3>
+            <div class="header-actions">
+              <button id="btn-import-rules" class="btn btn-secondary btn-sm">导入</button>
+              <button id="btn-export-rules" class="btn btn-secondary btn-sm">导出</button>
+            </div>
+          </div>
+          <div id="rules-list" class="rules-list">
+            <div class="empty-state">
+              <p>暂无保存的规则</p>
+              <span>使用弹窗中的"选择元素"功能添加规则</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>批量添加规则</h3>
+          <div class="form-group">
+            <label for="bulk-rules">规则列表 (JSON格式)</label>
+            <textarea id="bulk-rules" rows="6"
+              placeholder='[{"hostname": "example.com", "selector": "img.captcha", "inputSelector": "#code"}]'></textarea>
+          </div>
+          <button id="btn-add-bulk-rules" class="btn btn-primary">添加规则</button>
+        </div>
+      </section>
+
+      <section id="advanced" class="section">
+        <div class="section-header">
+          <h2>高级选项</h2>
+          <p>高级配置和调试选项</p>
+        </div>
+
+        <div class="card">
+          <h3>请求设置</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="timeout">超时时间 (秒)</label>
+              <input type="number" id="timeout" min="5" max="120" value="30">
+            </div>
+            <div class="form-group">
+              <label for="retryCount">重试次数</label>
+              <input type="number" id="retryCount" min="1" max="5" value="3">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>调试</h3>
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label>调试模式</label>
+              <span class="hint">在控制台输出详细日志</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="debugMode">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>数据管理</h3>
+          <div class="button-group">
+            <button id="btn-export-config" class="btn btn-secondary">导出全部配置</button>
+            <button id="btn-import-config" class="btn btn-secondary">导入配置</button>
+            <button id="btn-reset-all" class="btn btn-danger">重置所有设置</button>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button id="btn-save-advanced" class="btn btn-primary">保存设置</button>
+        </div>
+      </section>
+
+      <section id="about" class="section">
+        <div class="section-header">
+          <h2>关于</h2>
+          <p>DDDD OCR 离线验证码识别扩展</p>
+        </div>
+
+        <div class="card">
+          <h3>版本信息</h3>
+          <div class="info-list">
+            <div class="info-item"><span>版本:</span><span id="app-version">-</span></div>
+            <div class="info-item"><span>模型版本:</span><span>1.5.1</span></div>
+            <div class="info-item"><span>ONNX Runtime:</span><span>1.17.0</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>特性</h3>
+          <ul class="feature-list">
+            <li>✅ 完全离线运行，无需网络</li>
+            <li>✅ 支持 img/canvas/svg 验证码</li>
+            <li>✅ 智能自动检测验证码</li>
+            <li>✅ 支持自定义选择器</li>
+            <li>✅ 网站规则自动保存</li>
+            <li>✅ 深色/浅色/自动主题</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>开源</h3>
+          <p style="color: var(--text-secondary); font-size: 14px;">
+            基于 <a href="https://github.com/sml2h3/ddddocr" target="_blank" style="color: var(--primary);">ddddocr</a> 项目
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden">
+      <span id="toast-message"></span>
+    </div>
+
+    <input type="file" id="file-import" accept=".json" style="display: none;">
+  </div>
+  <script src="options.ts" type="module"></script>
+</body>
+
+</html>

@@ -1,0 +1,10 @@
+{
+    "extension_name": {
+        "message": "DDDD OCR Extension",
+        "description": "A fully offline CAPTCHA recognition tool that supports automatic detection and auto-filling of CAPTCHAs."
+    },
+    "extension_description": {
+        "message": "A fully offline CAPTCHA recognition tool",
+        "description": "A fully offline CAPTCHA recognition tool that supports automatic detection and auto-filling of CAPTCHAs."
+    }
+}

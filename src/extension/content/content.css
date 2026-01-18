@@ -1,0 +1,27 @@
+[data-captcha-highlight="true"] {
+  outline: 3px solid #4CAF50 !important;
+  outline-offset: 2px !important;
+  animation: captcha-pulse 1s ease-in-out infinite !important;
+}
+
+@keyframes captcha-pulse {
+  0%, 100% {
+    outline-color: #4CAF50;
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
+  }
+  50% {
+    outline-color: #81C784;
+    box-shadow: 0 0 0 8px rgba(76, 175, 80, 0);
+  }
+}
+
+[data-captcha-filled="true"] {
+  border-color: #4CAF50 !important;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2) !important;
+}
+
+#ddddocr-picker-overlay,
+#ddddocr-picker-tooltip,
+#ddddocr-preview {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}

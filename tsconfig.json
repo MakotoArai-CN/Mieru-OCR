@@ -10,8 +10,14 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "noEmit": true,
-    "types": ["tampermonkey"],
-    "downlevelIteration": true
+    "types": ["tampermonkey", "chrome"],
+    "downlevelIteration": true,
+    "paths": {
+      "@core/*": ["./src/core/*"],
+      "@userscript/*": ["./src/userscript/*"],
+      "@extension/*": ["./src/extension/*"]
+    },
+    "baseUrl": "."
   },
   "include": ["src/**/*"]
 }

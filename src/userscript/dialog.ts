@@ -1,13 +1,9 @@
-/**
- * 统一弹窗组件
- */
 export class Dialog {
   private static container: HTMLDivElement | null = null;
   private static stylesInjected = false;
 
   private static injectStyles(): void {
     if (this.stylesInjected) return;
-
     const style = document.createElement('style');
     style.textContent = `
       .ddddocr-dialog-overlay {
@@ -23,7 +19,6 @@ export class Dialog {
         justify-content: center;
         animation: ddddocr-fade-in 0.3s ease;
       }
-
       .ddddocr-dialog {
         background: white;
         border-radius: 16px;
@@ -34,7 +29,6 @@ export class Dialog {
         overflow: hidden;
         animation: ddddocr-scale-in 0.3s ease;
       }
-
       .ddddocr-dialog-header {
         background: #4A90E2;
         color: white;
@@ -45,21 +39,18 @@ export class Dialog {
         align-items: center;
         gap: 10px;
       }
-
       .ddddocr-dialog-body {
         padding: 24px;
         max-height: calc(80vh - 140px);
         overflow-y: auto;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }
-
       .ddddocr-dialog-content {
         color: #333;
         font-size: 14px;
         line-height: 1.6;
         white-space: pre-wrap;
       }
-
       .ddddocr-dialog-footer {
         padding: 16px 24px;
         border-top: 1px solid #E8F0FE;
@@ -67,7 +58,6 @@ export class Dialog {
         justify-content: flex-end;
         gap: 12px;
       }
-
       .ddddocr-dialog-button {
         padding: 10px 24px;
         border: none;
@@ -77,58 +67,35 @@ export class Dialog {
         cursor: pointer;
         transition: all 0.3s;
       }
-
       .ddddocr-dialog-button.primary {
         background: #4A90E2;
         color: white;
       }
-
       .ddddocr-dialog-button.primary:hover {
         background: #357ABD;
       }
-
       .ddddocr-dialog-button.secondary {
         background: #E8F0FE;
         color: #4A90E2;
       }
-
       .ddddocr-dialog-button.secondary:hover {
         background: #D0E2F5;
       }
-
       @keyframes ddddocr-fade-in {
         from { opacity: 0; }
         to { opacity: 1; }
       }
-
       @keyframes ddddocr-scale-in {
-        from {
-          opacity: 0;
-          transform: scale(0.9);
-        }
-        to {
-          opacity: 1;
-          transform: scale(1);
-        }
+        from { opacity: 0; transform: scale(0.9); }
+        to { opacity: 1; transform: scale(1); }
       }
     `;
     document.head.appendChild(style);
     this.stylesInjected = true;
   }
 
-  /**
-   * 显示信息对话框
-   */
-  static show(options: {
-    title: string;
-    content: string;
-    icon?: string;
-    confirmText?: string;
-    onConfirm?: () => void;
-  }): void {
+  static show(options: { title: string; content: string; icon?: string; confirmText?: string; onConfirm?: () => void }): void {
     this.injectStyles();
-
-    // 移除已存在的弹窗
     this.close();
 
     const overlay = document.createElement('div');
@@ -137,16 +104,12 @@ export class Dialog {
     const dialog = document.createElement('div');
     dialog.className = 'ddddocr-dialog';
     dialog.innerHTML = `
-      <div class="ddddocr-dialog-header">
-        ${options.icon || 'ℹ️'} ${options.title}
-      </div>
+      <div class="ddddocr-dialog-header">${options.icon || 'ℹ️'} ${options.title}</div>
       <div class="ddddocr-dialog-body">
         <div class="ddddocr-dialog-content">${options.content}</div>
       </div>
       <div class="ddddocr-dialog-footer">
-        <button class="ddddocr-dialog-button primary">
-          ${options.confirmText || '确定'}
-        </button>
+        <button class="ddddocr-dialog-button primary">${options.confirmText || '确定'}</button>
       </div>
     `;
 
@@ -154,32 +117,17 @@ export class Dialog {
     document.body.appendChild(overlay);
     this.container = overlay;
 
-    // 绑定事件
-    const confirmBtn = dialog.querySelector('.ddddocr-dialog-button');
-    confirmBtn?.addEventListener('click', () => {
+    dialog.querySelector('.ddddocr-dialog-button')?.addEventListener('click', () => {
       options.onConfirm?.();
       this.close();
     });
 
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        this.close();
-      }
+      if (e.target === overlay) this.close();
     });
   }
 
-  /**
-   * 显示确认对话框
-   */
-  static confirm(options: {
-    title: string;
-    content: string;
-    icon?: string;
-    confirmText?: string;
-    cancelText?: string;
-    onConfirm?: () => void;
-    onCancel?: () => void;
-  }): void {
+  static confirm(options: { title: string; content: string; icon?: string; confirmText?: string; cancelText?: string; onConfirm?: () => void; onCancel?: () => void }): void {
     this.injectStyles();
     this.close();
 
@@ -189,19 +137,13 @@ export class Dialog {
     const dialog = document.createElement('div');
     dialog.className = 'ddddocr-dialog';
     dialog.innerHTML = `
-      <div class="ddddocr-dialog-header">
-        ${options.icon || '❓'} ${options.title}
-      </div>
+      <div class="ddddocr-dialog-header">${options.icon || '❓'} ${options.title}</div>
       <div class="ddddocr-dialog-body">
         <div class="ddddocr-dialog-content">${options.content}</div>
       </div>
       <div class="ddddocr-dialog-footer">
-        <button class="ddddocr-dialog-button secondary cancel-btn">
-          ${options.cancelText || '取消'}
-        </button>
-        <button class="ddddocr-dialog-button primary confirm-btn">
-          ${options.confirmText || '确定'}
-        </button>
+        <button class="ddddocr-dialog-button secondary cancel-btn">${options.cancelText || '取消'}</button>
+        <button class="ddddocr-dialog-button primary confirm-btn">${options.confirmText || '确定'}</button>
       </div>
     `;
 
@@ -209,16 +151,12 @@ export class Dialog {
     document.body.appendChild(overlay);
     this.container = overlay;
 
-    // 绑定事件
-    const confirmBtn = dialog.querySelector('.confirm-btn');
-    const cancelBtn = dialog.querySelector('.cancel-btn');
-
-    confirmBtn?.addEventListener('click', () => {
+    dialog.querySelector('.confirm-btn')?.addEventListener('click', () => {
       options.onConfirm?.();
       this.close();
     });
 
-    cancelBtn?.addEventListener('click', () => {
+    dialog.querySelector('.cancel-btn')?.addEventListener('click', () => {
       options.onCancel?.();
       this.close();
     });
@@ -231,9 +169,6 @@ export class Dialog {
     });
   }
 
-  /**
-   * 关闭弹窗
-   */
   static close(): void {
     this.container?.remove();
     this.container = null;

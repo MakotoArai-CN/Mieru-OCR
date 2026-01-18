@@ -1,20 +1,28 @@
 {
-  "name": "ddddocr-tampermonkey",
-  "version": "1.0.0",
+  "name": "ddddocr-webjs",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
+    "build:extension": "vite build --config vite.config.browser.ts",
+    "build:all": "bun run build && bun run build:extension",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "@crxjs/vite-plugin": "^2.0.0-beta.25",
+    "@types/chrome": "^0.0.268",
+    "@types/node": "^20.11.0",
     "@types/tampermonkey": "^5.0.3",
+    "sass": "^1.69.7",
     "terser": "^5.44.0",
     "typescript": "^5.3.3",
     "vite": "^5.0.11",
     "vite-plugin-monkey": "^7.1.4"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "onnxruntime-web": "^1.17.0"
   }
 }

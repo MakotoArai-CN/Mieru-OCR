@@ -1,28 +1,45 @@
 import { defineConfig } from 'vite';
 import monkey from 'vite-plugin-monkey';
-import { CONSTANTS } from './src/config';
+import { resolve } from 'path';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 
-const BUILD_DATE = new Date().getTime();
-
-const extractDomains = (urls: string[]): string[] => {
-  return urls.map(url => {
-    try {
-      return new URL(url.replace('https://raw.githubusercontent.com', 'https://raw.githubusercontent.com')).hostname;
-    } catch {
-      return url;
+function readVersion(): string {
+  const versionPath = resolve(__dirname, 'version');
+  if (existsSync(versionPath)) {
+    return readFileSync(versionPath, 'utf-8').trim();
+  }
+  // 如果package.json的版本号低于version值，修改package.json的版本号为version值
+  const packageJsonPath = resolve(__dirname, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    if (packageJson.version < APP_VERSION) {
+      packageJson.version = APP_VERSION;
+      writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
-  });
-};
+  }
+  return '1.1.0';
+}
 
-const githubMirrorDomains = extractDomains(CONSTANTS.GITHUB_MIRRORS);
-const cdnDomains = extractDomains(CONSTANTS.CDN_SOURCES);
+const APP_VERSION = readVersion();
+const MODEL_VERSION = '1.5.1';
+const WASM_VERSION = '1.17.0';
+const BUILDATE = new Date().toLocaleString();
+
+const iconData = readFileSync(resolve(__dirname, 'icons/icon48.png')).toString('base64');
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@core': resolve(__dirname, 'src/core'),
+      '@userscript': resolve(__dirname, 'src/userscript'),
+    },
+  },
   build: {
     minify: 'terser',
     rollupOptions: {
       external: ['onnxruntime-web'],
     },
+    outDir: 'dist/userscript',
     terserOptions: {
       compress: {
         ecma: 2020,
@@ -45,16 +62,16 @@ export default defineConfig({
   },
   plugins: [
     monkey({
-      entry: 'src/main.ts',
+      entry: 'src/userscript/main.ts',
       userscript: {
         author: 'MakotoArai-CN',
         name: 'DDDD OCR WEB - 验证码自动识别',
         namespace: 'https://github.com/MakotoArai-CN/ddddocr-webjs',
-        version: `${CONSTANTS.MODEL_VERSION}-beta-build${BUILD_DATE}`,
-        description: '自动检测并识别页面验证码，自动填充到输入框。首次使用需设置白名单，会自动下载约50MB模型文件以及20MB左右的ONNX推理运行时文件，但是不推荐自动下载，可能很慢，建议手动下载并上传（详见项目文档）。如果弹出窗口提示授权请授权给脚本。',
+        version: APP_VERSION + '-' + BUILDATE,
+        description: '自动检测并识别页面验证码，自动填充到输入框。首次使用需设置白名单，会自动下载约50MB模型文件以及20MB左右的ONNX推理运行时文件。',
         license: 'MIT',
         match: ['*://*/*'],
-        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="0.9em" font-size="90">🔤</text></svg>',
+        icon: 'data:image/png;base64,' + iconData,
         grant: [
           'GM_xmlhttpRequest',
           'GM_registerMenuCommand',
@@ -63,11 +80,23 @@ export default defineConfig({
           'GM_setValue',
         ],
         connect: [
-          ...cdnDomains,
-          ...githubMirrorDomains,
+          'cdn.jsdelivr.net',
+          'unpkg.com',
+          'cdnjs.cloudflare.com',
+          'fastly.jsdelivr.net',
+          'registry.npmmirror.com',
+          'raw.githubusercontent.com',
+          'ghproxy.com',
+          'ghfast.top',
+          'mirror.ghproxy.com',
+          'raw.kkgithub.com',
+          'github.moeyy.xyz',
+          'ghps.cc',
+          'cors.isteed.cc',
+          'raw.githubusercontents.com',
         ],
         require: [
-          'https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.17.0/ort.min.js',
+          `https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/${WASM_VERSION}/ort.min.js`,
         ],
       },
       build: {

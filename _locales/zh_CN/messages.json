@@ -1,0 +1,10 @@
+{
+    "extension_name": {
+        "message": "DDDD OCR Extension",
+        "description": "完全离线的验证码识别工具，支持自动检测并填充验证码"
+    },
+    "extension_description": {
+        "message": "完全离线的验证码识别工具",
+        "description": "完全离线的验证码识别工具，支持自动检测并填充验证码"
+    }
+}
