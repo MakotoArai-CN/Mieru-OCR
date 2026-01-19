@@ -1,22 +1,21 @@
 export class AutoFill {
   private lastFilledInput: HTMLInputElement | null = null;
 
-  async fill(inputElement: HTMLInputElement, text: string, options: { simulate?: boolean; autoSubmit?: boolean } = {}): Promise<boolean> {
-    const { simulate = true, autoSubmit = false } = options;
-
+  async fill(
+    inputElement: HTMLInputElement,
+    text: string,
+    options: { simulate?: boolean; autoSubmit?: boolean; typewriterEffect?: boolean } = {}
+  ): Promise<boolean> {
+    const { simulate = true, autoSubmit = false, typewriterEffect = true } = options;
     try {
       if (!inputElement) throw new Error('未找到输入框');
-
       inputElement.focus();
-      inputElement.value = '';
-      this.dispatchEvent(inputElement, 'input');
+      this.clearInputValue(inputElement);
 
-      if (simulate) {
+      if (simulate && typewriterEffect) {
         await this.simulateTyping(inputElement, text);
       } else {
-        inputElement.value = text;
-        this.dispatchEvent(inputElement, 'input');
-        this.dispatchEvent(inputElement, 'change');
+        this.setInputValue(inputElement, text);
       }
 
       this.lastFilledInput = inputElement;
@@ -25,7 +24,6 @@ export class AutoFill {
       if (autoSubmit) {
         await this.submitForm(inputElement);
       }
-
       return true;
     } catch (error) {
       console.error('填充失败', error);
@@ -33,11 +31,85 @@ export class AutoFill {
     }
   }
 
+  private clearInputValue(input: HTMLInputElement): void {
+    this.setInputValue(input, '');
+  }
+
+  private setInputValue(input: HTMLInputElement, value: string): void {
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value'
+    )?.set;
+
+    if (nativeInputValueSetter) {
+      nativeInputValueSetter.call(input, value);
+    } else {
+      input.value = value;
+    }
+
+    this.dispatchInputEvents(input);
+  }
+
+  private dispatchInputEvents(input: HTMLInputElement): void {
+    const inputEvent = new InputEvent('input', {
+      bubbles: true,
+      cancelable: true,
+      inputType: 'insertText',
+      data: input.value,
+    });
+    input.dispatchEvent(inputEvent);
+
+    this.dispatchEvent(input, 'change');
+
+    const reactKey = Object.keys(input).find(key => 
+      key.startsWith('__reactProps$') || 
+      key.startsWith('__reactFiber$') ||
+      key.startsWith('__reactEventHandlers$')
+    );
+    if (reactKey) {
+      const tracker = (input as any)._valueTracker;
+      if (tracker) {
+        tracker.setValue('');
+      }
+    }
+
+    const ngModel = (input as any).ngModel || input.getAttribute('ng-model') || input.getAttribute('[(ngModel)]');
+    if (ngModel) {
+      this.dispatchEvent(input, 'input');
+      this.dispatchEvent(input, 'blur');
+    }
+
+    const vueKey = Object.keys(input).find(key => key.startsWith('__vue'));
+    if (vueKey || input.hasAttribute('v-model')) {
+      const compositionStart = new CompositionEvent('compositionstart', { bubbles: true });
+      const compositionEnd = new CompositionEvent('compositionend', { bubbles: true, data: input.value });
+      input.dispatchEvent(compositionStart);
+      input.dispatchEvent(compositionEnd);
+    }
+  }
+
   private async simulateTyping(input: HTMLInputElement, text: string): Promise<void> {
     for (const char of text) {
       this.dispatchKeyEvent(input, 'keydown', char);
-      input.value += char;
-      this.dispatchEvent(input, 'input');
+
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value'
+      )?.set;
+      if (nativeSetter) {
+        nativeSetter.call(input, input.value + char);
+      } else {
+        input.value += char;
+      }
+
+      const inputEvent = new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: char,
+      });
+      input.dispatchEvent(inputEvent);
+
       this.dispatchKeyEvent(input, 'keyup', char);
       await this.delay(50 + Math.random() * 100);
     }
@@ -67,10 +139,8 @@ export class AutoFill {
   private highlightInput(input: HTMLInputElement): void {
     const originalBorder = input.style.border;
     const originalBoxShadow = input.style.boxShadow;
-
     input.style.border = '2px solid #4CAF50';
     input.style.boxShadow = '0 0 8px rgba(76, 175, 80, 0.5)';
-
     setTimeout(() => {
       input.style.border = originalBorder;
       input.style.boxShadow = originalBoxShadow;

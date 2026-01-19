@@ -58,6 +58,11 @@ export const DEFAULT_CONFIG: OCRConfig = {
   whitelist: [],
   useUploadedModel: false,
   theme: 'auto',
+  typewriterEffect: true,
+  autoCalculate: false,
+  calculateOutputMode: 'result',
+  calculateRules: [],
+  enableNotification: true,
 };
 
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {

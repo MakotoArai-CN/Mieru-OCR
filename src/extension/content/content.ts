@@ -1,11 +1,13 @@
 import './content.css';
 import { CaptchaDetector, type DetectedCaptcha } from '@core/captcha-detector';
 import { AutoFill } from '@core/auto-fill';
+import { Calculator } from '@core/calculator';
 import { CONSTANTS } from '@core/config';
 
 let debugMode = false;
 const detector = new CaptchaDetector();
 const autoFill = new AutoFill();
+
 let currentCaptcha: DetectedCaptcha | null = null;
 let customInputElement: HTMLInputElement | null = null;
 let isProcessing = false;
@@ -14,6 +16,9 @@ let autoFillEnabled = true;
 let autoSubmitEnabled = false;
 let autoSolveOnRuleEnabled = true;
 let autoDetectorStarted = false;
+let typewriterEffect = true;
+let autoCalculate = false;
+let calculateWhitelist: string[] = [];
 
 async function initDebugMode() {
   try {
@@ -24,6 +29,9 @@ async function initDebugMode() {
       autoFillEnabled = response.settings.autoFill !== false;
       autoSubmitEnabled = !!response.settings.autoSubmit;
       autoSolveOnRuleEnabled = response.settings.autoSolveOnRule !== false;
+      typewriterEffect = response.settings.typewriterEffect !== false;
+      autoCalculate = !!response.settings.autoCalculate;
+      calculateWhitelist = response.settings.calculateWhitelist || [];
     }
   } catch (e) { }
 }
@@ -39,7 +47,6 @@ async function init() {
   await initDebugMode();
   logger.info('内容脚本已加载');
   chrome.runtime.onMessage.addListener(handleMessage);
-
   setTimeout(async () => {
     await checkAndApplySiteRule();
     scanPage();
@@ -95,6 +102,9 @@ async function checkAndApplySiteRule() {
     autoSubmitEnabled = !!settings.autoSubmit;
     autoSolveOnRuleEnabled = settings.autoSolveOnRule !== false;
     debugMode = !!settings.debugMode;
+    typewriterEffect = settings.typewriterEffect !== false;
+    autoCalculate = !!settings.autoCalculate;
+    calculateWhitelist = settings.calculateWhitelist || [];
 
     if (rule && rule.enabled !== false) {
       const element = document.querySelector(rule.selector);
@@ -127,7 +137,6 @@ async function checkAndApplySiteRule() {
           const captchaToUnhighlight = currentCaptcha;
           setTimeout(() => detector.unhighlight(captchaToUnhighlight), 1200);
         }
-
         if (autoSolveOnRuleEnabled) {
           setTimeout(() => {
             tryAutoSolveOnce();
@@ -196,19 +205,42 @@ async function handleRecognize(captchaId: string, sendResponse: (response: any) 
     const captchas = detector.getDetectedCaptchas();
     const captcha = captchaId ? captchas.find(c => c.id === captchaId) : detector.getMostLikelyCaptcha();
     if (!captcha) throw new Error('未找到验证码');
+
     currentCaptcha = captcha;
     detector.highlight(captcha);
     await waitForReady(captcha);
+
     const imageData = await detector.captureImage(captcha);
     const response = await chrome.runtime.sendMessage({ action: 'recognizeCaptcha', imageData });
     detector.unhighlight(captcha);
+
     if (response.success) {
+      const settingsResponse = await chrome.runtime.sendMessage({ action: 'getSettings' });
+      const settings = settingsResponse.success ? settingsResponse.settings : {};
+
+      let resultText = response.text;
+      if (settings.autoCalculate) {
+        resultText = Calculator.processResult(
+          response.text,
+          {
+            autoCalculate: true,
+            outputMode: settings.calculateOutputMode || 'result',
+            rules: settings.calculateRules || [],
+          },
+          location.hostname
+        );
+      }
+
       const inputEl = customInputElement || currentCaptcha?.inputElement;
       if (autoFillEnabled && inputEl) {
-        await autoFill.fill(inputEl, response.text, { simulate: true, autoSubmit: autoSubmitEnabled });
+        await autoFill.fill(inputEl, resultText, {
+          simulate: true,
+          autoSubmit: autoSubmitEnabled,
+          typewriterEffect: settings.typewriterEffect !== false
+        });
       }
       detector.markElementProcessed(captcha.element);
-      sendResponse({ success: true, text: response.text, elapsed: response.elapsed, captchaId: captcha.id });
+      sendResponse({ success: true, text: resultText, elapsed: response.elapsed, captchaId: captcha.id });
     } else {
       sendResponse({ success: false, error: response.error });
     }
@@ -224,7 +256,7 @@ async function handleFill(text: string, options: any, sendResponse: (response: a
   try {
     const inputEl = customInputElement || currentCaptcha?.inputElement;
     if (!inputEl) throw new Error('未找到验证码输入框');
-    const success = await autoFill.fill(inputEl, text, options);
+    const success = await autoFill.fill(inputEl, text, { ...options, typewriterEffect });
     sendResponse({ success });
   } catch (error) {
     sendResponse({ success: false, error: (error as Error).message });
@@ -329,7 +361,6 @@ async function showCaptchaPreview(imageData: string, captcha: DetectedCaptcha) {
     effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
   const isDark = effectiveTheme === 'dark';
-
   const colors = {
     bg: isDark ? '#1a1a2e' : '#ffffff',
     bgSecondary: isDark ? '#252540' : '#f8fbff',
@@ -355,6 +386,7 @@ async function showCaptchaPreview(imageData: string, captcha: DetectedCaptcha) {
     </div>
     <button id="preview-close" style="width:100%;padding:10px;background:${colors.primary};color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;">关闭</button>
   `;
+
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
 
@@ -371,7 +403,6 @@ function startAutoDetector(): void {
   if (autoDetectorStarted) return;
   autoDetectorStarted = true;
   logger.info('自动识别已启用');
-
   scheduleInitialAuto();
 
   observer = new MutationObserver((mutations) => {
@@ -455,32 +486,20 @@ function tryAutoSolveOnce(): void {
   const captchas = detector.scan();
   if (!captchas || captchas.length === 0) return;
 
-  let target: DetectedCaptcha | null = null;
+  const captchasToProcess: DetectedCaptcha[] = [];
 
-  if (currentCaptcha && currentCaptcha.element && document.contains(currentCaptcha.element)) {
-    target = currentCaptcha;
-    if (!target.inputElement && !customInputElement) {
-      target.inputElement = detector.findRelatedInput(target.element);
-    }
+  for (const captcha of captchas) {
+    const inputEl = customInputElement || captcha.inputElement || detector.findRelatedInput(captcha.element);
+    if (!inputEl) continue;
+    if (!detector.hasElementChanged(captcha.element)) continue;
+    captchasToProcess.push({ ...captcha, inputElement: inputEl });
   }
 
-  if (!target) {
-    target = detector.getMostLikelyCaptcha();
+  if (captchasToProcess.length === 0) return;
+
+  for (const captcha of captchasToProcess) {
+    internalRecognizeAndFill(captcha);
   }
-
-  if (!target) return;
-
-  const inputEl = customInputElement || target.inputElement;
-  if (!inputEl) {
-    logger.debug('自动识别跳过：未找到输入框');
-    return;
-  }
-
-  if (!detector.hasElementChanged(target.element)) {
-    return;
-  }
-
-  internalRecognizeAndFill(target);
 }
 
 async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void> {
@@ -491,6 +510,7 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
   try {
     detector.highlight(captcha);
     await waitForReady(captcha);
+
     const imageData = await detector.captureImage(captcha);
     const response = await chrome.runtime.sendMessage({ action: 'recognizeCaptcha', imageData });
     detector.unhighlight(captcha);
@@ -499,11 +519,30 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
       return;
     }
 
-    const inputEl = customInputElement || captcha.inputElement;
-    if (autoFillEnabled && inputEl) {
-      await autoFill.fill(inputEl, response.text, { simulate: true, autoSubmit: autoSubmitEnabled });
+    const settingsResponse = await chrome.runtime.sendMessage({ action: 'getSettings' });
+    const settings = settingsResponse.success ? settingsResponse.settings : {};
+
+    let resultText = response.text;
+    if (settings.autoCalculate) {
+      resultText = Calculator.processResult(
+        response.text,
+        {
+          autoCalculate: true,
+          outputMode: settings.calculateOutputMode || 'result',
+          rules: settings.calculateRules || [],
+        },
+        location.hostname
+      );
     }
 
+    const inputEl = customInputElement || captcha.inputElement;
+    if (autoFillEnabled && inputEl) {
+      await autoFill.fill(inputEl, resultText, {
+        simulate: true,
+        autoSubmit: autoSubmitEnabled,
+        typewriterEffect: settings.typewriterEffect !== false
+      });
+    }
     detector.markElementProcessed(captcha.element);
   } catch (e) {
     try { detector.unhighlight(captcha); } catch { }
@@ -582,6 +621,7 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
     if (!isActive) return;
     e.preventDefault();
     e.stopPropagation();
+
     if (hoveredElement) {
       const selector = generateSelector(hoveredElement);
       const rect = hoveredElement.getBoundingClientRect();
@@ -602,7 +642,7 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
 
   function handleKeyDown(e: KeyboardEvent) {
     if (!isActive) return;
-    if (e.key === 'Escape' || (document.getElementById('picker-cancel')?.addEventListener('click', () => { return true; })) ) {
+    if (e.key === 'Escape') {
       e.preventDefault();
       cleanup();
       callback({ cancelled: true });

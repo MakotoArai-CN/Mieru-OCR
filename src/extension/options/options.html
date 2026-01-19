@@ -52,7 +52,7 @@
         </a>
       </nav>
       <div class="sidebar-footer">
-        <span class="version">v1.0.0</span>
+        <span class="version">v1.1.0</span>
       </div>
     </aside>
 
@@ -84,6 +84,16 @@
             </div>
             <label class="switch">
               <input type="checkbox" id="autoFill" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label>打字机效果</label>
+              <span class="hint">模拟人工逐字输入，关闭则一次性填充</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="typewriterEffect" checked>
               <span class="slider"></span>
             </label>
           </div>
@@ -178,6 +188,69 @@
         </div>
 
         <div class="card">
+          <h3>四则运算</h3>
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label>自动计算结果</label>
+              <span class="hint">识别到 "3+5=" 自动计算并填充</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoCalculate">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div id="calculateOptionsGroup" style="display: none;">
+            <div class="form-group">
+              <label for="calculateOutputMode">默认输出格式</label>
+              <select id="calculateOutputMode">
+                <option value="result">仅结果 (如: 8)</option>
+                <option value="equation">完整等式 (如: 3+5=8)</option>
+              </select>
+              <span class="hint">可为不同站点配置不同的输出格式</span>
+            </div>
+          </div>
+        </div>
+        <div class="card" id="calculateRulesCard" style="display: none;">
+          <div class="card-header">
+            <h3>站点计算规则</h3>
+          </div>
+          <div id="calculate-rules-list" class="rules-list">
+            <div class="empty-state">
+              <p>暂无规则，将使用默认输出格式</p>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 16px;">
+            <label>添加新规则</label>
+            <div class="form-row" style="margin-top: 8px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <input type="text" id="newCalcRulePattern" placeholder="站点匹配 (如: *.example.com)">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <select id="newCalcRuleMatchType">
+                  <option value="wildcard">通配符</option>
+                  <option value="regex">正则表达式</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top: 8px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <select id="newCalcRuleOutputMode">
+                  <option value="result">仅结果</option>
+                  <option value="equation">完整等式</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <button id="btn-add-calc-rule" class="btn btn-primary" style="width: 100%;">添加规则</button>
+              </div>
+            </div>
+            <span class="hint" style="margin-top: 8px; display: block;">
+              <b>通配符:</b> * 匹配任意字符，? 匹配单个字符<br>
+              <b>正则:</b> 使用标准正则表达式语法
+            </span>
+          </div>
+        </div>
+
+        <div class="card">
           <h3>请求设置</h3>
           <div class="form-row">
             <div class="form-group">
@@ -243,6 +316,8 @@
             <li>✅ 支持自定义选择器</li>
             <li>✅ 网站规则自动保存</li>
             <li>✅ 深色/浅色/自动主题</li>
+            <li>✅ 支持四则运算自动计算</li>
+            <li>✅ 支持Vue/React/Angular框架</li>
           </ul>
         </div>
 
@@ -261,6 +336,7 @@
 
     <input type="file" id="file-import" accept=".json" style="display: none;">
   </div>
+
   <script src="options.ts" type="module"></script>
 </body>
 

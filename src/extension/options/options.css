@@ -337,3 +337,61 @@ body {
 }
 
 .hidden { display: none !important; }
+
+/* Calculate Rules Styles */
+.calc-rule-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  gap: 12px;
+}
+
+.calc-rule-item:last-child {
+  margin-bottom: 0;
+}
+
+.calc-rule-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.calc-rule-pattern {
+  font-weight: 500;
+  margin-bottom: 4px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.calc-rule-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.calc-rule-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.calc-rule-badge.output-result {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.calc-rule-badge.output-equation {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.calc-rule-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}

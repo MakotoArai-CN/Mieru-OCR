@@ -1,3 +1,10 @@
+interface CalculateRule {
+  pattern: string;
+  matchType: 'wildcard' | 'regex';
+  outputMode: 'result' | 'equation';
+  enabled: boolean;
+}
+
 const elements: Record<string, HTMLElement | NodeListOf<HTMLElement> | null> = {};
 
 async function init() {
@@ -14,12 +21,18 @@ function cacheElements() {
   elements.sections = document.querySelectorAll('.section');
   elements.theme = document.getElementById('theme');
   elements.autoFill = document.getElementById('autoFill');
+  elements.typewriterEffect = document.getElementById('typewriterEffect');
   elements.autoSolveOnRule = document.getElementById('autoSolveOnRule');
   elements.autoSubmit = document.getElementById('autoSubmit');
   elements.captchaSelector = document.getElementById('captchaSelector');
   elements.inputSelector = document.getElementById('inputSelector');
   elements.submitSelector = document.getElementById('submitSelector');
   elements.agreementSelector = document.getElementById('agreementSelector');
+  elements.autoCalculate = document.getElementById('autoCalculate');
+  elements.calculateOutputMode = document.getElementById('calculateOutputMode');
+  elements.calculateOptionsGroup = document.getElementById('calculateOptionsGroup');
+  elements.calculateRulesCard = document.getElementById('calculateRulesCard');
+  elements.calculateRulesList = document.getElementById('calculate-rules-list');
   elements.timeout = document.getElementById('timeout');
   elements.retryCount = document.getElementById('retryCount');
   elements.debugMode = document.getElementById('debugMode');
@@ -46,6 +59,7 @@ function bindEvents() {
   document.getElementById('btn-export-config')?.addEventListener('click', exportConfig);
   document.getElementById('btn-import-config')?.addEventListener('click', () => triggerImport('config'));
   document.getElementById('btn-reset-all')?.addEventListener('click', resetAll);
+  document.getElementById('btn-add-calc-rule')?.addEventListener('click', addCalculateRule);
 
   (elements.fileImport as HTMLInputElement)?.addEventListener('change', handleFileImport);
 
@@ -54,6 +68,12 @@ function bindEvents() {
     settings.theme = (elements.theme as HTMLSelectElement).value;
     await saveSettings(settings);
     await applyTheme();
+  });
+
+  (elements.autoCalculate as HTMLInputElement)?.addEventListener('change', () => {
+    const show = (elements.autoCalculate as HTMLInputElement).checked;
+    (elements.calculateOptionsGroup as HTMLElement).style.display = show ? 'block' : 'none';
+    (elements.calculateRulesCard as HTMLElement).style.display = show ? 'block' : 'none';
   });
 }
 
@@ -89,12 +109,16 @@ function getDefaultSettings() {
   return {
     theme: 'auto',
     autoFill: true,
+    typewriterEffect: true,
     autoSolveOnRule: false,
     autoSubmit: false,
     captchaSelector: '',
     inputSelector: '',
     submitSelector: '',
     agreementSelector: '',
+    autoCalculate: false,
+    calculateOutputMode: 'result',
+    calculateRules: [],
     timeout: 30000,
     retryCount: 3,
     debugMode: false,
@@ -103,38 +127,139 @@ function getDefaultSettings() {
 
 async function loadSettings() {
   const settings = await getSettings();
+
   (elements.theme as HTMLSelectElement).value = settings.theme || 'auto';
   (elements.autoFill as HTMLInputElement).checked = settings.autoFill !== false;
+  (elements.typewriterEffect as HTMLInputElement).checked = settings.typewriterEffect !== false;
   (elements.autoSolveOnRule as HTMLInputElement).checked = settings.autoSolveOnRule || false;
   (elements.autoSubmit as HTMLInputElement).checked = settings.autoSubmit || false;
   (elements.captchaSelector as HTMLInputElement).value = settings.captchaSelector || '';
   (elements.inputSelector as HTMLInputElement).value = settings.inputSelector || '';
   (elements.submitSelector as HTMLInputElement).value = settings.submitSelector || '';
   (elements.agreementSelector as HTMLInputElement).value = settings.agreementSelector || '';
+  (elements.autoCalculate as HTMLInputElement).checked = settings.autoCalculate || false;
+  (elements.calculateOutputMode as HTMLSelectElement).value = settings.calculateOutputMode || 'result';
+
+  if (settings.autoCalculate) {
+    (elements.calculateOptionsGroup as HTMLElement).style.display = 'block';
+    (elements.calculateRulesCard as HTMLElement).style.display = 'block';
+  }
+
+  renderCalculateRules(settings.calculateRules || []);
+
   (elements.timeout as HTMLInputElement).value = String((settings.timeout || 30000) / 1000);
   (elements.retryCount as HTMLInputElement).value = String(settings.retryCount || 3);
   (elements.debugMode as HTMLInputElement).checked = settings.debugMode || false;
 }
 
+function renderCalculateRules(rules: CalculateRule[]) {
+  const container = elements.calculateRulesList as HTMLElement;
+  if (!container) return;
+
+  if (!rules || rules.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>暂无规则，将使用默认输出格式</p></div>';
+    return;
+  }
+
+  container.innerHTML = rules.map((rule, index) => `
+    <div class="calc-rule-item" data-index="${index}">
+      <div class="calc-rule-info">
+        <div class="calc-rule-pattern">${escapeHtml(rule.pattern)}</div>
+        <div class="calc-rule-meta">
+          <span class="calc-rule-badge">${rule.matchType === 'regex' ? '正则' : '通配符'}</span>
+          <span class="calc-rule-badge ${rule.outputMode === 'result' ? 'output-result' : 'output-equation'}">
+            ${rule.outputMode === 'result' ? '仅结果' : '完整等式'}
+          </span>
+        </div>
+      </div>
+      <div class="calc-rule-actions">
+        <button class="btn btn-danger btn-sm btn-delete-calc-rule" data-index="${index}">删除</button>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.btn-delete-calc-rule').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const index = parseInt((e.target as HTMLElement).dataset.index || '0');
+      await deleteCalculateRule(index);
+    });
+  });
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function addCalculateRule() {
+  const patternInput = document.getElementById('newCalcRulePattern') as HTMLInputElement;
+  const matchTypeSelect = document.getElementById('newCalcRuleMatchType') as HTMLSelectElement;
+  const outputModeSelect = document.getElementById('newCalcRuleOutputMode') as HTMLSelectElement;
+
+  const pattern = patternInput.value.trim();
+  if (!pattern) {
+    showToast('请输入站点匹配规则', 'error');
+    return;
+  }
+
+  const settings = await getSettings();
+  const rules: CalculateRule[] = settings.calculateRules || [];
+
+  rules.push({
+    pattern,
+    matchType: matchTypeSelect.value as 'wildcard' | 'regex',
+    outputMode: outputModeSelect.value as 'result' | 'equation',
+    enabled: true,
+  });
+
+  settings.calculateRules = rules;
+  await saveSettings(settings);
+
+  renderCalculateRules(rules);
+  patternInput.value = '';
+
+  showToast('规则已添加', 'success');
+}
+
+async function deleteCalculateRule(index: number) {
+  const settings = await getSettings();
+  const rules: CalculateRule[] = settings.calculateRules || [];
+
+  rules.splice(index, 1);
+  settings.calculateRules = rules;
+  await saveSettings(settings);
+
+  renderCalculateRules(rules);
+  showToast('规则已删除', 'success');
+}
+
 async function saveGeneralSettings() {
   const settings = await getSettings();
+
   settings.theme = (elements.theme as HTMLSelectElement).value;
   settings.autoFill = (elements.autoFill as HTMLInputElement).checked;
+  settings.typewriterEffect = (elements.typewriterEffect as HTMLInputElement).checked;
   settings.autoSolveOnRule = (elements.autoSolveOnRule as HTMLInputElement).checked;
   settings.autoSubmit = (elements.autoSubmit as HTMLInputElement).checked;
   settings.captchaSelector = (elements.captchaSelector as HTMLInputElement).value.trim();
   settings.inputSelector = (elements.inputSelector as HTMLInputElement).value.trim();
   settings.submitSelector = (elements.submitSelector as HTMLInputElement).value.trim();
   settings.agreementSelector = (elements.agreementSelector as HTMLInputElement).value.trim();
+
   await saveSettings(settings);
   showToast('设置已保存', 'success');
 }
 
 async function saveAdvancedSettings() {
   const settings = await getSettings();
+
+  settings.autoCalculate = (elements.autoCalculate as HTMLInputElement).checked;
+  settings.calculateOutputMode = (elements.calculateOutputMode as HTMLSelectElement).value;
   settings.timeout = parseInt((elements.timeout as HTMLInputElement).value) * 1000;
   settings.retryCount = parseInt((elements.retryCount as HTMLInputElement).value);
   settings.debugMode = (elements.debugMode as HTMLInputElement).checked;
+
   await saveSettings(settings);
   showToast('设置已保存', 'success');
 }
@@ -282,8 +407,6 @@ function showToast(message: string, type: 'success' | 'error') {
   setTimeout(() => (elements.toast as HTMLElement).classList.add('hidden'), 3000);
 }
 
-document.addEventListener('DOMContentLoaded', init);
-
 function displayVersion() {
   const manifest = chrome.runtime.getManifest();
   const versionEl = document.getElementById('app-version');
@@ -291,5 +414,7 @@ function displayVersion() {
     versionEl.textContent = manifest.version;
   }
 }
+
+document.addEventListener('DOMContentLoaded', init);
 
 export {};

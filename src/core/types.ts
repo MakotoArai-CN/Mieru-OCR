@@ -77,6 +77,13 @@ export interface SiteRule {
   updatedAt: number;
 }
 
+export interface CalculateRule {
+  pattern: string;
+  matchType: 'wildcard' | 'regex';
+  outputMode: 'result' | 'equation';
+  enabled: boolean;
+}
+
 export interface OCRConfig {
   autoDetect: boolean;
   captchaSelector: string;
@@ -91,6 +98,11 @@ export interface OCRConfig {
   whitelist: string[];
   useUploadedModel: boolean;
   theme: 'light' | 'dark' | 'auto';
+  typewriterEffect: boolean;
+  autoCalculate: boolean;
+  calculateOutputMode: 'result' | 'equation';
+  calculateRules: CalculateRule[];
+  enableNotification: boolean;
 }
 
 export interface ExtensionSettings extends OCRConfig {

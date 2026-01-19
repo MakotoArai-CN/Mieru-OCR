@@ -22,12 +22,14 @@ export class Dialog {
       .ddddocr-dialog {
         background: white;
         border-radius: 16px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 20px 60px rgba(74, 144, 226, 0.25);
         max-width: 500px;
         width: 90%;
         max-height: 80vh;
         overflow: hidden;
         animation: ddddocr-scale-in 0.3s ease;
+        display: flex;
+        flex-direction: column;
       }
       .ddddocr-dialog-header {
         background: #4A90E2;
@@ -38,12 +40,28 @@ export class Dialog {
         display: flex;
         align-items: center;
         gap: 10px;
+        flex-shrink: 0;
       }
       .ddddocr-dialog-body {
         padding: 24px;
         max-height: calc(80vh - 140px);
         overflow-y: auto;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        flex: 1;
+      }
+      .ddddocr-dialog-body::-webkit-scrollbar {
+        width: 6px;
+      }
+      .ddddocr-dialog-body::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 3px;
+      }
+      .ddddocr-dialog-body::-webkit-scrollbar-thumb {
+        background: #FFB6C1;
+        border-radius: 3px;
+      }
+      .ddddocr-dialog-body::-webkit-scrollbar-thumb:hover {
+        background: #FF69B4;
       }
       .ddddocr-dialog-content {
         color: #333;
@@ -53,10 +71,11 @@ export class Dialog {
       }
       .ddddocr-dialog-footer {
         padding: 16px 24px;
-        border-top: 1px solid #E8F0FE;
+        border-top: 1px solid #f1f5f9;
         display: flex;
         justify-content: flex-end;
         gap: 12px;
+        flex-shrink: 0;
       }
       .ddddocr-dialog-button {
         padding: 10px 24px;
@@ -72,14 +91,15 @@ export class Dialog {
         color: white;
       }
       .ddddocr-dialog-button.primary:hover {
-        background: #357ABD;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(74, 144, 226, 0.35);
       }
       .ddddocr-dialog-button.secondary {
-        background: #E8F0FE;
+        background: #f1f5f9;
         color: #4A90E2;
       }
       .ddddocr-dialog-button.secondary:hover {
-        background: #D0E2F5;
+        background: #e2e8f0;
       }
       @keyframes ddddocr-fade-in {
         from { opacity: 0; }
@@ -92,6 +112,10 @@ export class Dialog {
     `;
     document.head.appendChild(style);
     this.stylesInjected = true;
+  }
+
+  private static stopPropagation(e: Event): void {
+    e.stopPropagation();
   }
 
   static show(options: { title: string; content: string; icon?: string; confirmText?: string; onConfirm?: () => void }): void {
@@ -116,6 +140,16 @@ export class Dialog {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     this.container = overlay;
+
+    dialog.addEventListener('mousedown', this.stopPropagation);
+    dialog.addEventListener('mouseup', this.stopPropagation);
+    dialog.addEventListener('click', this.stopPropagation);
+    dialog.addEventListener('dblclick', this.stopPropagation);
+    dialog.addEventListener('wheel', this.stopPropagation);
+    dialog.addEventListener('keydown', this.stopPropagation);
+    dialog.addEventListener('keyup', this.stopPropagation);
+    dialog.addEventListener('keypress', this.stopPropagation);
+    dialog.addEventListener('contextmenu', this.stopPropagation);
 
     dialog.querySelector('.ddddocr-dialog-button')?.addEventListener('click', () => {
       options.onConfirm?.();
@@ -150,6 +184,16 @@ export class Dialog {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     this.container = overlay;
+
+    dialog.addEventListener('mousedown', this.stopPropagation);
+    dialog.addEventListener('mouseup', this.stopPropagation);
+    dialog.addEventListener('click', this.stopPropagation);
+    dialog.addEventListener('dblclick', this.stopPropagation);
+    dialog.addEventListener('wheel', this.stopPropagation);
+    dialog.addEventListener('keydown', this.stopPropagation);
+    dialog.addEventListener('keyup', this.stopPropagation);
+    dialog.addEventListener('keypress', this.stopPropagation);
+    dialog.addEventListener('contextmenu', this.stopPropagation);
 
     dialog.querySelector('.confirm-btn')?.addEventListener('click', () => {
       options.onConfirm?.();

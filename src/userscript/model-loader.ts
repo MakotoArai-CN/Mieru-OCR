@@ -171,10 +171,19 @@ function downloadJSON<T>(url: string, timeout = 30000): Promise<T> {
 }
 
 function buildURL(mirror: string, path: string): string {
-  if (mirror.includes('jsdelivr')) {
-    return `${mirror}/${CONSTANTS.MODEL_REPO}@${CONSTANTS.MODEL_BRANCH}/${path}`;
+  const normalizedMirror = mirror.replace(/\/+$/, '');
+  const normalizedPath = path.replace(/^\/+/, '');
+
+  if (normalizedMirror.includes('jsdelivr')) {
+    return `${normalizedMirror}/${CONSTANTS.MODEL_REPO}@${CONSTANTS.MODEL_BRANCH}/${normalizedPath}`;
   }
-  return `${mirror}/${CONSTANTS.MODEL_REPO}/${CONSTANTS.MODEL_BRANCH}/${path}`;
+
+  const repoToken = `/${CONSTANTS.MODEL_REPO}/`;
+  if (normalizedMirror.includes(repoToken)) {
+    return `${normalizedMirror}/${normalizedPath}`;
+  }
+
+  return `${normalizedMirror}/${CONSTANTS.MODEL_REPO}/${CONSTANTS.MODEL_BRANCH}/${normalizedPath}`;
 }
 
 export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: string[] }> {
@@ -207,7 +216,7 @@ export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: strin
   for (let i = 0; i < CONSTANTS.GITHUB_MIRRORS.length; i++) {
     const mirror = CONSTANTS.GITHUB_MIRRORS[i];
     try {
-      console.log(`🌐 镜像 [${i + 1}/${CONSTANTS.GITHUB_MIRRORS.length}]`);
+      console.log(`🌐 镜像 [${i + 1}/${CONSTANTS.GITHUB_MIRRORS.length}]: ${mirror}`);
       const [modelData, charsetsData] = await Promise.all([
         downloadFile(buildURL(mirror, CONSTANTS.MODEL_PATH)),
         downloadJSON<string[]>(buildURL(mirror, CONSTANTS.CHARSETS_PATH)),
