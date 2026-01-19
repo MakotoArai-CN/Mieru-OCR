@@ -117,3 +117,7 @@ bun run build
 ## 小声喵喵
 
 我是干运维的，我也比较懒，这个项目是出于方便运维使用而开发的小玩具，因为一般都是自己在用，所以没考虑啥安全性什么的。大家有啥意见或者建议可以在项目中提交issue或者PR，我看到会及时处理（因为平时在上班，时间不是很多😭）。如果觉得这个项目不错，也可以给我点个小小的star，鼓励一下🤗
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=MakotoArai-CN/ddddocr-webjs&type=date&legend=top-left)](https://www.star-history.com/#MakotoArai-CN/ddddocr-webjs&type=date&legend=top-left)
