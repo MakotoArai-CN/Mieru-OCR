@@ -16,6 +16,9 @@
 > 由于浏览器的限制以及扩展的限制，模型文件和字符集全部存储与浏览器IndexedDB中，考虑到会占用大量存储，不建议关闭站点白名单使用。如果有需要，建议使用浏览器扩展版本。
 >
 > 脚本建议使用场景：单个站点频繁输入验证码/单个站点频繁测试
+>
+> 截止2026-01-28，浏览器扩展版本已经通过edge浏览器应用商店的审核，现在已经可以通过应用商店安装：[https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl](https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl)
+> Chrome应用商店由于注册账号需要支付5美刀，本项目也是非盈利项目，所以没有上架，Chrome浏览器只能通过开发者模式安装浏览器扩展
 
 ## ✨ 特性
 
@@ -79,7 +82,7 @@ bun run build
 - [x] 添加更多设置选项
 - [x] 适配vue/react等前端框架
 - [x] 修正脚本执行顺序，实现模块化
-- [ ] 支持更多模型
+- [ ] 适配动态生成的弹窗中的验证码
 
 ## 📝 许可
 
