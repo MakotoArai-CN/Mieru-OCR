@@ -82,13 +82,22 @@ bun run build
 - [x] 添加更多设置选项
 - [x] 适配vue/react等前端框架
 - [x] 修正脚本执行顺序，实现模块化
-- [ ] 适配动态生成的弹窗中的验证码（部分站点动态生成的登录弹窗目前无法进行检测，识别）
+- [x] 适配动态生成的弹窗中的验证码
 
 ## 📝 许可
 
 本项目沿用原项目 [ddddocr](https://github.com/sml2h3/ddddocr) 的许可证[MIT License](./LICENSE)
 
 ## 更新日志
+
+- V1.1.2-beta
+  - 修复部分站点登录弹窗无法识别验证码的bug
+  - 修复部分站点验证码输入框错误识别的bug
+  - 修复调试模式没有日志的bug
+  - 新增元素猜测功能，选择验证码元素后，程序会尝试猜测验证码输入框元素，反之亦然
+  - 新增用户协议自动勾选用户协议/隐私协议功能
+  - 完善保存的网站规则，支持单个域名多个路由规则
+  - 该版本的油猴脚本数据库不兼容旧版，如果更新出现无法运行请打开开发者工具，找到'应用程序'->'IndexedDB'，选中'DDDDOCRDB'和'WASMCacheDB'删除，即可，但是请注意备份配置
 
 - V1.1.1
   - 修复单页面多个验证码只能识别一个的bug
@@ -122,7 +131,7 @@ bun run build
 - [ddddocr](https://github.com/sml2h3/ddddocr) - 原项目
 - [ddddocr-js](https://github.com/J3n5en/ddddocr-js) - JavaScript移植原版项目
 - [onnxruntime-web](https://github.com/microsoft/onnxruntime-web) - 模型推理
-- [ ICON-ICONS](https://icon-icons.com/zh) - 项目图标出处
+- [ICON-ICONS](https://icon-icons.com/zh) - 项目图标出处
 
 ## 小声喵喵
 

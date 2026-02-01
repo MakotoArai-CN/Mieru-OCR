@@ -1,5 +1,7 @@
 import { CONSTANTS } from '@core/config';
 
+const DB_VERSION = 3;
+
 const WASM_CDN_SOURCES = CONSTANTS.CDN_SOURCES.map(cdn => {
   if (cdn.includes('jsdelivr')) return `${cdn}/npm/onnxruntime-web@${CONSTANTS.WASM_VERSION}/dist/`;
   if (cdn.includes('unpkg')) return `${cdn}/onnxruntime-web@${CONSTANTS.WASM_VERSION}/dist/`;
@@ -28,18 +30,73 @@ class WASMCacheManager {
   private memoryCache = new Map<string, ArrayBuffer>();
 
   async init(): Promise<void> {
+    if (this.db) return;
+
+    try {
+      await this.openDatabase();
+    } catch (error) {
+      if (error instanceof Error && error.name === 'VersionError') {
+        await this.handleVersionError();
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  private openDatabase(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 2);
-      request.onerror = () => reject(request.error);
+      const request = indexedDB.open(this.dbName, DB_VERSION);
+
+      request.onerror = () => {
+        const error = request.error;
+        if (error) {
+          reject(error);
+        } else {
+          reject(new Error('数据库打开失败'));
+        }
+      };
+
       request.onsuccess = () => {
         this.db = request.result;
+        this.db.onerror = (event) => {
+          console.warn('[WASMCache] 数据库错误:', event);
+        };
         resolve();
       };
+
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(this.storeName)) {
           db.createObjectStore(this.storeName);
         }
+      };
+
+      request.onblocked = () => {
+        console.warn('[WASMCache] 数据库被阻塞');
+      };
+    });
+  }
+
+  private async handleVersionError(): Promise<void> {
+    console.warn('[WASMCache] 检测到数据库版本冲突，正在重建数据库...');
+
+    return new Promise((resolve, reject) => {
+      const deleteRequest = indexedDB.deleteDatabase(this.dbName);
+
+      deleteRequest.onerror = () => {
+        reject(new Error('无法删除旧数据库'));
+      };
+
+      deleteRequest.onsuccess = () => {
+        console.log('[WASMCache] 旧数据库已删除，正在创建新数据库...');
+        this.openDatabase().then(resolve).catch(reject);
+      };
+
+      deleteRequest.onblocked = () => {
+        console.warn('[WASMCache] 删除数据库被阻塞');
+        setTimeout(() => {
+          this.openDatabase().then(resolve).catch(reject);
+        }, 100);
       };
     });
   }
@@ -48,67 +105,99 @@ class WASMCacheManager {
     if (this.memoryCache.has(filename)) {
       return this.memoryCache.get(filename)!;
     }
+
     if (!this.db) await this.init();
+
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.get(filename);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        const cached = request.result as WASMCacheItem | undefined;
-        if (!cached) {
-          resolve(null);
-          return;
-        }
-        if (Date.now() - cached.timestamp > CONSTANTS.CACHE_DURATION || cached.version !== CONSTANTS.WASM_VERSION) {
-          this.delete(filename);
-          resolve(null);
-          return;
-        }
-        this.memoryCache.set(filename, cached.data);
-        resolve(cached.data);
-      };
+      try {
+        const transaction = this.db!.transaction([this.storeName], 'readonly');
+        const store = transaction.objectStore(this.storeName);
+        const request = store.get(filename);
+
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const cached = request.result as WASMCacheItem | undefined;
+
+          if (!cached) {
+            resolve(null);
+            return;
+          }
+
+          if (Date.now() - cached.timestamp > CONSTANTS.CACHE_DURATION || cached.version !== CONSTANTS.WASM_VERSION) {
+            this.delete(filename).catch(() => {});
+            resolve(null);
+            return;
+          }
+
+          this.memoryCache.set(filename, cached.data);
+          resolve(cached.data);
+        };
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
   async set(filename: string, data: ArrayBuffer): Promise<void> {
     if (!this.db) await this.init();
+
     this.memoryCache.set(filename, data);
+
     const cached: WASMCacheItem = {
       data,
       timestamp: Date.now(),
       version: CONSTANTS.WASM_VERSION,
     };
+
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.put(cached, filename);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+      try {
+        const transaction = this.db!.transaction([this.storeName], 'readwrite');
+        const store = transaction.objectStore(this.storeName);
+        const request = store.put(cached, filename);
+
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
   async delete(filename: string): Promise<void> {
     this.memoryCache.delete(filename);
+
     if (!this.db) await this.init();
+
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.delete(filename);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+      try {
+        const transaction = this.db!.transaction([this.storeName], 'readwrite');
+        const store = transaction.objectStore(this.storeName);
+        const request = store.delete(filename);
+
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
   async clear(): Promise<void> {
     this.memoryCache.clear();
+
     if (!this.db) await this.init();
+
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.clear();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+      try {
+        const transaction = this.db!.transaction([this.storeName], 'readwrite');
+        const store = transaction.objectStore(this.storeName);
+        const request = store.clear();
+
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 }
@@ -149,11 +238,13 @@ async function downloadWASM(filename: string): Promise<ArrayBuffer> {
 
 async function preloadAllWASM(): Promise<void> {
   console.log('📦 开始预下载 WASM 文件');
+
   await Promise.allSettled(
     WASM_FILES.map(async (filename) => {
-      const cached = await wasmCache.get(filename);
-      if (cached) return;
       try {
+        const cached = await wasmCache.get(filename);
+        if (cached) return;
+
         const data = await downloadWASM(filename);
         await wasmCache.set(filename, data);
       } catch (error) {
@@ -164,12 +255,19 @@ async function preloadAllWASM(): Promise<void> {
 }
 
 export async function setupWASMCache(): Promise<void> {
-  await wasmCache.init();
+  try {
+    await wasmCache.init();
+  } catch (error) {
+    console.warn('[WASMCache] 初始化失败:', error);
+  }
+
   preloadAllWASM().catch(() => {});
 
   const originalFetch = window.fetch;
+
   window.fetch = async function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
     const filename = WASM_FILES.find(file => url.includes(file));
     if (!filename) {
       return originalFetch.call(this, input, init);
@@ -177,10 +275,12 @@ export async function setupWASMCache(): Promise<void> {
 
     try {
       let data = await wasmCache.get(filename);
+
       if (!data) {
         data = await downloadWASM(filename);
         wasmCache.set(filename, data).catch(() => {});
       }
+
       return new Response(data, {
         status: 200,
         headers: { 'Content-Type': 'application/wasm', 'Content-Length': String(data.byteLength) },

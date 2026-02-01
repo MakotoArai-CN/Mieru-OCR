@@ -35,7 +35,7 @@ export default defineConfig({
     },
   },
   build: {
-    minify: 'terser',
+    // minify: 'terser',
     rollupOptions: {
       external: ['onnxruntime-web'],
     },

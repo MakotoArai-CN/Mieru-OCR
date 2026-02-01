@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DDDD OCR - 设置</title>
   <link rel="stylesheet" href="options.css">
 </head>
-
 <body>
   <div class="options-container">
     <aside class="sidebar">
@@ -19,12 +17,12 @@
         </svg>
         <h1>DDDD OCR</h1>
       </div>
+
       <nav class="sidebar-nav">
         <a href="#general" class="nav-item active" data-section="general">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" />
-            <path
-              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
           <span>基本设置</span>
         </a>
@@ -51,12 +49,14 @@
           <span>关于</span>
         </a>
       </nav>
+
       <div class="sidebar-footer">
-        <span class="version">v1.1.0</span>
+        <span class="version">v1.1.1</span>
       </div>
     </aside>
 
     <main class="main-content">
+      <!-- 基本设置 -->
       <section id="general" class="section active">
         <div class="section-header">
           <h2>基本设置</h2>
@@ -87,6 +87,7 @@
               <span class="slider"></span>
             </label>
           </div>
+
           <div class="form-group switch-group">
             <div class="switch-label">
               <label>打字机效果</label>
@@ -97,6 +98,7 @@
               <span class="slider"></span>
             </label>
           </div>
+
           <div class="form-group switch-group">
             <div class="switch-label">
               <label>匹配规则时自动识别</label>
@@ -107,13 +109,25 @@
               <span class="slider"></span>
             </label>
           </div>
+
           <div class="form-group switch-group">
             <div class="switch-label">
               <label>自动提交表单</label>
-              <span class="hint">填充后自动提交（谨慎使用）</span>
+              <span class="hint">填充后自动提交（谨慎使用，验证码识别准确率并不是100%）</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="autoSubmit">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label>自动勾选协议</label>
+              <span class="hint">自动勾选用户协议、隐私政策等复选框</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="autoCheckAgreement" checked>
               <span class="slider"></span>
             </label>
           </div>
@@ -126,20 +140,27 @@
             <input type="text" id="captchaSelector" placeholder="例如: img.captcha, #captchaImage">
             <span class="hint">留空则自动检测</span>
           </div>
+
           <div class="form-group">
             <label for="inputSelector">输入框选择器</label>
             <input type="text" id="inputSelector" placeholder="例如: input#captcha">
             <span class="hint">留空则自动查找</span>
           </div>
+
           <div class="form-group">
             <label for="submitSelector">提交按钮选择器</label>
             <input type="text" id="submitSelector" placeholder="例如: button[type=submit]">
             <span class="hint">留空则自动查找</span>
           </div>
+
           <div class="form-group">
-            <label for="agreementSelector">用户协议选择器</label>
-            <input type="text" id="agreementSelector" placeholder="例如: input#agree">
-            <span class="hint">自动勾选用户协议复选框</span>
+            <label>协议复选框选择器</label>
+            <div id="agreementSelectors" class="selector-list"></div>
+            <div class="form-row" style="margin-top: 8px;">
+              <input type="text" id="newAgreementSelector" placeholder="例如: input#agree, .privacy-checkbox">
+              <button id="btn-add-agreement" class="btn btn-secondary btn-sm">添加</button>
+            </div>
+            <span class="hint">支持添加多个协议复选框选择器</span>
           </div>
         </div>
 
@@ -148,6 +169,7 @@
         </div>
       </section>
 
+      <!-- 网站规则 -->
       <section id="rules" class="section">
         <div class="section-header">
           <h2>网站规则</h2>
@@ -171,16 +193,41 @@
         </div>
 
         <div class="card">
+          <h3>编辑规则</h3>
+          <div class="form-group">
+            <label for="edit-rule-key">规则标识 (URL/主机名)</label>
+            <input type="text" id="edit-rule-key" placeholder="例如: example.com 或完整URL" readonly>
+            <input type="hidden" id="edit-rule-original-key">
+          </div>
+          <div class="form-group">
+            <label for="edit-rule-selector">验证码选择器</label>
+            <input type="text" id="edit-rule-selector" placeholder="例如: img.captcha">
+          </div>
+          <div class="form-group">
+            <label for="edit-rule-input">输入框选择器</label>
+            <input type="text" id="edit-rule-input" placeholder="例如: input#code">
+          </div>
+          <div class="form-group">
+            <label for="edit-rule-url">完整URL匹配</label>
+            <input type="text" id="edit-rule-url" placeholder="留空则使用主机名匹配">
+          </div>
+          <div class="button-group">
+            <button id="btn-save-edit-rule" class="btn btn-primary">保存修改</button>
+            <button id="btn-cancel-edit-rule" class="btn btn-secondary">取消</button>
+          </div>
+        </div>
+
+        <div class="card">
           <h3>批量添加规则</h3>
           <div class="form-group">
             <label for="bulk-rules">规则列表 (JSON格式)</label>
-            <textarea id="bulk-rules" rows="6"
-              placeholder='[{"hostname": "example.com", "selector": "img.captcha", "inputSelector": "#code"}]'></textarea>
+            <textarea id="bulk-rules" rows="6" placeholder='[{"hostname": "example.com", "selector": "img.captcha", "inputSelector": "#code"}]'></textarea>
           </div>
           <button id="btn-add-bulk-rules" class="btn btn-primary">添加规则</button>
         </div>
       </section>
 
+      <!-- 高级选项 -->
       <section id="advanced" class="section">
         <div class="section-header">
           <h2>高级选项</h2>
@@ -199,6 +246,7 @@
               <span class="slider"></span>
             </label>
           </div>
+
           <div id="calculateOptionsGroup" style="display: none;">
             <div class="form-group">
               <label for="calculateOutputMode">默认输出格式</label>
@@ -210,6 +258,7 @@
             </div>
           </div>
         </div>
+
         <div class="card" id="calculateRulesCard" style="display: none;">
           <div class="card-header">
             <h3>站点计算规则</h3>
@@ -269,7 +318,7 @@
           <div class="form-group switch-group">
             <div class="switch-label">
               <label>调试模式</label>
-              <span class="hint">在控制台输出详细日志</span>
+              <span class="hint">在控制台输出详细日志，方便排查问题</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="debugMode">
@@ -292,6 +341,7 @@
         </div>
       </section>
 
+      <!-- 关于 -->
       <section id="about" class="section">
         <div class="section-header">
           <h2>关于</h2>
@@ -301,7 +351,7 @@
         <div class="card">
           <h3>版本信息</h3>
           <div class="info-list">
-            <div class="info-item"><span>版本:</span><span id="app-version">-</span></div>
+            <div class="info-item"><span>版本:</span><span class="version">-</span></div>
             <div class="info-item"><span>模型版本:</span><span>1.5.1</span></div>
             <div class="info-item"><span>ONNX Runtime:</span><span>1.17.0</span></div>
           </div>
@@ -310,21 +360,27 @@
         <div class="card">
           <h3>特性</h3>
           <ul class="feature-list">
-            <li>✅ 完全离线运行，无需网络</li>
-            <li>✅ 支持 img/canvas/svg 验证码</li>
-            <li>✅ 智能自动检测验证码</li>
-            <li>✅ 支持自定义选择器</li>
-            <li>✅ 网站规则自动保存</li>
-            <li>✅ 深色/浅色/自动主题</li>
-            <li>✅ 支持四则运算自动计算</li>
-            <li>✅ 支持Vue/React/Angular框架</li>
+            <li>完全离线运行，无需网络</li>
+            <li>支持 img/canvas/svg 验证码</li>
+            <li>智能自动检测验证码</li>
+            <li>支持自定义选择器</li>
+            <li>网站规则自动保存</li>
+            <li>深色/浅色/自动主题</li>
+            <li>支持四则运算自动计算</li>
+            <li>支持Vue/React/Angular框架</li>
+            <li>智能猜测关联元素</li>
+            <li>详细的调试日志</li>
           </ul>
         </div>
 
         <div class="card">
           <h3>开源</h3>
           <p style="color: var(--text-secondary); font-size: 14px;">
-            基于 <a href="https://github.com/sml2h3/ddddocr" target="_blank" style="color: var(--primary);">ddddocr</a> 项目
+            基于 <a href="https://github.com/sml2h3/ddddocr" target="_blank" style="color: var(--primary);">ddddocr</a> 项目开发
+            ，遵循 MIT 许可证开源发布。如果项目对你有帮助，请帮忙点个Star，这对我很重要！
+          </p>
+          <p style="color: var(--text-secondary); font-size: 14px;">
+            仓库地址：<a href="https://github.com/MakotoArai-CN/ddddocr-webjs" target="_blank" style="color: var(--primary);text-decoration-line: none;">ddddocr-webjs</a>
           </p>
         </div>
       </section>
@@ -339,5 +395,4 @@
 
   <script src="options.ts" type="module"></script>
 </body>
-
 </html>

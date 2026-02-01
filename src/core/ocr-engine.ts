@@ -101,7 +101,7 @@ export class OCREngine {
     const results = await this.session.run(feeds);
     const output = results.output;
     const text = this.decodeOutput(output);
-    console.log(`✅ 识别完成: ${text} (耗时: ${Date.now() - startTime}ms)`);
+    console.log(`识别完成: ${text} (耗时: ${Date.now() - startTime}ms)`);
     return { text };
   }
 

@@ -71,4 +71,4 @@ async function handleRecognize(message: any, sendResponse: (response: any) => vo
   }
 }
 
-console.log('✅ Offscreen OCR 初始化完成');
+console.log('Offscreen OCR 初始化完成');

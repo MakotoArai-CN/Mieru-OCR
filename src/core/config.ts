@@ -13,16 +13,32 @@ export const CONSTANTS = {
     'checkcode', 'yzm', 'capimg', 'signCaptcha', 'imgcode',
     'seccode', 'validcode', 'yanzhengma', 'validatecode', 'piccode',
     'imgverify', 'codeimg', 'randcode', 'identify', 'kaptcha',
+    'verifycode', 'imgCaptcha', 'captchaImg', 'vcodeImg',
   ],
   INPUT_KEYWORDS: [
     'captcha', 'verify', 'code', 'vcode', 'authcode', '验证码',
     'checkcode', 'yzm', 'validatecode', 'validcode', 'seccode',
     'imgcode', 'randcode', 'identify', 'kaptcha', 'answer',
+    'verifycode', 'captchaInput', 'vcodeInput',
   ],
-  MIN_CAPTCHA_WIDTH: 40,
+  AGREEMENT_KEYWORDS: [
+    'agree', 'agreement', 'accept', 'terms', 'policy', 'privacy',
+    '同意', '协议', '条款', '隐私', '用户协议', '隐私政策',
+    'tos', 'consent', 'checkbox', 'check',
+  ],
+  EXCLUDED_INPUT_TYPES: [
+    'password', 'email', 'tel', 'phone', 'mobile', 'hidden',
+    'submit', 'button', 'reset', 'file', 'image', 'checkbox', 'radio',
+  ],
+  EXCLUDED_INPUT_NAMES: [
+    'username', 'user', 'account', 'email', 'phone', 'mobile', 'tel',
+    'password', 'pwd', 'pass', 'name', 'realname', 'nickname',
+    'search', 'query', 'q', 'keyword', 'address', 'city',
+  ],
+  MIN_CAPTCHA_WIDTH: 50,
   MIN_CAPTCHA_HEIGHT: 20,
-  MAX_CAPTCHA_WIDTH: 500,
-  MAX_CAPTCHA_HEIGHT: 200,
+  MAX_CAPTCHA_WIDTH: 400,
+  MAX_CAPTCHA_HEIGHT: 150,
   AUTO_DETECT_INTERVAL: 2000,
   GITHUB_MIRRORS: [
     'https://raw.githubusercontent.com',
@@ -30,6 +46,10 @@ export const CONSTANTS = {
     'https://ghfast.top/https://raw.githubusercontent.com',
     'https://mirror.ghproxy.com/https://raw.githubusercontent.com',
     'https://raw.kkgithub.com',
+    'https://gh-proxy.org',
+    'https://hk.gh-proxy.org',
+    'https://cdn.gh-proxy.org',
+    'https://edgeone.gh-proxy.org',
     'https://github.moeyy.xyz/https://raw.githubusercontent.com',
     'https://ghps.cc/https://raw.githubusercontent.com',
     'https://cors.isteed.cc/github.com/MakotoArai-CN/ddddocr-webjs/raw/main',
@@ -45,11 +65,14 @@ export const CONSTANTS = {
 };
 
 export const DEFAULT_CONFIG: OCRConfig = {
+  debugMode: false,
   autoDetect: true,
   captchaSelector: '',
   inputSelector: '',
   submitSelector: '',
   agreementSelector: '',
+  agreementSelectors: [],
+  autoCheckAgreement: true,
   useLocalModel: false,
   localModelPath: '',
   localCharsetsPath: '',
@@ -57,6 +80,7 @@ export const DEFAULT_CONFIG: OCRConfig = {
   enableWhitelist: true,
   whitelist: [],
   useUploadedModel: false,
+  useUploadedWasm: false,
   theme: 'auto',
   typewriterEffect: true,
   autoCalculate: false,
@@ -72,7 +96,6 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   autoFill: true,
   autoSubmit: false,
   autoSolveOnRule: true,
-  debugMode: false,
   historyRetention: 7,
 };
 
@@ -102,6 +125,7 @@ export function getThemeColors(theme: 'light' | 'dark' | 'auto'): Record<string,
       '--border': '#27272a',
     };
   }
+
   return {
     '--primary': '#4A90E2',
     '--primary-hover': '#357ABD',
@@ -120,4 +144,67 @@ export function getThemeColors(theme: 'light' | 'dark' | 'auto'): Record<string,
     '--text-muted': '#a1a1aa',
     '--border': '#e4e4e7',
   };
+}
+
+export class Logger {
+  private static debugMode = false;
+  private static prefix = '[DDDD OCR]';
+
+  static setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+  }
+
+  static isDebugMode(): boolean {
+    return this.debugMode;
+  }
+
+  static debug(...args: any[]): void {
+    if (this.debugMode) {
+      console.log(`${this.prefix} [DEBUG]`, ...args);
+    }
+  }
+
+  static info(...args: any[]): void {
+    if (this.debugMode) {
+      console.info(`${this.prefix} [INFO]`, ...args);
+    }
+  }
+
+  static warn(...args: any[]): void {
+    console.warn(`${this.prefix} [WARN]`, ...args);
+  }
+
+  static error(...args: any[]): void {
+    console.error(`${this.prefix} [ERROR]`, ...args);
+  }
+
+  static group(label: string): void {
+    if (this.debugMode) {
+      console.group(`${this.prefix} ${label}`);
+    }
+  }
+
+  static groupEnd(): void {
+    if (this.debugMode) {
+      console.groupEnd();
+    }
+  }
+
+  static table(data: any): void {
+    if (this.debugMode) {
+      console.table(data);
+    }
+  }
+
+  static time(label: string): void {
+    if (this.debugMode) {
+      console.time(`${this.prefix} ${label}`);
+    }
+  }
+
+  static timeEnd(label: string): void {
+    if (this.debugMode) {
+      console.timeEnd(`${this.prefix} ${label}`);
+    }
+  }
 }

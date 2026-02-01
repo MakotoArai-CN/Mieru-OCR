@@ -57,7 +57,7 @@ export class EventEmitter<T extends Record<string, any>> {
       try {
         callback(data);
       } catch (error) {
-        console.error(`事件处理错误 [${String(event)}]:`, error);
+        console.error(`Event handler error [${String(event)}]:`, error);
       }
     });
   }
@@ -71,10 +71,16 @@ export interface SiteRule {
   selector: string;
   inputSelector?: string;
   submitSelector?: string;
-  agreementSelector?: string;
+  agreementSelectors?: string[];
+  fullUrl?: string;
+  urlPattern?: string;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SiteRuleStorage {
+  [key: string]: SiteRule & { hostname: string };
 }
 
 export interface CalculateRule {
@@ -85,11 +91,14 @@ export interface CalculateRule {
 }
 
 export interface OCRConfig {
+  debugMode: boolean;
   autoDetect: boolean;
   captchaSelector: string;
   inputSelector: string;
   submitSelector: string;
   agreementSelector: string;
+  agreementSelectors: string[];
+  autoCheckAgreement: boolean;
   useLocalModel: boolean;
   localModelPath: string;
   localCharsetsPath: string;
@@ -97,6 +106,7 @@ export interface OCRConfig {
   enableWhitelist: boolean;
   whitelist: string[];
   useUploadedModel: boolean;
+  useUploadedWasm: boolean;
   theme: 'light' | 'dark' | 'auto';
   typewriterEffect: boolean;
   autoCalculate: boolean;
@@ -111,6 +121,20 @@ export interface ExtensionSettings extends OCRConfig {
   autoFill: boolean;
   autoSubmit: boolean;
   autoSolveOnRule: boolean;
-  debugMode: boolean;
   historyRetention: number;
+}
+
+export interface DetectionContext {
+  url: string;
+  hostname: string;
+  pathname: string;
+  timestamp: number;
+}
+
+export interface ResourceStatus {
+  modelReady: boolean;
+  modelSize: number;
+  wasmReady: boolean;
+  wasmFiles: string[];
+  ortReady: boolean;
 }
