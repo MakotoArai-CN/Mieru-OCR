@@ -81,7 +81,7 @@ async function handleMessage(
   sendResponse: (response: any) => void
 ): Promise<void> {
   const debugMode = await getDebugMode();
-  
+
   if (debugMode) {
     console.log('[Service Worker] 收到消息:', message.action, message);
   }
@@ -134,7 +134,15 @@ async function handleMessage(
         }
         sendResponse({ success: true });
         break;
-
+      case 'recordStats':
+        await handleRecordStats(message, sendResponse);
+        break;
+      case 'getStats':
+        await handleGetStats(sendResponse);
+        break;
+      case 'clearStats':
+        await handleClearStats(sendResponse);
+        break;
       default:
         sendResponse({ success: false, error: '未知操作: ' + message.action });
     }
@@ -208,16 +216,16 @@ async function handleSaveSettings(
   sendResponse: (response: any) => void
 ): Promise<void> {
   await chrome.storage.local.set({ settings: message.settings });
-  
+
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
     if (tab.id && tab.url?.startsWith('http')) {
       try {
         await chrome.tabs.sendMessage(tab.id, { action: 'updateSettings' });
-      } catch {}
+      } catch { }
     }
   }
-  
+
   sendResponse({ success: true });
 }
 
@@ -237,7 +245,7 @@ async function handleSaveSiteRule(
   const ruleKey = rule.fullUrl || rule.urlPattern || hostname;
 
   const existingRule = rules[ruleKey] || {};
-  
+
   rules[ruleKey] = {
     ...existingRule,
     ...rule,
@@ -249,9 +257,9 @@ async function handleSaveSiteRule(
   };
 
   await chrome.storage.local.set({ siteRules: rules });
-  
+
   console.log('[Service Worker] 规则已保存:', ruleKey, rules[ruleKey]);
-  
+
   sendResponse({ success: true });
 }
 
@@ -286,7 +294,7 @@ async function handleDeleteSiteRule(
   const rules = result.siteRules || {};
 
   const keyToDelete = ruleKey || hostname;
-  
+
   if (rules[keyToDelete]) {
     delete rules[keyToDelete];
     console.log('[Service Worker] 规则已删除:', keyToDelete);
@@ -310,8 +318,70 @@ async function handleImportConfig(
   sendResponse({ success: true });
 }
 
+interface SiteStats {
+  count: number;
+  lastTime: number;
+  totalTime: number;
+}
+
+interface StatsData {
+  sites: Record<string, SiteStats>;
+  total: number;
+  updated: number;
+}
+
+const MAX_STATS_SITES = 100;
+
+async function getStatsData(): Promise<StatsData> {
+  const result = await chrome.storage.local.get('recognitionStats');
+  return result.recognitionStats || { sites: {}, total: 0, updated: Date.now() };
+}
+
+async function saveStatsData(data: StatsData): Promise<void> {
+  data.updated = Date.now();
+  await chrome.storage.local.set({ recognitionStats: data });
+}
+
+async function handleRecordStats(
+  message: any,
+  sendResponse: (response: any) => void
+): Promise<void> {
+  const { hostname, elapsed } = message;
+  const stats = await getStatsData();
+
+  if (!stats.sites[hostname]) {
+    if (Object.keys(stats.sites).length >= MAX_STATS_SITES) {
+      const entries = Object.entries(stats.sites);
+      entries.sort((a, b) => a[1].lastTime - b[1].lastTime);
+      const toRemove = entries.slice(0, 10);
+      for (const [key] of toRemove) {
+        delete stats.sites[key];
+      }
+    }
+    stats.sites[hostname] = { count: 0, lastTime: 0, totalTime: 0 };
+  }
+
+  stats.sites[hostname].count++;
+  stats.sites[hostname].lastTime = Date.now();
+  stats.sites[hostname].totalTime += elapsed || 0;
+  stats.total++;
+
+  await saveStatsData(stats);
+  sendResponse({ success: true });
+}
+
+async function handleGetStats(sendResponse: (response: any) => void): Promise<void> {
+  const stats = await getStatsData();
+  sendResponse({ success: true, stats });
+}
+
+async function handleClearStats(sendResponse: (response: any) => void): Promise<void> {
+  await saveStatsData({ sites: {}, total: 0, updated: Date.now() });
+  sendResponse({ success: true });
+}
+
 function getDefaultSettings(): ExtensionSettings {
-  return {
+return {
     autoDetect: true,
     captchaSelector: '',
     inputSelector: '',
@@ -326,6 +396,7 @@ function getDefaultSettings(): ExtensionSettings {
     enableWhitelist: true,
     whitelist: [],
     useUploadedModel: false,
+    useUploadedWasm: false,
     theme: 'auto',
     typewriterEffect: true,
     autoCalculate: false,

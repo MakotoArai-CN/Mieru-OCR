@@ -333,37 +333,89 @@ export class CaptchaDetector {
     return this.findRelatedInput(element) !== null;
   }
 
+  private findClosestInputInContainer(
+    container: Element,
+    captchaRect: DOMRect,
+    maxDistance: number = Infinity
+  ): HTMLInputElement | null {
+    const inputs = container.querySelectorAll('input[type="text"], input:not([type])');
+
+    let closest: HTMLInputElement | null = null;
+    let closestDistance = Infinity;
+    let closestHasKeyword = false;
+
+    for (const input of inputs) {
+      const htmlInput = input as HTMLInputElement;
+      if (!this.isValidCaptchaInput(htmlInput)) continue;
+
+      const inputRect = input.getBoundingClientRect();
+      const distance = this.calculateDistance(captchaRect, inputRect);
+
+      // 超出最大距离限制，跳过
+      if (distance > maxDistance) continue;
+
+      const hasKeyword = this.isCaptchaInputByName(htmlInput);
+
+      // 优先选择：1. 距离更近 2. 距离相近时优先有关键字的
+      if (
+        distance < closestDistance ||
+        (Math.abs(distance - closestDistance) < 20 && hasKeyword && !closestHasKeyword)
+      ) {
+        closestDistance = distance;
+        closest = htmlInput;
+        closestHasKeyword = hasKeyword;
+      }
+    }
+
+    return closest;
+  }
+
   findRelatedInput(element: Element): HTMLInputElement | null {
-    let parent = element.parentElement;
-    let depth = 0;
-    while (parent && depth < 5) {
-      const input = this.findCaptchaInput(parent);
+    const captchaRect = element.getBoundingClientRect();
+
+    // 策略1: 在直接父容器中查找最近的输入框（不要求关键字）
+    const parent = element.parentElement;
+    if (parent) {
+      const input = this.findClosestInputInContainer(parent, captchaRect);
       if (input) return input;
-      parent = parent.parentElement;
+    }
+
+    // 策略2: 向上遍历2-3层，基于距离查找
+    let ancestor = parent?.parentElement;
+    let depth = 0;
+    while (ancestor && depth < 3) {
+      const input = this.findClosestInputInContainer(ancestor, captchaRect, 150);
+      if (input) return input;
+      ancestor = ancestor.parentElement;
       depth++;
     }
-    const rect = element.getBoundingClientRect();
+
+    // 策略3: 全局查找，使用位置关系（原逻辑）
     const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
     for (const input of inputs) {
-      if (!this.isValidCaptchaInput(input as HTMLInputElement)) {
-        continue;
-      }
+      if (!this.isValidCaptchaInput(input as HTMLInputElement)) continue;
+
       const inputRect = input.getBoundingClientRect();
+
+      // 检查右侧
       if (
-        inputRect.left > rect.right &&
-        inputRect.left - rect.right < 150 &&
-        Math.abs(inputRect.top - rect.top) < 50
+        inputRect.left > captchaRect.right &&
+        inputRect.left - captchaRect.right < 150 &&
+        Math.abs(inputRect.top - captchaRect.top) < 50
       ) {
         return input as HTMLInputElement;
       }
+
+      // 检查下方
       if (
-        inputRect.top > rect.bottom &&
-        inputRect.top - rect.bottom < 100 &&
-        Math.abs(inputRect.left - rect.left) < 100
+        inputRect.top > captchaRect.bottom &&
+        inputRect.top - captchaRect.bottom < 100 &&
+        Math.abs(inputRect.left - captchaRect.left) < 100
       ) {
         return input as HTMLInputElement;
       }
     }
+
     return null;
   }
 
@@ -704,7 +756,7 @@ export class CaptchaDetector {
             return await resp.blob();
           }
         }
-      } catch {}
+      } catch { }
     }
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;

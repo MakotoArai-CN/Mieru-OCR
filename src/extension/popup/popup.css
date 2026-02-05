@@ -302,12 +302,12 @@ body {
   gap: 10px;
 }
 
-@media screen and (max-width: 400px) {
+/* @media screen and (max-width: 400px) {
   .action-section {
     flex-direction: column;
     gap: 8px;
   }
-}
+} */
 
 .btn {
   flex: 1;

@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DDDD OCR - 设置</title>
   <link rel="stylesheet" href="options.css">
 </head>
+
 <body>
   <div class="options-container">
     <aside class="sidebar">
@@ -22,7 +24,8 @@
         <a href="#general" class="nav-item active" data-section="general">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
           <span>基本设置</span>
         </a>
@@ -31,6 +34,14 @@
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
           <span>网站规则</span>
+        </a>
+        <a href="#stats" class="nav-item" data-section="stats">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+          <span>识别统计</span>
         </a>
         <a href="#advanced" class="nav-item" data-section="advanced">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -221,9 +232,26 @@
           <h3>批量添加规则</h3>
           <div class="form-group">
             <label for="bulk-rules">规则列表 (JSON格式)</label>
-            <textarea id="bulk-rules" rows="6" placeholder='[{"hostname": "example.com", "selector": "img.captcha", "inputSelector": "#code"}]'></textarea>
+            <textarea id="bulk-rules" rows="6"
+              placeholder='[{"hostname": "example.com", "selector": "img.captcha", "inputSelector": "#code"}]'></textarea>
           </div>
           <button id="btn-add-bulk-rules" class="btn btn-primary">添加规则</button>
+        </div>
+      </section>
+
+      <!-- 识别统计 -->
+      <section id="stats" class="section">
+        <div class="section-header">
+          <h2>识别统计</h2>
+          <p>查看验证码识别统计数据</p>
+        </div>
+        <div id="stats-grid" class="stats-grid"></div>
+        <div class="card">
+          <div class="card-header">
+            <h3>站点排行榜</h3>
+            <button id="btn-clear-stats" class="btn btn-danger btn-sm">清除统计</button>
+          </div>
+          <div id="stats-list" class="rank-list"></div>
         </div>
       </section>
 
@@ -376,11 +404,13 @@
         <div class="card">
           <h3>开源</h3>
           <p style="color: var(--text-secondary); font-size: 14px;">
-            基于 <a href="https://github.com/sml2h3/ddddocr" target="_blank" style="color: var(--primary);">ddddocr</a> 项目开发
+            基于 <a href="https://github.com/sml2h3/ddddocr" target="_blank" style="color: var(--primary);">ddddocr</a>
+            项目开发
             ，遵循 MIT 许可证开源发布。如果项目对你有帮助，请帮忙点个Star，这对我很重要！
           </p>
           <p style="color: var(--text-secondary); font-size: 14px;">
-            仓库地址：<a href="https://github.com/MakotoArai-CN/ddddocr-webjs" target="_blank" style="color: var(--primary);text-decoration-line: none;">ddddocr-webjs</a>
+            仓库地址：<a href="https://github.com/MakotoArai-CN/ddddocr-webjs" target="_blank"
+              style="color: var(--primary);text-decoration-line: none;">ddddocr-webjs</a>
           </p>
         </div>
       </section>
@@ -395,4 +425,5 @@
 
   <script src="options.ts" type="module"></script>
 </body>
+
 </html>

@@ -138,3 +138,15 @@ export interface ResourceStatus {
   wasmFiles: string[];
   ortReady: boolean;
 }
+
+export interface SiteStats {
+  count: number;
+  lastTime: number;
+  totalTime: number;
+}
+
+export interface StatsData {
+  sites: Record<string, SiteStats>;
+  total: number;
+  updated: number;
+}

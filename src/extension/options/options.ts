@@ -27,6 +27,7 @@ async function init(): Promise<void> {
   await applyTheme();
   await loadSettings();
   await loadRules();
+  await loadStats();
   displayVersion();
 }
 
@@ -57,12 +58,17 @@ function cacheElements(): void {
   elements.toast = document.getElementById('toast');
   elements.toastMessage = document.getElementById('toast-message');
   elements.fileImport = document.getElementById('file-import');
-  
+
   elements.editRuleKey = document.getElementById('edit-rule-key');
   elements.editRuleOriginalKey = document.getElementById('edit-rule-original-key');
   elements.editRuleSelector = document.getElementById('edit-rule-selector');
   elements.editRuleInput = document.getElementById('edit-rule-input');
   elements.editRuleUrl = document.getElementById('edit-rule-url');
+  elements.statsTotal = document.getElementById('stats-total');
+  elements.statsSitesCount = document.getElementById('stats-sites-count');
+  elements.statsAvgTime = document.getElementById('stats-avg-time');
+  elements.statsUpdated = document.getElementById('stats-updated');
+  elements.statsList = document.getElementById('stats-list');
 }
 
 function bindEvents(): void {
@@ -83,7 +89,8 @@ function bindEvents(): void {
   document.getElementById('btn-reset-all')?.addEventListener('click', resetAll);
   document.getElementById('btn-add-calc-rule')?.addEventListener('click', addCalculateRule);
   document.getElementById('btn-add-agreement')?.addEventListener('click', addAgreementSelector);
-  
+  document.getElementById('btn-clear-stats')?.addEventListener('click', clearStats);
+
   document.getElementById('btn-save-edit-rule')?.addEventListener('click', saveEditRule);
   document.getElementById('btn-cancel-edit-rule')?.addEventListener('click', cancelEditRule);
 
@@ -209,7 +216,7 @@ function renderAgreementSelectors(selectors: string[]): void {
 async function addAgreementSelector(): Promise<void> {
   const input = elements.newAgreementSelector as HTMLInputElement;
   const selector = input.value.trim();
-  
+
   if (!selector) {
     showToast('请输入选择器', 'error');
     return;
@@ -217,7 +224,7 @@ async function addAgreementSelector(): Promise<void> {
 
   const settings = await getSettings();
   const selectors = settings.agreementSelectors || [];
-  
+
   if (selectors.includes(selector)) {
     showToast('选择器已存在', 'error');
     return;
@@ -226,7 +233,7 @@ async function addAgreementSelector(): Promise<void> {
   selectors.push(selector);
   settings.agreementSelectors = selectors;
   await saveSettings(settings);
-  
+
   renderAgreementSelectors(selectors);
   input.value = '';
   showToast('选择器已添加', 'success');
@@ -364,7 +371,7 @@ async function loadRules(): Promise<void> {
   rulesList.innerHTML = Object.entries(rules).map(([key, rule]: [string, any]) => {
     const displayKey = key.length > 40 ? key.substring(0, 40) + '...' : key;
     const selectorDisplay = rule.selector.length > 30 ? rule.selector.substring(0, 30) + '...' : rule.selector;
-    
+
     return `
       <div class="rule-item" data-key="${escapeHtml(key)}">
         <div class="rule-info">
@@ -412,7 +419,7 @@ async function editRule(key: string): Promise<void> {
   }
 
   currentEditRuleKey = key;
-  
+
   (elements.editRuleKey as HTMLInputElement).value = key;
   (elements.editRuleOriginalKey as HTMLInputElement).value = key;
   (elements.editRuleSelector as HTMLInputElement).value = rule.selector || '';
@@ -420,12 +427,12 @@ async function editRule(key: string): Promise<void> {
   (elements.editRuleUrl as HTMLInputElement).value = rule.fullUrl || '';
 
   switchSection('rules');
-  
+
   const editCard = document.querySelector('.card:has(#edit-rule-key)');
   if (editCard) {
     editCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
-  
+
   showToast('已加载规则到编辑区', 'success');
 }
 
@@ -545,6 +552,80 @@ function triggerImport(mode: string): void {
   (elements.fileImport as HTMLInputElement).click();
 }
 
+async function loadStats(): Promise<void> {
+  const response = await chrome.runtime.sendMessage({ action: 'getStats' });
+  if (!response.success) return;
+
+  const stats = response.stats;
+  const sites = Object.entries(stats.sites || {}) as [string, { count: number; lastTime: number; totalTime: number }][];
+
+  const totalTime = sites.reduce((sum, [, s]) => sum + s.totalTime, 0);
+  const avgTime = stats.total > 0 ? Math.round(totalTime / stats.total) : 0;
+  const lastUpdate = stats.updated ? new Date(stats.updated).toLocaleString() : '-';
+
+  const statsGrid = document.getElementById('stats-grid');
+  if (statsGrid) {
+    statsGrid.innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">总识别次数</div>
+        <div class="stat-value">${stats.total}<span class="stat-unit">次</span></div>
+      </div>
+      <div class="stat-card accent">
+        <div class="stat-label">统计站点数</div>
+        <div class="stat-value">${sites.length}<span class="stat-unit">个</span></div>
+      </div>
+      <div class="stat-card success">
+        <div class="stat-label">平均识别耗时</div>
+        <div class="stat-value">${avgTime}<span class="stat-unit">ms</span></div>
+      </div>
+      <div class="stat-card warning">
+        <div class="stat-label">最后更新</div>
+        <div class="stat-value" style="font-size: 16px;">${lastUpdate}</div>
+      </div>
+    `;
+  }
+
+  const statsList = elements.statsList as HTMLElement;
+  if (sites.length === 0) {
+    statsList.innerHTML = '<div class="empty-state"><p>暂无统计数据</p><span>开始使用后将自动记录</span></div>';
+    return;
+  }
+
+  sites.sort((a, b) => b[1].count - a[1].count);
+  const topSites = sites.slice(0, 20);
+  const maxCount = topSites.length > 0 ? topSites[0][1].count : 1;
+
+  statsList.innerHTML = topSites.map(([hostname, siteStats], index) => {
+    const siteAvgTime = siteStats.count > 0 ? Math.round(siteStats.totalTime / siteStats.count) : 0;
+    const lastTime = new Date(siteStats.lastTime).toLocaleDateString();
+    const progressWidth = Math.round((siteStats.count / maxCount) * 100);
+
+    return `
+      <div class="rank-item">
+        <div class="rank-num">${index + 1}</div>
+        <div class="rank-info">
+          <div class="rank-host">${escapeHtml(hostname)}</div>
+          <div class="rank-meta">
+            <span>平均 ${siteAvgTime}ms</span>
+            <span>最后: ${lastTime}</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: ${progressWidth}%"></div>
+          </div>
+        </div>
+        <div class="rank-count">${siteStats.count}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function clearStats(): Promise<void> {
+  if (!confirm('确定要清除所有统计数据吗？')) return;
+  await chrome.runtime.sendMessage({ action: 'clearStats' });
+  await loadStats();
+  showToast('统计数据已清除', 'success');
+}
+
 async function handleFileImport(e: Event): Promise<void> {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
@@ -612,4 +693,4 @@ function displayVersion(): void {
 
 document.addEventListener('DOMContentLoaded', init);
 
-export {};
+export { };

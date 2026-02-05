@@ -324,10 +324,10 @@ async function handleRecognize(captchaId: string, sendResponse: (response: any) 
       if (autoCalculate) {
         resultText = Calculator.processResult(
           response.text, {
-            autoCalculate: true,
-            outputMode: 'result',
-            rules: calculateRules,
-          },
+          autoCalculate: true,
+          outputMode: 'result',
+          rules: calculateRules,
+        },
           location.hostname
         );
         Logger.debug('计算处理结果:', response.text, '->', resultText);
@@ -348,6 +348,11 @@ async function handleRecognize(captchaId: string, sendResponse: (response: any) 
         elapsed: response.elapsed,
         captchaId: captcha.id,
       });
+      chrome.runtime.sendMessage({
+        action: 'recordStats',
+        hostname: location.hostname,
+        elapsed: response.elapsed || 0,
+      }).catch(() => { });
     } else {
       sendResponse({ success: false, error: response.error });
     }
@@ -845,6 +850,7 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
   if (isProcessing) return;
   isProcessing = true;
   currentCaptcha = captcha;
+  const startTime = Date.now();
   Logger.time('internalRecognizeAndFill');
   try {
     detector.highlight(captcha);
@@ -864,10 +870,10 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
     if (autoCalculate) {
       resultText = Calculator.processResult(
         response.text, {
-          autoCalculate: true,
-          outputMode: 'result',
-          rules: calculateRules,
-        },
+        autoCalculate: true,
+        outputMode: 'result',
+        rules: calculateRules,
+      },
         location.hostname
       );
     }
@@ -881,10 +887,15 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
       });
     }
     detector.markElementProcessed(captcha.element);
+    chrome.runtime.sendMessage({
+      action: 'recordStats',
+      hostname: location.hostname,
+      elapsed: Date.now() - startTime,
+    }).catch(() => { });
     Logger.timeEnd('internalRecognizeAndFill');
   } catch (e) {
     Logger.error('识别填充失败:', e);
-    try { detector.unhighlight(captcha); } catch {}
+    try { detector.unhighlight(captcha); } catch { }
   } finally {
     isProcessing = false;
   }
@@ -995,7 +1006,7 @@ function scanPage(): void {
       action: 'captchaDetected',
       count: captchas.length,
       bestConfidence: detector.getMostLikelyCaptcha()?.confidence || 0,
-    }).catch(() => {});
+    }).catch(() => { });
   }
 }
 
