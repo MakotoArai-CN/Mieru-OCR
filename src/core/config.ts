@@ -35,6 +35,12 @@ export const CONSTANTS = {
     'password', 'pwd', 'pass', 'name', 'realname', 'nickname',
     'search', 'query', 'q', 'keyword', 'address', 'city',
   ],
+  EXCLUDE_PATTERNS: [
+    'avatar', 'logo', 'icon', 'banner', 'ad', 'sponsor',
+    'background', 'bg', 'profile', 'user', 'photo',
+    'emoji', 'emoticon', 'sticker', 'gif',
+    'loading', 'spinner', 'placeholder',
+  ],
   MIN_CAPTCHA_WIDTH: 50,
   MIN_CAPTCHA_HEIGHT: 20,
   MAX_CAPTCHA_WIDTH: 400,

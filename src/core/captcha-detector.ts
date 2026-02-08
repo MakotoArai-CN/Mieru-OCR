@@ -3,7 +3,7 @@ import type { CaptchaElementInfo, InputElementInfo } from './types';
 
 export interface DetectedCaptcha {
   id: string;
-  type: 'image' | 'canvas' | 'svg';
+  type: 'image' | 'canvas' | 'svg' | 'background';
   element: Element;
   rect: DOMRect;
   confidence: number;
@@ -32,6 +32,7 @@ export class CaptchaDetector {
     this.scanImages();
     this.scanCanvas();
     this.scanSvg();
+    this.scanBackgroundImages();
     Logger.timeEnd('CaptchaDetector.scan');
     Logger.debug('扫描结果:', this.detectedCaptchas.length, '个验证码');
     return this.detectedCaptchas;
@@ -95,6 +96,29 @@ export class CaptchaDetector {
     });
   }
 
+  private scanBackgroundImages(): void {
+    const candidates = document.querySelectorAll('div[style*="background"], span[style*="background"], td[style*="background"]');
+    candidates.forEach((el, index) => {
+      const htmlEl = el as HTMLElement;
+      if (this.isLikelyBackgroundCaptcha(htmlEl)) {
+        const rect = htmlEl.getBoundingClientRect();
+        const bgImage = htmlEl.style.backgroundImage || '';
+        const captcha: DetectedCaptcha = {
+          id: `captcha-bg-${index}`,
+          type: 'background',
+          element: htmlEl,
+          src: bgImage,
+          rect,
+          confidence: this.calculateConfidence(htmlEl),
+          inputElement: this.findRelatedInput(htmlEl),
+          elementInfo: this.extractCaptchaInfo(htmlEl),
+        };
+        this.detectedCaptchas.push(captcha);
+        Logger.debug('检测到背景图验证码:', captcha.elementInfo);
+      }
+    });
+  }
+
   private extractCaptchaInfo(element: Element): CaptchaElementInfo {
     const rect = element.getBoundingClientRect();
     return {
@@ -118,12 +142,33 @@ export class CaptchaDetector {
     };
   }
 
+  private getEffectiveSize(element: Element): { width: number; height: number } {
+    const rect = element.getBoundingClientRect();
+    let width = rect.width;
+    let height = rect.height;
+    if (element instanceof HTMLImageElement) {
+      if (width === 0 && element.naturalWidth > 0) {
+        width = element.naturalWidth;
+      }
+      if (height === 0 && element.naturalHeight > 0) {
+        height = element.naturalHeight;
+      }
+      if (width === 0) {
+        width = parseInt(element.getAttribute('width') || '0') || 0;
+      }
+      if (height === 0) {
+        height = parseInt(element.getAttribute('height') || '0') || 0;
+      }
+    }
+    return { width, height };
+  }
+
   private isLikelyCaptcha(img: HTMLImageElement): boolean {
-    const rect = img.getBoundingClientRect();
-    if (!this.isCaptchaSize(rect.width, rect.height)) {
+    const { width, height } = this.getEffectiveSize(img);
+    if (!this.isCaptchaSize(width, height)) {
       return false;
     }
-    if (!this.isVisible(img)) {
+    if (!this.isVisibleOrHasSize(img, width, height)) {
       return false;
     }
     if (this.isExcludedImage(img)) {
@@ -133,20 +178,45 @@ export class CaptchaDetector {
     if (this.srcContainsKeywords(img.src)) return true;
     if (this.parentContainsKeywords(img)) return true;
     if (this.hasNearbyInput(img)) return true;
+    if (this.isDataUrlImage(img) && this.isCaptchaSize(width, height)) {
+      if (this.hasNearbyInput(img) || this.parentContainsKeywords(img)) return true;
+    }
     return false;
   }
 
+  private isDataUrlImage(img: HTMLImageElement): string | null {
+    return img.src && (img.src.startsWith('data:image/') || img.src.startsWith('blob:')) ? img.src : null;
+  }
+
+  private isVisibleOrHasSize(element: Element, effectiveWidth: number, effectiveHeight: number): boolean {
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      return false;
+    }
+    return effectiveWidth > 0 && effectiveHeight > 0;
+  }
+
+  private getImageSrcForExclusionCheck(img: HTMLImageElement): string {
+    const src = (img.currentSrc || img.src || '').trim();
+    if (!src) return '';
+    if (src.startsWith('data:image/') || src.startsWith('blob:')) {
+      return '';
+    }
+    try {
+      const url = new URL(src, window.location.href);
+      return (url.origin + url.pathname).toLowerCase();
+    } catch {
+      return src.slice(0, 200).toLowerCase();
+    }
+  }
+
   private isExcludedImage(img: HTMLImageElement): boolean {
-    const src = img.src.toLowerCase();
+    const src = this.getImageSrcForExclusionCheck(img);
     const alt = (img.alt || '').toLowerCase();
     const className = (img.className?.toString?.() || '').toLowerCase();
-    const excludePatterns = [
-      'avatar', 'logo', 'icon', 'banner', 'ad', 'sponsor',
-      'background', 'bg', 'profile', 'user', 'photo',
-      'emoji', 'emoticon', 'sticker', 'gif',
-      'loading', 'spinner', 'placeholder',
-    ];
-    const combined = src + alt + className;
+    const id = (img.id || '').toLowerCase();
+    const excludePatterns = CONSTANTS.EXCLUDE_PATTERNS;
+    const combined = `${src} ${alt} ${className} ${id}`.trim();
     return excludePatterns.some(pattern => combined.includes(pattern));
   }
 
@@ -176,6 +246,23 @@ export class CaptchaDetector {
     if (this.matchesKeywords(svg)) return true;
     if (this.parentContainsKeywords(svg)) return true;
     if (this.hasNearbyInput(svg)) return true;
+    return false;
+  }
+
+  private isLikelyBackgroundCaptcha(el: HTMLElement): boolean {
+    const bgImage = el.style.backgroundImage || '';
+    if (!bgImage || bgImage === 'none') return false;
+    const rect = el.getBoundingClientRect();
+    if (!this.isCaptchaSize(rect.width, rect.height)) {
+      return false;
+    }
+    if (!this.isVisible(el)) {
+      return false;
+    }
+    if (this.matchesKeywords(el)) return true;
+    if (this.parentContainsKeywords(el)) return true;
+    if (this.hasNearbyInput(el)) return true;
+    if (bgImage.includes('data:image/')) return this.hasNearbyInput(el) || this.parentContainsKeywords(el);
     return false;
   }
 
@@ -333,101 +420,154 @@ export class CaptchaDetector {
     return this.findRelatedInput(element) !== null;
   }
 
+  private getInputLabelText(input: HTMLInputElement): string {
+    try {
+      if (input.id) {
+        const label = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+        if (label) return (label.textContent || '').trim();
+      }
+      const wrapperLabel = input.closest('label');
+      if (wrapperLabel) return (wrapperLabel.textContent || '').trim();
+    } catch { }
+    return '';
+  }
+
+  private getInputSearchText(input: HTMLInputElement): string {
+    const parts: string[] = [];
+    parts.push(input.name || '');
+    parts.push(input.id || '');
+    parts.push(input.className || '');
+    parts.push(input.placeholder || '');
+    parts.push(input.getAttribute('aria-label') || '');
+    parts.push(input.getAttribute('data-label') || '');
+    parts.push(input.getAttribute('data-name') || '');
+    parts.push(this.getInputLabelText(input));
+    return parts.join(' ').toLowerCase();
+  }
+
+  private isCaptchaInputByName(input: HTMLInputElement): boolean {
+    const text = this.getInputSearchText(input);
+    return CONSTANTS.INPUT_KEYWORDS.some(keyword => text.includes(keyword));
+  }
+
+  private isExcludedInputByText(input: HTMLInputElement): boolean {
+    const text = this.getInputSearchText(input);
+    const excluded = [
+      'username', 'user', 'account', 'email', 'phone', 'mobile', 'tel',
+      'password', 'pwd', 'pass',
+      'search', 'query', 'keyword',
+      '用户名', '账号', '密码', '手机', '手机号', '邮箱', '搜索', '查询', '关键字',
+    ];
+    return excluded.some(k => text.includes(k));
+  }
+
+  private scoreInputCandidate(input: HTMLInputElement, captchaRect: DOMRect, inputRect: DOMRect): number {
+    const distance = this.calculateDistance(captchaRect, inputRect);
+    let bonus = 0;
+    const text = this.getInputSearchText(input);
+    if (this.isCaptchaInputByName(input)) bonus += 120;
+    if (text.includes('验证码')) bonus += 140;
+    if (text.includes('verify')) bonus += 80;
+    if (text.includes('vcode')) bonus += 80;
+    if (text.includes('authcode')) bonus += 80;
+    if (text.includes('checkcode')) bonus += 80;
+    if (text.includes('yzm')) bonus += 60;
+    if (this.isExcludedInputByText(input)) bonus -= 200;
+    return distance - bonus;
+  }
+
   private findClosestInputInContainer(
     container: Element,
     captchaRect: DOMRect,
     maxDistance: number = Infinity
   ): HTMLInputElement | null {
-    const inputs = container.querySelectorAll('input[type="text"], input:not([type])');
-
+    const inputs = container.querySelectorAll('input');
     let closest: HTMLInputElement | null = null;
+    let closestScore = Infinity;
     let closestDistance = Infinity;
-    let closestHasKeyword = false;
-
     for (const input of inputs) {
       const htmlInput = input as HTMLInputElement;
       if (!this.isValidCaptchaInput(htmlInput)) continue;
-
       const inputRect = input.getBoundingClientRect();
       const distance = this.calculateDistance(captchaRect, inputRect);
-
-      // 超出最大距离限制，跳过
       if (distance > maxDistance) continue;
-
-      const hasKeyword = this.isCaptchaInputByName(htmlInput);
-
-      // 优先选择：1. 距离更近 2. 距离相近时优先有关键字的
+      const score = this.scoreInputCandidate(htmlInput, captchaRect, inputRect);
       if (
-        distance < closestDistance ||
-        (Math.abs(distance - closestDistance) < 20 && hasKeyword && !closestHasKeyword)
+        score < closestScore ||
+        (Math.abs(score - closestScore) < 15 && distance < closestDistance)
       ) {
+        closestScore = score;
         closestDistance = distance;
         closest = htmlInput;
-        closestHasKeyword = hasKeyword;
       }
     }
-
     return closest;
   }
 
-  findRelatedInput(element: Element): HTMLInputElement | null {
-    const captchaRect = element.getBoundingClientRect();
+  private findFrameworkRelatedInput(element: Element): HTMLInputElement | null {
+    const elInput = element.closest('.el-input') || element.closest('.el-input-group') || element.closest('.el-form-item');
+    if (elInput) {
+      const elInner = elInput.querySelector('input.el-input__inner') as HTMLInputElement | null;
+      if (elInner && this.isValidCaptchaInput(elInner)) return elInner;
+      const anyInput = elInput.querySelector('input') as HTMLInputElement | null;
+      if (anyInput && this.isValidCaptchaInput(anyInput)) return anyInput;
+    }
+    const antInput = element.closest('.ant-input-group') || element.closest('.ant-form-item') || element.closest('.ant-input-affix-wrapper');
+    if (antInput) {
+      const anyInput = antInput.querySelector('input') as HTMLInputElement | null;
+      if (anyInput && this.isValidCaptchaInput(anyInput)) return anyInput;
+    }
+    const ivuInput = element.closest('.ivu-input-group') || element.closest('.ivu-form-item');
+    if (ivuInput) {
+      const anyInput = ivuInput.querySelector('input') as HTMLInputElement | null;
+      if (anyInput && this.isValidCaptchaInput(anyInput)) return anyInput;
+    }
+    const vanInput = element.closest('.van-field') || element.closest('.van-cell');
+    if (vanInput) {
+      const anyInput = vanInput.querySelector('input') as HTMLInputElement | null;
+      if (anyInput && this.isValidCaptchaInput(anyInput)) return anyInput;
+    }
+    return null;
+  }
 
-    // 策略1: 在直接父容器中查找最近的输入框（不要求关键字）
+  findRelatedInput(element: Element): HTMLInputElement | null {
+    const frameworkInput = this.findFrameworkRelatedInput(element);
+    if (frameworkInput) return frameworkInput;
+    const captchaRect = element.getBoundingClientRect();
     const parent = element.parentElement;
     if (parent) {
       const input = this.findClosestInputInContainer(parent, captchaRect);
       if (input) return input;
     }
-
-    // 策略2: 向上遍历2-3层，基于距离查找
     let ancestor = parent?.parentElement;
     let depth = 0;
-    while (ancestor && depth < 3) {
-      const input = this.findClosestInputInContainer(ancestor, captchaRect, 150);
+    while (ancestor && depth < 4) {
+      const input = this.findClosestInputInContainer(ancestor, captchaRect, 180);
       if (input) return input;
       ancestor = ancestor.parentElement;
       depth++;
     }
-
-    // 策略3: 全局查找，使用位置关系（原逻辑）
-    const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
-    for (const input of inputs) {
-      if (!this.isValidCaptchaInput(input as HTMLInputElement)) continue;
-
-      const inputRect = input.getBoundingClientRect();
-
-      // 检查右侧
-      if (
-        inputRect.left > captchaRect.right &&
-        inputRect.left - captchaRect.right < 150 &&
-        Math.abs(inputRect.top - captchaRect.top) < 50
-      ) {
-        return input as HTMLInputElement;
-      }
-
-      // 检查下方
-      if (
-        inputRect.top > captchaRect.bottom &&
-        inputRect.top - captchaRect.bottom < 100 &&
-        Math.abs(inputRect.left - captchaRect.left) < 100
-      ) {
-        return input as HTMLInputElement;
-      }
-    }
-
-    return null;
-  }
-
-  private findCaptchaInput(container: Element): HTMLInputElement | null {
-    const inputs = container.querySelectorAll('input[type="text"], input:not([type])');
+    const inputs = document.querySelectorAll('input');
+    let best: HTMLInputElement | null = null;
+    let bestScore = Infinity;
     for (const input of inputs) {
       const htmlInput = input as HTMLInputElement;
-      if (this.isValidCaptchaInput(htmlInput) && this.isCaptchaInputByName(htmlInput)) {
-        return htmlInput;
+      if (!this.isValidCaptchaInput(htmlInput)) continue;
+      const inputRect = input.getBoundingClientRect();
+      const roughlyNear =
+        (
+          (inputRect.left > captchaRect.right && inputRect.left - captchaRect.right < 220 && Math.abs(inputRect.top - captchaRect.top) < 90) ||
+          (inputRect.top > captchaRect.bottom && inputRect.top - captchaRect.bottom < 160 && Math.abs(inputRect.left - captchaRect.left) < 160) ||
+          (this.calculateDistance(captchaRect, inputRect) < 240)
+        );
+      if (!roughlyNear) continue;
+      const score = this.scoreInputCandidate(htmlInput, captchaRect, inputRect);
+      if (score < bestScore) {
+        bestScore = score;
+        best = htmlInput;
       }
     }
-    return null;
+    return best;
   }
 
   private isValidCaptchaInput(input: HTMLInputElement): boolean {
@@ -448,19 +588,14 @@ export class CaptchaDetector {
     return true;
   }
 
-  private isCaptchaInputByName(input: HTMLInputElement): boolean {
-    const text = (input.name + input.id + input.className + input.placeholder).toLowerCase();
-    return CONSTANTS.INPUT_KEYWORDS.some(keyword => text.includes(keyword));
-  }
-
   private calculateConfidence(element: Element): number {
     let score = 0;
     if (this.matchesKeywords(element)) score += 30;
     if ((element as HTMLImageElement).src && this.srcContainsKeywords((element as HTMLImageElement).src)) score += 20;
     if (this.parentContainsKeywords(element)) score += 15;
     if (this.findRelatedInput(element)) score += 25;
-    const rect = element.getBoundingClientRect();
-    if (this.isCaptchaSize(rect.width, rect.height)) score += 10;
+    const { width, height } = this.getEffectiveSize(element);
+    if (this.isCaptchaSize(width, height)) score += 10;
     return Math.min(score, 100);
   }
 
@@ -468,12 +603,13 @@ export class CaptchaDetector {
     const guessed: GuessedElement[] = [];
     const inputRect = inputElement.getBoundingClientRect();
     Logger.debug('开始猜测关联的验证码元素, 输入框位置:', inputRect);
-    const candidates: { element: Element; distance: number; type: 'image' | 'canvas' | 'svg' }[] = [];
+    const candidates: { element: Element; distance: number; type: 'image' | 'canvas' | 'svg' | 'background' }[] = [];
     document.querySelectorAll('img').forEach(img => {
       if (!this.isVisible(img)) return;
+      const { width, height } = this.getEffectiveSize(img);
+      if (!this.isCaptchaSize(width, height)) return;
+      if (this.isExcludedImage(img as HTMLImageElement)) return;
       const rect = img.getBoundingClientRect();
-      if (!this.isCaptchaSize(rect.width, rect.height)) return;
-      if (this.isExcludedImage(img)) return;
       const distance = this.calculateDistance(inputRect, rect);
       candidates.push({ element: img, distance, type: 'image' });
     });
@@ -486,12 +622,22 @@ export class CaptchaDetector {
     });
     document.querySelectorAll('svg').forEach(svg => {
       if (!this.isVisible(svg)) return;
-      const width = svg.clientWidth || parseInt(svg.getAttribute('width') || '0');
-      const height = svg.clientHeight || parseInt(svg.getAttribute('height') || '0');
+      const width = (svg as SVGElement).clientWidth || parseInt((svg as SVGElement).getAttribute('width') || '0');
+      const height = (svg as SVGElement).clientHeight || parseInt((svg as SVGElement).getAttribute('height') || '0');
       if (!this.isCaptchaSize(width, height)) return;
       const rect = svg.getBoundingClientRect();
       const distance = this.calculateDistance(inputRect, rect);
       candidates.push({ element: svg, distance, type: 'svg' });
+    });
+    document.querySelectorAll('div[style*="background"], span[style*="background"]').forEach(el => {
+      const htmlEl = el as HTMLElement;
+      if (!this.isVisible(htmlEl)) return;
+      const bgImage = htmlEl.style.backgroundImage || '';
+      if (!bgImage || bgImage === 'none') return;
+      const rect = htmlEl.getBoundingClientRect();
+      if (!this.isCaptchaSize(rect.width, rect.height)) return;
+      const distance = this.calculateDistance(inputRect, rect);
+      candidates.push({ element: htmlEl, distance, type: 'background' });
     });
     candidates.sort((a, b) => a.distance - b.distance);
     const topCandidates = candidates.slice(0, 3);
@@ -512,7 +658,7 @@ export class CaptchaDetector {
     const guessed: GuessedElement[] = [];
     const captchaRect = captchaElement.getBoundingClientRect();
     Logger.debug('开始猜测关联的输入框, 验证码位置:', captchaRect);
-    const candidates: { element: HTMLInputElement; distance: number; hasKeyword: boolean }[] = [];
+    const candidates: { element: HTMLInputElement; distance: number; hasKeyword: boolean; score: number }[] = [];
     document.querySelectorAll('input').forEach(input => {
       const htmlInput = input as HTMLInputElement;
       if (!this.isValidCaptchaInput(htmlInput)) return;
@@ -520,13 +666,10 @@ export class CaptchaDetector {
       const rect = htmlInput.getBoundingClientRect();
       const distance = this.calculateDistance(captchaRect, rect);
       const hasKeyword = this.isCaptchaInputByName(htmlInput);
-      candidates.push({ element: htmlInput, distance, hasKeyword });
+      const score = this.scoreInputCandidate(htmlInput, captchaRect, rect);
+      candidates.push({ element: htmlInput, distance, hasKeyword, score });
     });
-    candidates.sort((a, b) => {
-      if (a.hasKeyword && !b.hasKeyword) return -1;
-      if (!a.hasKeyword && b.hasKeyword) return 1;
-      return a.distance - b.distance;
-    });
+    candidates.sort((a, b) => a.score - b.score);
     const topCandidates = candidates.slice(0, 3);
     for (const candidate of topCandidates) {
       let confidence = Math.max(0, 100 - Math.floor(candidate.distance / 5));
@@ -709,6 +852,8 @@ export class CaptchaDetector {
         return this.captureCanvasElement(captcha.element as HTMLCanvasElement);
       case 'svg':
         return this.captureSvgElement(captcha.element as SVGElement);
+      case 'background':
+        return this.captureBackgroundElement(captcha.element as HTMLElement);
     }
   }
 
@@ -725,6 +870,8 @@ export class CaptchaDetector {
         return this.captureCanvasAsBlob(captcha.element as HTMLCanvasElement);
       case 'svg':
         return this.captureSvgAsBlob(captcha.element as SVGElement);
+      case 'background':
+        return this.captureBackgroundAsBlob(captcha.element as HTMLElement);
     }
   }
 
@@ -821,6 +968,9 @@ export class CaptchaDetector {
     const rect = svg.getBoundingClientRect();
     clonedSvg.setAttribute('width', String(rect.width));
     clonedSvg.setAttribute('height', String(rect.height));
+    if (!clonedSvg.getAttribute('xmlns')) {
+      clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
     const serializer = new XMLSerializer();
     const svgString = serializer.serializeToString(clonedSvg);
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
@@ -849,6 +999,46 @@ export class CaptchaDetector {
     } finally {
       URL.revokeObjectURL(url);
     }
+  }
+
+  private async captureBackgroundElement(el: HTMLElement): Promise<string> {
+    const blob = await this.captureBackgroundAsBlob(el);
+    return await this.blobToDataURL(blob);
+  }
+
+  private async captureBackgroundAsBlob(el: HTMLElement): Promise<Blob> {
+    const bgImage = el.style.backgroundImage || window.getComputedStyle(el).backgroundImage || '';
+    const urlMatch = bgImage.match(/url\(['"]?(.+?)['"]?\)/);
+    if (!urlMatch) {
+      throw new Error('无法提取背景图URL');
+    }
+    const imageUrl = urlMatch[1];
+    if (imageUrl.startsWith('data:')) {
+      const response = await fetch(imageUrl);
+      return await response.blob();
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = imageUrl;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('背景图加载失败'));
+      setTimeout(() => reject(new Error('背景图加载超时')), 5000);
+    });
+    const canvas = document.createElement('canvas');
+    const rect = el.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.round(rect.width));
+    canvas.height = Math.max(1, Math.round(rect.height));
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error('背景图转换失败'));
+      }, 'image/png');
+    });
   }
 
   private blobToDataURL(blob: Blob): Promise<string> {

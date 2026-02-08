@@ -5,3 +5,4 @@ LLM*
 *.yaml
 *.log
 .DS_Store
+.vscode/

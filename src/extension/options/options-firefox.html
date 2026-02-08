@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DDDD OCR - 设置</title>
   <link rel="stylesheet" href="options.css">
 </head>
-
 <body>
   <div class="options-container">
     <aside class="sidebar">
@@ -19,7 +17,6 @@
         </svg>
         <h1>DDDD OCR</h1>
       </div>
-
       <nav class="sidebar-nav">
         <a href="#general" class="nav-item active" data-section="general">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -60,14 +57,12 @@
           <span>关于</span>
         </a>
       </nav>
-
       <div class="sidebar-footer">
         <span class="version">v1.1.1</span>
       </div>
     </aside>
 
     <main class="main-content">
-      <!-- 基本设置 -->
       <section id="general" class="section active">
         <div class="section-header">
           <h2>基本设置</h2>
@@ -88,6 +83,7 @@
 
         <div class="card">
           <h3>自动填充</h3>
+
           <div class="form-group switch-group">
             <div class="switch-label">
               <label>识别成功后自动填充</label>
@@ -146,6 +142,7 @@
 
         <div class="card">
           <h3>默认选择器</h3>
+
           <div class="form-group">
             <label for="captchaSelector">验证码选择器</label>
             <input type="text" id="captchaSelector" placeholder="例如: img.captcha, #captchaImage">
@@ -180,7 +177,6 @@
         </div>
       </section>
 
-      <!-- 网站规则 -->
       <section id="rules" class="section">
         <div class="section-header">
           <h2>网站规则</h2>
@@ -239,7 +235,6 @@
         </div>
       </section>
 
-      <!-- 识别统计 -->
       <section id="stats" class="section">
         <div class="section-header">
           <h2>识别统计</h2>
@@ -255,7 +250,6 @@
         </div>
       </section>
 
-      <!-- 高级选项 -->
       <section id="advanced" class="section">
         <div class="section-header">
           <h2>高级选项</h2>
@@ -274,7 +268,6 @@
               <span class="slider"></span>
             </label>
           </div>
-
           <div id="calculateOptionsGroup" style="display: none;">
             <div class="form-group">
               <label for="calculateOutputMode">默认输出格式</label>
@@ -296,6 +289,7 @@
               <p>暂无规则，将使用默认输出格式</p>
             </div>
           </div>
+
           <div class="form-group" style="margin-top: 16px;">
             <label>添加新规则</label>
             <div class="form-row" style="margin-top: 8px;">
@@ -369,13 +363,11 @@
         </div>
       </section>
 
-      <!-- 关于 -->
       <section id="about" class="section">
         <div class="section-header">
           <h2>关于</h2>
           <p>DDDD OCR 离线验证码识别扩展</p>
         </div>
-
         <div class="card">
           <h3>版本信息</h3>
           <div class="info-list">
@@ -384,48 +376,15 @@
             <div class="info-item"><span>ONNX Runtime:</span><span>1.17.0</span></div>
           </div>
         </div>
-
-        <div class="card">
-          <h3>特性</h3>
-          <ul class="feature-list">
-            <li>✅ 完全离线运行，无需网络</li>
-            <li>✅ 支持 img/canvas/svg 验证码</li>
-            <li>✅ 智能自动检测验证码</li>
-            <li>✅ 支持自定义选择器</li>
-            <li>✅ 网站规则自动保存</li>
-            <li>✅ 深色/浅色/自动主题</li>
-            <li>✅ 支持四则运算自动计算</li>
-            <li>✅ 支持Vue/React/Angular框架</li>
-            <li>✅ 智能猜测关联元素</li>
-            <li>✅ 详细的调试日志</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h3>开源</h3>
-          <p style="color: var(--text-secondary); font-size: 14px;">
-            🚚 使用 <a href="https://github.com/sml2h3/ddddocr" target="_blank" style="color: var(--primary);">ddddocr</a>
-            项目的模型进行开发
-            ，遵循 MIT Lisence 许可证开源发布。如果有帮到你，请给我点个⭐，你的⭐是我持续开发的动力😁！
-          </p>
-          <br>
-          <p style="color: var(--text-secondary); font-size: 14px;">
-            🏠 仓库地址：<a href="https://github.com/MakotoArai-CN/ddddocr-webjs" target="_blank"
-              style="color: var(--primary);text-decoration-line: none;">ddddocr-webjs</a> 开源不易，基于本项目修改请注明出处，感谢你的支持和肯定。<span
-              style="display: none;">😉</span>
-          </p>
-        </div>
       </section>
     </main>
 
     <div id="toast" class="toast hidden">
       <span id="toast-message"></span>
     </div>
-
     <input type="file" id="file-import" accept=".json" style="display: none;">
   </div>
 
-  <script src="options.ts" type="module"></script>
+  <script type="module" src="options-firefox.ts"></script>
 </body>
-
 </html>

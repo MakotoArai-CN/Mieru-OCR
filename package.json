@@ -6,7 +6,8 @@
     "dev": "vite build --watch",
     "build": "vite build",
     "build:extension": "vite build --config vite.config.browser.ts",
-    "build:all": "bun run build && bun run build:extension",
+    "build:firefox": "vite build --config vite.config.firefox.ts",
+    "build:all": "bun run build && bun run build:extension && bun run build:firefox",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {

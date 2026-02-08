@@ -4,567 +4,1071 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>验证码识别测试页面</title>
+
+    <!-- Vue + Element Plus -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+
     <style>
+        :root {
+            --bg-primary: linear-gradient(135deg, #e8f4fc 0%, #f8e8f0 50%, #e8f0fc 100%);
+            --bg-card: #ffffff;
+            --bg-input: #f8fafc;
+            --bg-captcha: #f0f7ff;
+            --text-primary: #1e3a5f;
+            --text-secondary: #5a7a9a;
+            --text-muted: #94a3b8;
+            --accent-blue: #4a90e2;
+            --accent-blue-hover: #3a7bc8;
+            --accent-pink: #e8a0b4;
+            --accent-pink-light: #fce8ef;
+            --accent-green: #52c48c;
+            --accent-green-hover: #42a878;
+            --border-color: #d8e4f0;
+            --border-focus: #4a90e2;
+            --shadow-card: 0 8px 32px rgba(74, 144, 226, 0.12);
+            --shadow-input: 0 2px 8px rgba(74, 144, 226, 0.08);
+            --success-bg: #ecfdf5;
+            --success-color: #10b981;
+            --error-bg: #fef2f2;
+            --error-color: #ef4444;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: linear-gradient(135deg, #0f1729 0%, #1a1025 50%, #0f1729 100%);
+            --bg-card: #1e293b;
+            --bg-input: #334155;
+            --bg-captcha: #1e3a5f;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #60a5fa;
+            --accent-blue-hover: #93c5fd;
+            --accent-pink: #f472b6;
+            --accent-pink-light: #4a1942;
+            --accent-green: #4ade80;
+            --accent-green-hover: #86efac;
+            --border-color: #475569;
+            --border-focus: #60a5fa;
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
+            --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.2);
+            --success-bg: #064e3b;
+            --success-color: #34d399;
+            --error-bg: #450a0a;
+            --error-color: #f87171;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg-primary: linear-gradient(135deg, #0f1729 0%, #1a1025 50%, #0f1729 100%);
+                --bg-card: #1e293b;
+                --bg-input: #334155;
+                --bg-captcha: #1e3a5f;
+                --text-primary: #e2e8f0;
+                --text-secondary: #94a3b8;
+                --text-muted: #64748b;
+                --accent-blue: #60a5fa;
+                --accent-blue-hover: #93c5fd;
+                --accent-pink: #f472b6;
+                --accent-pink-light: #4a1942;
+                --accent-green: #4ade80;
+                --accent-green-hover: #86efac;
+                --border-color: #475569;
+                --border-focus: #60a5fa;
+                --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
+                --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.2);
+                --success-bg: #064e3b;
+                --success-color: #34d399;
+                --error-bg: #450a0a;
+                --error-color: #f87171;
+            }
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             min-height: 100vh;
-            padding: 20px;
+            padding: 16px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
         }
-        
+
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
-        
-        h1 {
+
+        .header {
             text-align: center;
-            color: white;
-            margin-bottom: 30px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-        
-        .test-section {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        
-        .test-section h2 {
-            color: #333;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #667eea;
-        }
-        
-        .captcha-container {
+            margin-bottom: 24px;
+            position: relative;
             display: flex;
             align-items: center;
-            gap: 20px;
-            margin: 15px 0;
-            padding: 15px;
-            background: #f5f5f5;
-            border-radius: 5px;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
         }
-        
+
+        h1 {
+            color: var(--text-primary);
+            font-size: 24px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .theme-toggle {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-card);
+            padding: 4px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-input);
+        }
+
+        .theme-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .theme-btn:hover {
+            background: var(--accent-pink-light);
+        }
+
+        .theme-btn.active {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        /* 响应式网格布局 */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 16px;
+        }
+
+        .test-section {
+            background: var(--bg-card);
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: var(--shadow-card);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .test-section:hover {
+            box-shadow: 0 12px 40px rgba(74, 144, 226, 0.18);
+            transform: translateY(-2px);
+        }
+
+        .test-section h2 {
+            color: var(--text-primary);
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--accent-pink);
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .test-section h2::before {
+            content: '';
+            width: 3px;
+            height: 16px;
+            background: linear-gradient(180deg, var(--accent-blue), var(--accent-pink));
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .captcha-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
         .captcha-box {
-            border: 2px solid #ddd;
-            padding: 5px;
+            border: 2px solid var(--border-color);
+            padding: 3px;
             background: white;
-            border-radius: 5px;
+            border-radius: 8px;
             display: inline-block;
+            transition: border-color 0.2s;
+            flex-shrink: 0;
         }
-        
+
+        .captcha-box:hover {
+            border-color: var(--accent-blue);
+        }
+
+        .captcha-box canvas,
+        .captcha-box img {
+            display: block;
+            border-radius: 4px;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 0;
+        }
+
         input[type="text"] {
-            padding: 8px 12px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-            width: 150px;
+            padding: 10px 12px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            width: 100%;
+            max-width: 120px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            transition: all 0.2s;
+            outline: none;
         }
-        
+
+        input[type="text"]:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15);
+        }
+
+        input[type="text"].success {
+            border-color: var(--success-color);
+            background: var(--success-bg);
+        }
+
+        input[type="text"].error {
+            border-color: var(--error-color);
+            background: var(--error-bg);
+        }
+
+        .status-icon {
+            font-size: 16px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            flex-shrink: 0;
+        }
+
+        .status-icon.visible {
+            opacity: 1;
+        }
+
         button {
-            padding: 8px 20px;
-            background: #667eea;
+            padding: 8px 14px;
+            background: var(--accent-green);
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 16px;
-            transition: background 0.3s;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+            white-space: nowrap;
         }
-        
+
         button:hover {
-            background: #5a67d8;
+            background: var(--accent-green-hover);
+            transform: translateY(-1px);
         }
-        
-        .refresh-btn {
-            background: #48bb78;
+
+        button:active {
+            transform: translateY(0);
         }
-        
-        .refresh-btn:hover {
-            background: #38a169;
-        }
-        
-        .info {
-            color: #666;
-            font-size: 14px;
-            margin-left: 10px;
-        }
-        
+
         #svgCaptcha {
             background: white;
-            border: 2px solid #ddd;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        
-        .base64-img {
-            border: 2px solid #ddd;
-            padding: 5px;
-            background: white;
-            border-radius: 5px;
-        }
-        
-        .mixed-captcha {
-            position: relative;
-            width: 200px;
-            height: 60px;
-            background: white;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-        }
-        
-        .mixed-captcha canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        
-        .drag-captcha {
-            width: 300px;
-            height: 150px;
-            position: relative;
-            background: #f0f0f0;
-            border: 2px solid #ddd;
-            border-radius: 5px;
+            border-radius: 4px;
             overflow: hidden;
+            line-height: 0;
         }
-        
-        .drag-slider {
-            width: 100%;
-            margin-top: 10px;
+
+        #svgCaptcha svg {
+            display: block;
+        }
+
+        .framework-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        /* Element Plus 覆盖 */
+        .el-input__inner {
+            background: var(--bg-input) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+        }
+
+        .el-input-group__append {
+            background: var(--bg-captcha) !important;
+            border-color: var(--border-color) !important;
+            padding: 0 !important;
+        }
+
+        .el-button--success {
+            background: var(--accent-green) !important;
+            border-color: var(--accent-green) !important;
+        }
+
+        /* Ant Design 覆盖 */
+        .ant-input-group-addon {
+            background: var(--bg-captcha) !important;
+            border-color: var(--border-color) !important;
+            padding: 0 4px !important;
+        }
+
+        .ant-input {
+            background: var(--bg-input) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+        }
+
+        /* 自定义弹窗 */
+        .dd-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 2147483646;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .dd-modal-overlay.visible {
+            display: flex;
+        }
+
+        .dd-modal {
+            width: min(360px, 100%);
+            background: var(--bg-card);
+            border-radius: 14px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .dd-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            background: var(--bg-captcha);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .dd-modal-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .dd-modal-close {
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 6px;
+            font-size: 18px;
+            line-height: 1;
+            transition: all 0.2s;
+        }
+
+        .dd-modal-close:hover {
+            background: var(--accent-pink-light);
+            color: var(--text-primary);
+        }
+
+        .dd-modal-body {
+            padding: 24px 18px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .dd-modal-body .icon {
+            font-size: 42px;
+            margin-bottom: 10px;
+        }
+
+        .dd-modal-actions {
+            display: flex;
+            justify-content: center;
+            padding: 14px 18px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .dd-modal-btn {
+            padding: 10px 28px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            background: var(--accent-blue);
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .dd-modal-btn:hover {
+            background: var(--accent-blue-hover);
+        }
+
+        @media screen and (max-width: 480px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 20px;
+            }
+
+            .captcha-row {
+                gap: 10px;
+            }
+
+            input[type="text"] {
+                max-width: 100px;
+                padding: 8px 10px;
+            }
+
+            button {
+                padding: 8px 12px;
+            }
         }
     </style>
+
+    <!-- Framework CDNs -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js" defer></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.min.js" defer></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" defer></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" defer></script>
+    <script src="https://unpkg.com/antd@5/dist/antd.min.js" defer></script>
+    <script src="https://unpkg.com/angular@1.8.3/angular.min.js" defer></script>
 </head>
 <body>
     <div class="container">
-        <h1>🔐 验证码识别测试页面</h1>
-        
-        <!-- Canvas 验证码 -->
-        <div class="test-section">
-            <h2>1. Canvas 验证码</h2>
-            <div class="captcha-container">
-                <div class="captcha-box">
-                    <canvas id="canvasCaptcha" width="150" height="50"></canvas>
-                </div>
-                <input type="text" id="canvasInput" placeholder="输入验证码">
-                <button onclick="refreshCanvas()">🔄 刷新</button>
-                <button onclick="validateCanvas()">验证</button>
-                <span class="info">当前验证码: <span id="canvasCode"></span></span>
+        <div class="header">
+            <h1>🔐 验证码识别测试</h1>
+            <div class="theme-toggle">
+                <button class="theme-btn" data-theme="light" title="浅色">☀️</button>
+                <button class="theme-btn" data-theme="auto" title="自动">🌗</button>
+                <button class="theme-btn" data-theme="dark" title="深色">🌙</button>
             </div>
         </div>
-        
-        <!-- IMG 标签验证码 -->
-        <div class="test-section">
-            <h2>2. IMG 标签验证码</h2>
-            <div class="captcha-container">
-                <div class="captcha-box">
-                    <img id="imgCaptcha" width="150" height="50" alt="验证码">
+
+        <!-- 弹窗 -->
+        <div id="dd-modal-overlay" class="dd-modal-overlay">
+            <div class="dd-modal">
+                <div class="dd-modal-header">
+                    <div id="dd-modal-title" class="dd-modal-title"></div>
+                    <button id="dd-modal-close" class="dd-modal-close">×</button>
                 </div>
-                <input type="text" id="imgInput" placeholder="输入验证码">
-                <button onclick="refreshImg()">🔄 刷新</button>
-                <button onclick="validateImg()">验证</button>
-                <span class="info">当前验证码: <span id="imgCode"></span></span>
+                <div id="dd-modal-body" class="dd-modal-body"></div>
+                <div class="dd-modal-actions">
+                    <button id="dd-modal-ok" class="dd-modal-btn">确定</button>
+                </div>
             </div>
         </div>
-        
-        <!-- Base64 图片验证码 -->
-        <div class="test-section">
-            <h2>3. Base64 编码图片验证码</h2>
-            <div class="captcha-container">
-                <div class="captcha-box">
-                    <img id="base64Captcha" class="base64-img" width="150" height="50" alt="Base64验证码">
+
+        <div class="grid">
+            <!-- Canvas 验证码 -->
+            <div class="test-section">
+                <h2>Canvas 验证码</h2>
+                <div class="captcha-row">
+                    <div class="captcha-box">
+                        <canvas id="canvasCaptcha" width="120" height="40"></canvas>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="canvasInput" placeholder="输入验证码" maxlength="4">
+                        <span class="status-icon" id="canvasStatus"></span>
+                    </div>
+                    <button onclick="refreshCanvas()">🔄 刷新</button>
                 </div>
-                <input type="text" id="base64Input" placeholder="输入验证码">
-                <button onclick="refreshBase64()">🔄 刷新</button>
-                <button onclick="validateBase64()">验证</button>
-                <span class="info">当前验证码: <span id="base64Code"></span></span>
             </div>
-        </div>
-        
-        <!-- SVG 验证码 -->
-        <div class="test-section">
-            <h2>4. SVG 验证码</h2>
-            <div class="captcha-container">
-                <div id="svgCaptcha"></div>
-                <input type="text" id="svgInput" placeholder="输入验证码">
-                <button onclick="refreshSVG()">🔄 刷新</button>
-                <button onclick="validateSVG()">验证</button>
-                <span class="info">当前验证码: <span id="svgCode"></span></span>
-            </div>
-        </div>
-        
-        <!-- 混合Canvas背景的验证码 -->
-        <div class="test-section">
-            <h2>5. 带噪点干扰的Canvas验证码</h2>
-            <div class="captcha-container">
-                <div class="captcha-box">
-                    <canvas id="noisyCaptcha" width="200" height="60"></canvas>
+
+            <!-- IMG 验证码 -->
+            <div class="test-section">
+                <h2>IMG 标签验证码</h2>
+                <div class="captcha-row">
+                    <div class="captcha-box">
+                        <img id="imgCaptcha" width="120" height="40" alt="验证码">
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="imgInput" placeholder="输入验证码" maxlength="5">
+                        <span class="status-icon" id="imgStatus"></span>
+                    </div>
+                    <button onclick="refreshImg()">🔄 刷新</button>
                 </div>
-                <input type="text" id="noisyInput" placeholder="输入验证码">
-                <button onclick="refreshNoisy()">🔄 刷新</button>
-                <button onclick="validateNoisy()">验证</button>
-                <span class="info">当前验证码: <span id="noisyCode"></span></span>
             </div>
-        </div>
-        
-        <!-- 数学公式验证码 -->
-        <div class="test-section">
-            <h2>6. 数学公式验证码</h2>
-            <div class="captcha-container">
-                <div class="captcha-box">
-                    <canvas id="mathCaptcha" width="150" height="50"></canvas>
+
+            <!-- Base64 验证码 -->
+            <div class="test-section">
+                <h2>Base64 图片验证码</h2>
+                <div class="captcha-row">
+                    <div class="captcha-box">
+                        <img id="base64Captcha" width="130" height="40" alt="验证码">
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="base64Input" placeholder="输入验证码" maxlength="6">
+                        <span class="status-icon" id="base64Status"></span>
+                    </div>
+                    <button onclick="refreshBase64()">🔄 刷新</button>
                 </div>
-                <input type="text" id="mathInput" placeholder="输入计算结果">
-                <button onclick="refreshMath()">🔄 刷新</button>
-                <button onclick="validateMath()">验证</button>
-                <span class="info">正确答案: <span id="mathAnswer"></span></span>
             </div>
-        </div>
-        
-        <!-- 动态CSS背景验证码 -->
-        <div class="test-section">
-            <h2>7. CSS背景图验证码</h2>
-            <div class="captcha-container">
-                <div class="captcha-box">
-                    <div id="cssCaptcha" style="width: 150px; height: 50px; background-size: cover;"></div>
+
+            <!-- SVG 验证码 -->
+            <div class="test-section">
+                <h2>SVG 验证码</h2>
+                <div class="captcha-row">
+                    <div class="captcha-box" id="svgCaptcha"></div>
+                    <div class="input-group">
+                        <input type="text" id="svgInput" placeholder="输入验证码" maxlength="4">
+                        <span class="status-icon" id="svgStatus"></span>
+                    </div>
+                    <button onclick="refreshSVG()">🔄 刷新</button>
                 </div>
-                <input type="text" id="cssInput" placeholder="输入验证码">
-                <button onclick="refreshCSS()">🔄 刷新</button>
-                <button onclick="validateCSS()">验证</button>
-                <span class="info">当前验证码: <span id="cssCode"></span></span>
+            </div>
+
+            <!-- 噪点验证码 -->
+            <div class="test-section">
+                <h2>噪点干扰验证码</h2>
+                <div class="captcha-row">
+                    <div class="captcha-box">
+                        <canvas id="noisyCaptcha" width="140" height="40"></canvas>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="noisyInput" placeholder="输入验证码" maxlength="5">
+                        <span class="status-icon" id="noisyStatus"></span>
+                    </div>
+                    <button onclick="refreshNoisy()">🔄 刷新</button>
+                </div>
+            </div>
+
+            <!-- 数学验证码 -->
+            <div class="test-section">
+                <h2>数学公式验证码</h2>
+                <div class="captcha-row">
+                    <div class="captcha-box">
+                        <canvas id="mathCaptcha" width="120" height="40"></canvas>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="mathInput" placeholder="计算结果" maxlength="3">
+                        <span class="status-icon" id="mathStatus"></span>
+                    </div>
+                    <button onclick="refreshMath()">🔄 刷新</button>
+                </div>
+            </div>
+
+            <!-- CSS背景验证码 -->
+            <div class="test-section">
+                <h2>CSS 背景验证码</h2>
+                <div class="captcha-row">
+                    <div class="captcha-box">
+                        <div id="cssCaptcha" style="width:120px;height:40px;background-size:cover;border-radius:4px;"></div>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="cssInput" placeholder="输入验证码" maxlength="4">
+                        <span class="status-icon" id="cssStatus"></span>
+                    </div>
+                    <button onclick="refreshCSS()">🔄 刷新</button>
+                </div>
+            </div>
+
+            <!-- Vue + Element Plus -->
+            <div class="test-section">
+                <h2>Vue 3 + Element Plus</h2>
+                <p class="framework-hint">el-input-group__append 内嵌 img</p>
+                <div id="vueElApp"></div>
+            </div>
+
+            <!-- React + Ant Design -->
+            <div class="test-section">
+                <h2>React 18 + Ant Design</h2>
+                <p class="framework-hint">Input addonAfter 内嵌 img</p>
+                <div id="reactAntdRoot"></div>
+            </div>
+
+            <!-- AngularJS -->
+            <div class="test-section">
+                <h2>AngularJS 1.x</h2>
+                <p class="framework-hint">ng-model 双向绑定</p>
+                <div id="angularRoot"></div>
             </div>
         </div>
     </div>
-    
+
     <script>
-        // 生成随机字符串
-        function generateRandomString(length) {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            let result = '';
-            for (let i = 0; i < length; i++) {
-                result += chars.charAt(Math.floor(Math.random() * chars.length));
+        /* ========== 主题切换 ========== */
+        (function() {
+            const btns = document.querySelectorAll('.theme-btn');
+            const saved = localStorage.getItem('theme') || 'auto';
+
+            function applyTheme(theme) {
+                if (theme === 'auto') {
+                    document.documentElement.removeAttribute('data-theme');
+                } else {
+                    document.documentElement.setAttribute('data-theme', theme);
+                }
+                btns.forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+                localStorage.setItem('theme', theme);
             }
-            return result;
+
+            btns.forEach(btn => btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
+            applyTheme(saved);
+        })();
+
+        /* ========== 弹窗 ========== */
+        (function() {
+            const overlay = document.getElementById('dd-modal-overlay');
+            const titleEl = document.getElementById('dd-modal-title');
+            const bodyEl = document.getElementById('dd-modal-body');
+            const okBtn = document.getElementById('dd-modal-ok');
+            const closeBtn = document.getElementById('dd-modal-close');
+
+            function hide() { overlay.classList.remove('visible'); }
+
+            function show(type, message) {
+                const isSuccess = type === 'success';
+                titleEl.textContent = isSuccess ? '✅ 验证成功' : '❌ 验证失败';
+                bodyEl.innerHTML = `<div class="icon">${isSuccess ? '✅' : '❌'}</div><div>${message}</div>`;
+                overlay.classList.add('visible');
+                okBtn.focus();
+            }
+
+            okBtn.addEventListener('click', hide);
+            closeBtn.addEventListener('click', hide);
+            overlay.addEventListener('click', e => { if (e.target === overlay) hide(); });
+            document.addEventListener('keydown', e => {
+                if (overlay.classList.contains('visible') && (e.key === 'Escape' || e.key === 'Enter')) {
+                    e.preventDefault();
+                    hide();
+                }
+            });
+
+            window.showSuccess = msg => show('success', msg);
+            window.showError = msg => show('error', msg);
+        })();
+
+        /* ========== 工具函数 ========== */
+        function randomStr(len) {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let r = '';
+            for (let i = 0; i < len; i++) r += chars[Math.floor(Math.random() * chars.length)];
+            return r;
         }
-        
-        // 生成随机颜色
+
         function randomColor() {
-            return '#' + Math.floor(Math.random()*16777215).toString(16);
+            const colors = ['#4a90e2', '#e8a0b4', '#52c48c', '#f5a623', '#9b59b6', '#e74c3c'];
+            return colors[Math.floor(Math.random() * colors.length)];
         }
-        
-        // 1. Canvas验证码
-        let canvasCode = '';
-        function drawCanvasCaptcha() {
-            const canvas = document.getElementById('canvasCaptcha');
+
+        function createCaptchaDataUrl(code, w, h) {
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
             const ctx = canvas.getContext('2d');
-            canvasCode = generateRandomString(4);
-            
-            // 清空画布
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // 背景
-            ctx.fillStyle = '#f0f0f0';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // 文字
-            ctx.font = 'bold 30px Arial';
-            ctx.fillStyle = '#333';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(canvasCode, 30, 25);
-            
-            // 干扰线
-            for(let i = 0; i < 3; i++) {
-                ctx.strokeStyle = randomColor();
+
+            const grad = ctx.createLinearGradient(0, 0, w, h);
+            grad.addColorStop(0, '#f0f7ff');
+            grad.addColorStop(1, '#fce8ef');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
+
+            for (let i = 0; i < 3; i++) {
+                ctx.strokeStyle = `rgba(74, 144, 226, ${0.2 + Math.random() * 0.2})`;
                 ctx.beginPath();
-                ctx.moveTo(Math.random() * 150, Math.random() * 50);
-                ctx.lineTo(Math.random() * 150, Math.random() * 50);
+                ctx.moveTo(Math.random() * w, Math.random() * h);
+                ctx.lineTo(Math.random() * w, Math.random() * h);
                 ctx.stroke();
             }
-            
-            document.getElementById('canvasCode').textContent = canvasCode;
-        }
-        
-        function refreshCanvas() {
-            drawCanvasCaptcha();
-        }
-        
-        function validateCanvas() {
-            const input = document.getElementById('canvasInput').value;
-            if (input.toUpperCase() === canvasCode) {
-                alert('✅ Canvas验证码正确！');
-            } else {
-                alert('❌ Canvas验证码错误！');
+
+            for (let i = 0; i < 30; i++) {
+                ctx.fillStyle = `rgba(232, 160, 180, ${0.3 + Math.random() * 0.3})`;
+                ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
             }
-        }
-        
-        // 2. IMG验证码（使用Canvas生成后转为dataURL）
-        let imgCode = '';
-        function generateImgCaptcha() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 150;
-            canvas.height = 50;
-            const ctx = canvas.getContext('2d');
-            
-            imgCode = generateRandomString(5);
-            
-            ctx.fillStyle = '#e0e0e0';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.font = 'italic 25px Georgia';
-            ctx.fillStyle = '#4a4a4a';
-            ctx.fillText(imgCode, 25, 30);
-            
-            // 添加噪点
-            for(let i = 0; i < 50; i++) {
+
+            ctx.font = `bold ${Math.floor(h * 0.55)}px Arial`;
+            ctx.textBaseline = 'middle';
+            const startX = 8;
+            const spacing = (w - 16) / code.length;
+            for (let i = 0; i < code.length; i++) {
+                ctx.save();
+                ctx.translate(startX + i * spacing + spacing / 2, h / 2);
+                ctx.rotate((Math.random() - 0.5) * 0.3);
                 ctx.fillStyle = randomColor();
-                ctx.fillRect(Math.random() * 150, Math.random() * 50, 2, 2);
+                ctx.fillText(code[i], -ctx.measureText(code[i]).width / 2, 0);
+                ctx.restore();
             }
-            
-            document.getElementById('imgCaptcha').src = canvas.toDataURL();
-            document.getElementById('imgCode').textContent = imgCode;
+
+            return canvas.toDataURL('image/png');
         }
-        
-        function refreshImg() {
-            generateImgCaptcha();
+
+        /* ========== 自动校验 ========== */
+        function setupAutoValidation(inputId, statusId, getCode) {
+            const input = document.getElementById(inputId);
+            const status = document.getElementById(statusId);
+
+            input.addEventListener('input', function() {
+                const value = this.value.toUpperCase();
+                const code = String(getCode()).toUpperCase();
+
+                this.classList.remove('success', 'error');
+                status.classList.remove('visible');
+
+                if (value.length === 0) return;
+
+                if (value.length >= code.length) {
+                    const ok = value === code;
+                    this.classList.add(ok ? 'success' : 'error');
+                    status.textContent = ok ? '✓' : '✗';
+                    status.classList.add('visible');
+                }
+            });
         }
-        
-        function validateImg() {
-            const input = document.getElementById('imgInput').value;
-            if (input.toUpperCase() === imgCode) {
-                alert('✅ IMG验证码正确！');
-            } else {
-                alert('❌ IMG验证码错误！');
-            }
+
+        function resetInput(inputId, statusId) {
+            const input = document.getElementById(inputId);
+            const status = document.getElementById(statusId);
+            input.value = '';
+            input.classList.remove('success', 'error');
+            status.classList.remove('visible');
         }
-        
-        // 3. Base64验证码
-        let base64Code = '';
-        function generateBase64Captcha() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 150;
-            canvas.height = 50;
+
+        /* ========== 验证码生成 ========== */
+        let canvasCode = '', imgCode = '', base64Code = '', svgCode = '', noisyCode = '', mathAnswer = 0, cssCode = '';
+
+        function refreshCanvas() {
+            const canvas = document.getElementById('canvasCaptcha');
             const ctx = canvas.getContext('2d');
-            
-            base64Code = generateRandomString(6);
-            
-            // 渐变背景
-            const gradient = ctx.createLinearGradient(0, 0, 150, 50);
-            gradient.addColorStop(0, '#ffd89b');
-            gradient.addColorStop(1, '#19547b');
-            ctx.fillStyle = gradient;
+            canvasCode = randomStr(4);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            grad.addColorStop(0, '#f0f7ff');
+            grad.addColorStop(1, '#fce8ef');
+            ctx.fillStyle = grad;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.font = 'bold 24px Courier';
-            ctx.fillStyle = 'white';
-            ctx.fillText(base64Code, 20, 30);
-            
-            const dataURL = canvas.toDataURL('image/png');
-            document.getElementById('base64Captcha').src = dataURL;
-            document.getElementById('base64Code').textContent = base64Code;
+
+            ctx.font = 'bold 22px Arial';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i < canvasCode.length; i++) {
+                ctx.save();
+                ctx.translate(18 + i * 24, 20);
+                ctx.rotate((Math.random() - 0.5) * 0.3);
+                ctx.fillStyle = randomColor();
+                ctx.fillText(canvasCode[i], 0, 0);
+                ctx.restore();
+            }
+
+            for (let i = 0; i < 2; i++) {
+                ctx.strokeStyle = 'rgba(74,144,226,0.4)';
+                ctx.beginPath();
+                ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+                ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
+                ctx.stroke();
+            }
+            resetInput('canvasInput', 'canvasStatus');
         }
-        
+
+        function refreshImg() {
+            imgCode = randomStr(5);
+            document.getElementById('imgCaptcha').src = createCaptchaDataUrl(imgCode, 120, 40);
+            resetInput('imgInput', 'imgStatus');
+        }
+
         function refreshBase64() {
-            generateBase64Captcha();
+            base64Code = randomStr(6);
+            document.getElementById('base64Captcha').src = createCaptchaDataUrl(base64Code, 130, 40);
+            resetInput('base64Input', 'base64Status');
         }
-        
-        function validateBase64() {
-            const input = document.getElementById('base64Input').value;
-            if (input.toUpperCase() === base64Code) {
-                alert('✅ Base64验证码正确！');
-            } else {
-                alert('❌ Base64验证码错误！');
-            }
-        }
-        
-        // 4. SVG验证码
-        let svgCode = '';
-        function generateSVGCaptcha() {
-            svgCode = generateRandomString(4);
-            const svg = `
-                <svg width="150" height="50" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="150" height="50" fill="#f9f9f9"/>
-                    <text x="20" y="35" font-family="Arial" font-size="28" fill="${randomColor()}" transform="rotate(-5 75 25)">${svgCode}</text>
-                    <line x1="0" y1="${Math.random() * 50}" x2="150" y2="${Math.random() * 50}" stroke="${randomColor()}" stroke-width="1"/>
-                </svg>
-            `;
-            document.getElementById('svgCaptcha').innerHTML = svg;
-            document.getElementById('svgCode').textContent = svgCode;
-        }
-        
+
         function refreshSVG() {
-            generateSVGCaptcha();
+            svgCode = randomStr(4);
+            document.getElementById('svgCaptcha').innerHTML = `
+                <svg width="120" height="40" xmlns="http://www.w3.org/2000/svg">
+                    <defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#f0f7ff"/>
+                        <stop offset="100%" style="stop-color:#fce8ef"/>
+                    </linearGradient></defs>
+                    <rect width="120" height="40" fill="url(#bg)"/>
+                    ${[0,1].map(() => `<line x1="${Math.random()*120}" y1="${Math.random()*40}" x2="${Math.random()*120}" y2="${Math.random()*40}" stroke="rgba(74,144,226,0.3)" stroke-width="1"/>`).join('')}
+                    <text x="12" y="26" font-family="Arial" font-size="20" font-weight="bold" fill="${randomColor()}">${svgCode}</text>
+                </svg>`;
+            resetInput('svgInput', 'svgStatus');
         }
-        
-        function validateSVG() {
-            const input = document.getElementById('svgInput').value;
-            if (input.toUpperCase() === svgCode) {
-                alert('✅ SVG验证码正确！');
-            } else {
-                alert('❌ SVG验证码错误！');
-            }
-        }
-        
-        // 5. 带噪点的Canvas验证码
-        let noisyCode = '';
-        function generateNoisyCaptcha() {
+
+        function refreshNoisy() {
             const canvas = document.getElementById('noisyCaptcha');
             const ctx = canvas.getContext('2d');
-            noisyCode = generateRandomString(5);
-            
+            noisyCode = randomStr(5);
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // 背景噪点
-            for(let i = 0; i < 200; i++) {
-                ctx.fillStyle = `rgba(${Math.random()*255},${Math.random()*255},${Math.random()*255},0.3)`;
-                ctx.fillRect(Math.random() * 200, Math.random() * 60, 3, 3);
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < 100; i++) {
+                ctx.fillStyle = `rgba(${Math.random()*200+50},${Math.random()*200+50},${Math.random()*200+50},0.3)`;
+                ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
             }
-            
-            // 扭曲文字
-            ctx.font = 'bold 32px Arial';
-            for(let i = 0; i < noisyCode.length; i++) {
+
+            ctx.font = 'bold 20px Arial';
+            for (let i = 0; i < noisyCode.length; i++) {
                 ctx.save();
-                ctx.translate(30 + i * 30, 30);
+                ctx.translate(14 + i * 24, 22);
                 ctx.rotate((Math.random() - 0.5) * 0.4);
                 ctx.fillStyle = randomColor();
                 ctx.fillText(noisyCode[i], 0, 0);
                 ctx.restore();
             }
-            
-            // 干扰线
-            for(let i = 0; i < 5; i++) {
-                ctx.strokeStyle = `rgba(${Math.random()*255},${Math.random()*255},${Math.random()*255},0.5)`;
-                ctx.lineWidth = Math.random() * 2;
+
+            for (let i = 0; i < 3; i++) {
+                ctx.strokeStyle = 'rgba(74,144,226,0.4)';
                 ctx.beginPath();
-                ctx.moveTo(Math.random() * 200, Math.random() * 60);
-                ctx.quadraticCurveTo(100, Math.random() * 60, Math.random() * 200, Math.random() * 60);
+                ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+                ctx.quadraticCurveTo(canvas.width / 2, Math.random() * canvas.height, Math.random() * canvas.width, Math.random() * canvas.height);
                 ctx.stroke();
             }
-            
-            document.getElementById('noisyCode').textContent = noisyCode;
+            resetInput('noisyInput', 'noisyStatus');
         }
-        
-        function refreshNoisy() {
-            generateNoisyCaptcha();
-        }
-        
-        function validateNoisy() {
-            const input = document.getElementById('noisyInput').value;
-            if (input.toUpperCase() === noisyCode) {
-                alert('✅ 噪点验证码正确！');
-            } else {
-                alert('❌ 噪点验证码错误！');
-            }
-        }
-        
-        // 6. 数学公式验证码
-        let mathAnswer = 0;
-        function generateMathCaptcha() {
+
+        function refreshMath() {
             const canvas = document.getElementById('mathCaptcha');
             const ctx = canvas.getContext('2d');
-            
-            const num1 = Math.floor(Math.random() * 10) + 1;
-            const num2 = Math.floor(Math.random() * 10) + 1;
-            const operators = ['+', '-', '×'];
-            const operator = operators[Math.floor(Math.random() * operators.length)];
-            
-            switch(operator) {
-                case '+':
-                    mathAnswer = num1 + num2;
-                    break;
-                case '-':
-                    mathAnswer = num1 - num2;
-                    break;
-                case '×':
-                    mathAnswer = num1 * num2;
-                    break;
-            }
-            
-            const mathText = `${num1} ${operator} ${num2} = ?`;
-            
+
+            const n1 = Math.floor(Math.random() * 10) + 1;
+            const n2 = Math.floor(Math.random() * 10) + 1;
+            const ops = ['+', '-', '×'];
+            const op = ops[Math.floor(Math.random() * ops.length)];
+
+            mathAnswer = op === '+' ? n1 + n2 : op === '-' ? n1 - n2 : n1 * n2;
+
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#fff3e0';
+            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            grad.addColorStop(0, '#fce8ef');
+            grad.addColorStop(1, '#f0f7ff');
+            ctx.fillStyle = grad;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.font = '20px Arial';
-            ctx.fillStyle = '#333';
-            ctx.fillText(mathText, 20, 30);
-            
-            document.getElementById('mathAnswer').textContent = mathAnswer;
+
+            ctx.font = 'bold 18px Arial';
+            ctx.fillStyle = '#4a90e2';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${n1} ${op} ${n2} = ?`, 12, 20);
+            resetInput('mathInput', 'mathStatus');
         }
-        
-        function refreshMath() {
-            generateMathCaptcha();
-        }
-        
-        function validateMath() {
-            const input = document.getElementById('mathInput').value;
-            if (parseInt(input) === mathAnswer) {
-                alert('✅ 数学验证码正确！');
-            } else {
-                alert('❌ 数学验证码错误！');
-            }
-        }
-        
-        // 7. CSS背景验证码
-        let cssCode = '';
-        function generateCSSCaptcha() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 150;
-            canvas.height = 50;
-            const ctx = canvas.getContext('2d');
-            
-            cssCode = generateRandomString(4);
-            
-            // 彩色背景
-            const gradient = ctx.createRadialGradient(75, 25, 5, 75, 25, 100);
-            gradient.addColorStop(0, '#ff6b6b');
-            gradient.addColorStop(1, '#4ecdc4');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.font = 'bold 28px Verdana';
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
-            ctx.strokeText(cssCode, 30, 32);
-            ctx.fillText(cssCode, 30, 32);
-            
-            const dataURL = canvas.toDataURL();
-            document.getElementById('cssCaptcha').style.backgroundImage = `url(${dataURL})`;
-            document.getElementById('cssCode').textContent = cssCode;
-        }
-        
+
         function refreshCSS() {
-            generateCSSCaptcha();
+            cssCode = randomStr(4);
+            document.getElementById('cssCaptcha').style.backgroundImage = `url(${createCaptchaDataUrl(cssCode, 120, 40)})`;
+            resetInput('cssInput', 'cssStatus');
         }
-        
-        function validateCSS() {
-            const input = document.getElementById('cssInput').value;
-            if (input.toUpperCase() === cssCode) {
-                alert('✅ CSS验证码正确！');
-            } else {
-                alert('❌ CSS验证码错误！');
-            }
+
+        /* ========== 框架加载 ========== */
+        function waitFor(getter, timeout) {
+            const start = Date.now();
+            return new Promise((resolve, reject) => {
+                const check = () => {
+                    const val = getter();
+                    if (val) return resolve(val);
+                    if (Date.now() - start > timeout) return reject(new Error('Timeout'));
+                    setTimeout(check, 100);
+                };
+                check();
+            });
         }
-        
-        // 页面加载时初始化所有验证码
+
+        async function initVue() {
+            try {
+                const Vue = await waitFor(() => window.Vue, 15000);
+                const ElementPlus = await waitFor(() => window.ElementPlus, 15000);
+                const el = document.getElementById('vueElApp');
+                if (!el) return;
+
+                const App = {
+                    setup() {
+                        const form = Vue.reactive({ input: '', code: randomStr(4), src: '', status: '' });
+
+                        const refresh = () => {
+                            form.code = randomStr(4);
+                            form.src = createCaptchaDataUrl(form.code, 120, 40);
+                            form.input = '';
+                            form.status = '';
+                        };
+
+                        const onInput = () => {
+                            if (!form.input) { form.status = ''; return; }
+                            if (form.input.length >= form.code.length) {
+                                form.status = form.input.toUpperCase() === form.code ? 'success' : 'error';
+                            }
+                        };
+
+                        Vue.onMounted(refresh);
+                        return { form, refresh, onInput };
+                    },
+                    template: `
+                        <div class="captcha-row">
+                            <el-input v-model="form.input" placeholder="验证码" @input="onInput" :class="form.status" style="max-width:200px;" maxlength="4">
+                                <template #append>
+                                    <img :src="form.src" style="height:32px;cursor:pointer;" @click="refresh" alt="captcha">
+                                </template>
+                            </el-input>
+                            <el-button type="success" @click="refresh">🔄 刷新</el-button>
+                            <span v-if="form.status" style="font-size:16px;">{{ form.status === 'success' ? '✓' : '✗' }}</span>
+                        </div>`
+                };
+
+                Vue.createApp(App).use(ElementPlus).mount(el);
+            } catch (e) { console.warn('Vue init failed:', e); }
+        }
+
+        async function initReact() {
+            try {
+                const React = await waitFor(() => window.React, 15000);
+                const ReactDOM = await waitFor(() => window.ReactDOM, 15000);
+                const antd = await waitFor(() => window.antd, 15000);
+                const el = document.getElementById('reactAntdRoot');
+                if (!el) return;
+
+                const e = React.createElement;
+
+                function App() {
+                    const [code, setCode] = React.useState(() => randomStr(4));
+                    const [src, setSrc] = React.useState('');
+                    const [value, setValue] = React.useState('');
+                    const [status, setStatus] = React.useState('');
+
+                    const refresh = React.useCallback(() => {
+                        const c = randomStr(4);
+                        setCode(c);
+                        setSrc(createCaptchaDataUrl(c, 120, 40));
+                        setValue('');
+                        setStatus('');
+                    }, []);
+
+                    React.useEffect(refresh, []);
+
+                    const onChange = (ev) => {
+                        const v = ev.target.value;
+                        setValue(v);
+                        if (!v) { setStatus(''); return; }
+                        if (v.length >= code.length) {
+                            setStatus(v.toUpperCase() === code ? 'success' : 'error');
+                        }
+                    };
+
+                    return e('div', { className: 'captcha-row' },
+                        e(antd.Input, {
+                            placeholder: '验证码',
+                            value,
+                            onChange,
+                            maxLength: 4,
+                            style: { maxWidth: '200px' },
+                            status: status === 'error' ? 'error' : undefined,
+                            addonAfter: e('img', { src, style: { height: '28px', cursor: 'pointer' }, onClick: refresh, alt: 'captcha' })
+                        }),
+                        e(antd.Button, { onClick: refresh }, '🔄 刷新'),
+                        status && e('span', { style: { fontSize: '16px' } }, status === 'success' ? '✓' : '✗')
+                    );
+                }
+
+                ReactDOM.createRoot(el).render(e(App));
+            } catch (e) { console.warn('React init failed:', e); }
+        }
+
+        async function initAngular() {
+            try {
+                const angular = await waitFor(() => window.angular, 15000);
+                const el = document.getElementById('angularRoot');
+                if (!el) return;
+
+                el.innerHTML = `
+                    <div ng-controller="Ctrl as vm" class="captcha-row">
+                        <div style="display:flex;align-items:center;border:2px solid var(--border-color);border-radius:8px;overflow:hidden;background:var(--bg-input);">
+                            <input type="text" ng-model="vm.input" ng-change="vm.onInput()" placeholder="验证码" maxlength="4"
+                                ng-class="{'success': vm.status==='success', 'error': vm.status==='error'}"
+                                style="border:none;padding:10px 12px;font-size:14px;width:100px;background:transparent;color:var(--text-primary);outline:none;">
+                            <img ng-src="{{vm.src}}" style="height:32px;cursor:pointer;border-left:1px solid var(--border-color);" ng-click="vm.refresh()" alt="captcha">
+                        </div>
+                        <button ng-click="vm.refresh()">🔄 刷新</button>
+                        <span ng-if="vm.status" style="font-size:16px;">{{vm.status === 'success' ? '✓' : '✗'}}</span>
+                    </div>`;
+
+                angular.module('app', []).controller('Ctrl', function() {
+                    const vm = this;
+                    vm.input = '';
+                    vm.code = '';
+                    vm.src = '';
+                    vm.status = '';
+
+                    vm.refresh = function() {
+                        vm.code = randomStr(4);
+                        vm.src = createCaptchaDataUrl(vm.code, 120, 40);
+                        vm.input = '';
+                        vm.status = '';
+                    };
+
+                    vm.onInput = function() {
+                        if (!vm.input) { vm.status = ''; return; }
+                        if (vm.input.length >= vm.code.length) {
+                            vm.status = vm.input.toUpperCase() === vm.code ? 'success' : 'error';
+                        }
+                    };
+
+                    vm.refresh();
+                });
+
+                angular.bootstrap(el, ['app']);
+            } catch (e) { console.warn('Angular init failed:', e); }
+        }
+
+        /* ========== 初始化 ========== */
         window.onload = function() {
-            drawCanvasCaptcha();
-            generateImgCaptcha();
-            generateBase64Captcha();
-            generateSVGCaptcha();
-            generateNoisyCaptcha();
-            generateMathCaptcha();
-            generateCSSCaptcha();
+            refreshCanvas();
+            refreshImg();
+            refreshBase64();
+            refreshSVG();
+            refreshNoisy();
+            refreshMath();
+            refreshCSS();
+
+            setupAutoValidation('canvasInput', 'canvasStatus', () => canvasCode);
+            setupAutoValidation('imgInput', 'imgStatus', () => imgCode);
+            setupAutoValidation('base64Input', 'base64Status', () => base64Code);
+            setupAutoValidation('svgInput', 'svgStatus', () => svgCode);
+            setupAutoValidation('noisyInput', 'noisyStatus', () => noisyCode);
+            setupAutoValidation('mathInput', 'mathStatus', () => mathAnswer);
+            setupAutoValidation('cssInput', 'cssStatus', () => cssCode);
+
+            setTimeout(() => {
+                initVue();
+                initReact();
+                initAngular();
+            }, 300);
         };
     </script>
 </body>

@@ -1,0 +1,70 @@
+{
+  "manifest_version": 2,
+  "name": "DDDD OCR Extension",
+  "version": "1.1.0",
+  "description": "完全离线的验证码识别工具，支持自动检测并填充验证码",
+  "default_locale": "zh_CN",
+  "author": "MakotoArai",
+  "homepage_url": "https://github.com/MakotoArai-CN/ddddocr-webjs",
+  "icons": {
+    "16": "icons/icon48.png",
+    "48": "icons/icon64.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "<all_urls>"
+  ],
+  "background": {
+    "page": "background.html",
+    "persistent": true
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon48.png",
+      "48": "icons/icon64.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "DDDD OCR"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    "common.onnx",
+    "charsets.json",
+    "icons/*",
+    "ort-wasm-simd.wasm",
+    "ort-wasm.wasm",
+    "ort-wasm-threaded.wasm",
+    "ort-wasm-simd-threaded.wasm",
+    "ort.min.js"
+  ],
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ddddocr-webjs@makotoarai",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}

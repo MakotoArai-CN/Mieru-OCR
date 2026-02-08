@@ -63,7 +63,7 @@ export class OCREngine {
       if (typeof globalThis !== 'undefined' && (globalThis as any).ort) return (globalThis as any).ort;
       try {
         if (typeof unsafeWindow !== 'undefined' && unsafeWindow.ort) return unsafeWindow.ort;
-      } catch (e) {}
+      } catch (e) { }
       return null;
     };
 
@@ -108,14 +108,27 @@ export class OCREngine {
   private decodeOutput(output: any): string {
     const indices = this.convertToNumberArray(output.data);
     const result: string[] = [];
-    let lastChar = '';
+
+    let prevIdx = -1;
+
     for (const idx of indices) {
-      if (idx <= 0 || idx >= this.charsets.length) continue;
+      if (idx === prevIdx) {
+        continue;
+      }
+      prevIdx = idx;
+
+      if (idx <= 0 || idx >= this.charsets.length) {
+        continue;
+      }
+
       const char = this.charsets[idx];
-      if (!char || char === lastChar) continue;
+      if (!char) {
+        continue;
+      }
+
       result.push(char);
-      lastChar = char;
     }
+
     return result.join('');
   }
 

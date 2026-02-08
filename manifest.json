@@ -5,7 +5,7 @@
   "description": "完全离线的验证码识别工具，支持自动检测并填充验证码",
   "default_locale": "zh_CN",
   "author": "MakotoArai",
-  "homepage_url": "https://github.com/MakotoArai/ddddocr-webjs",
+  "homepage_url": "https://github.com/MakotoArai-CN/ddddocr-webjs",
   "icons": {
     "16": "icons/icon48.png",
     "48": "icons/icon64.png",

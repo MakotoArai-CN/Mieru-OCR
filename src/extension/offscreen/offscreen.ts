@@ -58,13 +58,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleRecognize(message: any, sendResponse: (response: any) => void) {
   try {
     const engine = await getOCREngine();
-
     if (message.imageData) {
+      const startTime = Date.now();
       const result = await engine.recognize(message.imageData);
-      sendResponse({ success: true, text: result.text });
+      const elapsed = Date.now() - startTime;
+      sendResponse({ success: true, text: result.text, elapsed });
       return;
     }
-
     sendResponse({ success: false, error: '缺少图像数据' });
   } catch (error) {
     sendResponse({ success: false, error: (error as Error).message });

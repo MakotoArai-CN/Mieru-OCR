@@ -1,6 +1,6 @@
-import type { ExtensionSettings, SiteRule } from '@core/types';
-
-const OFFSCREEN_URL = 'offscreen.html';
+declare const browser: any;
+import { OCREngine } from '@core/ocr-engine';
+import type { ExtensionSettings } from '@core/types';
 
 type OcrEngineStatus = 'ready' | 'initializing' | 'fault';
 
@@ -16,74 +16,110 @@ let ocrStatus: OcrStatus = {
   updatedAt: Date.now(),
 };
 
-let offscreenCreating: Promise<void> | null = null;
+let ocrEngine: OCREngine | null = null;
+let ocrEnginePromise: Promise<OCREngine> | null = null;
+let ortInstance: any = null;
 
 function setOcrStatus(status: OcrEngineStatus, message?: string): void {
   ocrStatus = { status, message, updatedAt: Date.now() };
-  console.log('[Service Worker] OCR状态更新:', status, message);
+  console.log('[Background Firefox] OCR状态更新:', status, message);
 }
 
-async function ensureOffscreenDocument(): Promise<void> {
-  const offscreenApi = (chrome as any).offscreen;
-  if (!offscreenApi) {
-    setOcrStatus('fault', '浏览器不支持 offscreen API');
-    throw new Error('chrome.offscreen API 不可用');
-  }
+function getOrtFromGlobal(): any {
+  const g = (typeof window !== 'undefined' ? window : self) as any;
+  return g.ort || null;
+}
 
-  if (offscreenCreating) {
-    await offscreenCreating;
-    return;
-  }
+async function loadOrt(): Promise<any> {
+  if (ortInstance) return ortInstance;
 
-  const getContexts = (chrome.runtime as any).getContexts;
-  if (typeof getContexts === 'function') {
-    try {
-      const existing = await getContexts({
-        contextTypes: ['OFFSCREEN_DOCUMENT'],
-      });
-      if (Array.isArray(existing) && existing.length > 0) {
-        return;
-      }
-    } catch (e) {
-      console.warn('[Service Worker] getContexts 失败:', e);
+  ortInstance = getOrtFromGlobal();
+  if (!ortInstance) {
+    for (let i = 0; i < 50; i++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      ortInstance = getOrtFromGlobal();
+      if (ortInstance) break;
     }
   }
 
-  offscreenCreating = offscreenApi.createDocument({
-    url: OFFSCREEN_URL,
-    reasons: ['DOM_SCRAPING'],
-    justification: 'Run OCR inference with onnxruntime-web',
-  });
-
-  try {
-    await offscreenCreating;
-    console.log('[Service Worker] Offscreen document 已创建');
-  } finally {
-    offscreenCreating = null;
+  if (!ortInstance) {
+    throw new Error('ort.min.js 未加载，全局 ort 对象不存在');
   }
+
+  const base = browser.runtime.getURL('/');
+  ortInstance.env.wasm.numThreads = 1;
+  ortInstance.env.wasm.simd = true;
+  ortInstance.env.wasm.proxy = false;
+  ortInstance.env.wasm.wasmPaths = base;
+  ortInstance.env.logLevel = 'error';
+
+  console.log('[Background Firefox] ort.min.js 已就绪');
+  return ortInstance;
 }
 
-chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('[Service Worker] 扩展安装/更新:', details.reason);
+async function getOCREngine(): Promise<OCREngine> {
+  if (ocrEngine) return ocrEngine;
+
+  if (ocrEnginePromise) return ocrEnginePromise;
+
+  ocrEnginePromise = (async () => {
+    try {
+      const ort = await loadOrt();
+
+      const engine = new OCREngine({
+        getModel: async () => {
+          const [modelRes, charsetsRes] = await Promise.all([
+            fetch(browser.runtime.getURL('common.onnx')),
+            fetch(browser.runtime.getURL('charsets.json')),
+          ]);
+          return {
+            model: await modelRes.arrayBuffer(),
+            charsets: await charsetsRes.json(),
+          };
+        },
+        getOrt: async () => ort,
+        wasmPaths: browser.runtime.getURL('/'),
+      });
+
+      await engine.init();
+      ocrEngine = engine;
+      return engine;
+    } catch (error) {
+      ocrEnginePromise = null;
+      throw error;
+    }
+  })();
+
+  return ocrEnginePromise;
+}
+
+browser.runtime.onInstalled.addListener((details: any) => {
+  console.log('[Background Firefox] 扩展安装/更新:', details.reason);
   if (details.reason === 'install') {
-    chrome.runtime.openOptionsPage();
+    browser.runtime.openOptionsPage();
   }
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  handleMessage(message, sender, sendResponse);
-  return true;
+browser.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
+  if (typeof sendResponse === 'function') {
+    handleMessage(message, sender, sendResponse);
+    return true;
+  }
+
+  return new Promise((resolve) => {
+    handleMessage(message, sender, resolve);
+  });
 });
 
 async function handleMessage(
   message: any,
-  sender: chrome.runtime.MessageSender,
+  sender: any,
   sendResponse: (response: any) => void
 ): Promise<void> {
   const debugMode = await getDebugMode();
 
   if (debugMode) {
-    console.log('[Service Worker] 收到消息:', message.action, message);
+    console.log('[Background Firefox] 收到消息:', message.action, message);
   }
 
   try {
@@ -91,46 +127,36 @@ async function handleMessage(
       case 'recognizeCaptcha':
         await handleRecognize(message, sendResponse);
         break;
-
       case 'getSettings':
         await handleGetSettings(sendResponse);
         break;
-
       case 'saveSettings':
         await handleSaveSettings(message, sendResponse);
         break;
-
       case 'getSiteRules':
         await handleGetSiteRules(sendResponse);
         break;
-
       case 'saveSiteRule':
         await handleSaveSiteRule(message, sendResponse);
         break;
-
       case 'deleteSiteRule':
         await handleDeleteSiteRule(message, sendResponse);
         break;
-
       case 'updateSiteRule':
         await handleUpdateSiteRule(message, sendResponse);
         break;
-
       case 'exportConfig':
         await handleExportConfig(sendResponse);
         break;
-
       case 'importConfig':
         await handleImportConfig(message, sendResponse);
         break;
-
       case 'getOcrStatus':
         sendResponse({ success: true, ocrStatus });
         break;
-
       case 'captchaDetected':
         if (debugMode) {
-          console.log('[Service Worker] 检测到验证码:', message.count);
+          console.log('[Background Firefox] 检测到验证码:', message.count);
         }
         sendResponse({ success: true });
         break;
@@ -147,87 +173,89 @@ async function handleMessage(
         sendResponse({ success: false, error: '未知操作: ' + message.action });
     }
   } catch (error) {
-    console.error('[Service Worker] 处理消息失败:', error);
+    console.error('[Background Firefox] 处理消息失败:', error);
     sendResponse({ success: false, error: (error as Error).message });
   }
 }
 
 async function getDebugMode(): Promise<boolean> {
   try {
-    const result = await chrome.storage.local.get('settings');
-    return result.settings?.debugMode || false;
+    const result = await browser.storage.local.get('settings');
+    return result?.settings?.debugMode || false;
   } catch {
     return false;
   }
 }
 
 async function handleRecognize(
-message: any,
-sendResponse: (response: any) => void
+  message: any,
+  sendResponse: (response: any) => void
 ): Promise<void> {
-const startTime = Date.now();
-const debugMode = await getDebugMode();
-try {
-if (debugMode) {
-console.log('[Service Worker] 开始识别, 图像大小:', message.imageData?.length);
-}
-setOcrStatus('initializing', '正在初始化OCR引擎...');
-await ensureOffscreenDocument();
-if (debugMode) {
-console.log('[Service Worker] Offscreen document 就绪, 发送识别请求...');
-}
-const resp = await chrome.runtime.sendMessage({
-action: 'offscreen:recognize',
-imageData: message.imageData,
-});
-const totalElapsed = Date.now() - startTime;
+  const startTime = Date.now();
+  const debugMode = await getDebugMode();
+  try {
+    if (debugMode) {
+      console.log('[Background Firefox] 开始识别, 图像大小:', message.imageData?.length);
+    }
+    setOcrStatus('initializing', '正在初始化OCR引擎...');
+    const engine = await getOCREngine();
 
-if (resp?.success) {
-setOcrStatus('ready', '识别完成');
-const elapsed = typeof resp.elapsed === 'number' ? resp.elapsed : totalElapsed;
-if (debugMode) {
-console.log('[Service Worker] 识别成功:', resp.text, '耗时:', elapsed, 'ms');
-}
-sendResponse({ success: true, text: resp.text, elapsed });
-} else {
-setOcrStatus('fault', resp?.error || '识别失败');
-console.error('[Service Worker] 识别失败:', resp?.error);
-sendResponse({ success: false, error: resp?.error || '识别失败', elapsed: totalElapsed });
-}
-} catch (error) {
-const elapsed = Date.now() - startTime;
-setOcrStatus('fault', (error as Error).message);
-console.error('[Service Worker] 识别异常:', error);
-sendResponse({ success: false, error: (error as Error).message, elapsed });
-}
+    if (debugMode) {
+      console.log('[Background Firefox] OCR引擎就绪, 开始识别...');
+    }
+
+    const recognizeStart = Date.now();
+    const result = await engine.recognize(message.imageData);
+    const elapsed = Date.now() - recognizeStart;
+
+    setOcrStatus('ready', '识别完成');
+    if (debugMode) {
+      console.log('[Background Firefox] 识别成功:', result.text, '耗时:', elapsed, 'ms');
+    }
+
+    sendResponse({ success: true, text: result.text, elapsed, totalElapsed: Date.now() - startTime });
+  } catch (error) {
+    const elapsed = Date.now() - startTime;
+    setOcrStatus('fault', (error as Error).message);
+    console.error('[Background Firefox] 识别异常:', error);
+    sendResponse({ success: false, error: (error as Error).message, elapsed });
+  }
 }
 
 async function handleGetSettings(sendResponse: (response: any) => void): Promise<void> {
-  const result = await chrome.storage.local.get('settings');
-  sendResponse({ success: true, settings: result.settings || getDefaultSettings() });
+  try {
+    const result = await browser.storage.local.get('settings');
+    sendResponse({ success: true, settings: result?.settings || getDefaultSettings() });
+  } catch {
+    sendResponse({ success: true, settings: getDefaultSettings() });
+  }
 }
 
 async function handleSaveSettings(
   message: any,
   sendResponse: (response: any) => void
 ): Promise<void> {
-  await chrome.storage.local.set({ settings: message.settings });
-
-  const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) {
-    if (tab.id && tab.url?.startsWith('http')) {
-      try {
-        await chrome.tabs.sendMessage(tab.id, { action: 'updateSettings' });
-      } catch { }
+  await browser.storage.local.set({ settings: message.settings });
+  try {
+    const tabs = await browser.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.id && tab.url?.startsWith('http')) {
+        try {
+          await browser.tabs.sendMessage(tab.id, { action: 'updateSettings' });
+        } catch { }
+      }
     }
-  }
-
+  } catch { }
   sendResponse({ success: true });
 }
 
 async function handleGetSiteRules(sendResponse: (response: any) => void): Promise<void> {
-  const result = await chrome.storage.local.get('siteRules');
-  sendResponse({ success: true, rules: result.siteRules || {} });
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    sendResponse({ success: true, rules: result?.siteRules || {} });
+  } catch {
+    sendResponse({ success: true, rules: {} });
+  }
 }
 
 async function handleSaveSiteRule(
@@ -235,11 +263,13 @@ async function handleSaveSiteRule(
   sendResponse: (response: any) => void
 ): Promise<void> {
   const { hostname, rule } = message;
-  const result = await chrome.storage.local.get('siteRules');
-  const rules = result.siteRules || {};
+  let rules: Record<string, any> = {};
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    rules = result?.siteRules || {};
+  } catch { }
 
   const ruleKey = rule.fullUrl || rule.urlPattern || hostname;
-
   const existingRule = rules[ruleKey] || {};
 
   rules[ruleKey] = {
@@ -252,10 +282,8 @@ async function handleSaveSiteRule(
     updatedAt: Date.now(),
   };
 
-  await chrome.storage.local.set({ siteRules: rules });
-
-  console.log('[Service Worker] 规则已保存:', ruleKey, rules[ruleKey]);
-
+  await browser.storage.local.set({ siteRules: rules });
+  console.log('[Background Firefox] 规则已保存:', ruleKey, rules[ruleKey]);
   sendResponse({ success: true });
 }
 
@@ -264,8 +292,11 @@ async function handleUpdateSiteRule(
   sendResponse: (response: any) => void
 ): Promise<void> {
   const { oldKey, newRule } = message;
-  const result = await chrome.storage.local.get('siteRules');
-  const rules = result.siteRules || {};
+  let rules: Record<string, any> = {};
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    rules = result?.siteRules || {};
+  } catch { }
 
   if (oldKey && rules[oldKey]) {
     delete rules[oldKey];
@@ -277,7 +308,7 @@ async function handleUpdateSiteRule(
     updatedAt: Date.now(),
   };
 
-  await chrome.storage.local.set({ siteRules: rules });
+  await browser.storage.local.set({ siteRules: rules });
   sendResponse({ success: true });
 }
 
@@ -286,23 +317,29 @@ async function handleDeleteSiteRule(
   sendResponse: (response: any) => void
 ): Promise<void> {
   const { hostname, ruleKey } = message;
-  const result = await chrome.storage.local.get('siteRules');
-  const rules = result.siteRules || {};
+  let rules: Record<string, any> = {};
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    rules = result?.siteRules || {};
+  } catch { }
 
   const keyToDelete = ruleKey || hostname;
-
   if (rules[keyToDelete]) {
     delete rules[keyToDelete];
-    console.log('[Service Worker] 规则已删除:', keyToDelete);
+    console.log('[Background Firefox] 规则已删除:', keyToDelete);
   }
 
-  await chrome.storage.local.set({ siteRules: rules });
+  await browser.storage.local.set({ siteRules: rules });
   sendResponse({ success: true });
 }
 
 async function handleExportConfig(sendResponse: (response: any) => void): Promise<void> {
-  const result = await chrome.storage.local.get(['settings', 'siteRules']);
-  sendResponse({ success: true, config: result });
+  try {
+    const result = await browser.storage.local.get(['settings', 'siteRules']);
+    sendResponse({ success: true, config: result || {} });
+  } catch {
+    sendResponse({ success: true, config: {} });
+  }
 }
 
 async function handleImportConfig(
@@ -310,7 +347,7 @@ async function handleImportConfig(
   sendResponse: (response: any) => void
 ): Promise<void> {
   const { config } = message;
-  await chrome.storage.local.set(config);
+  await browser.storage.local.set(config);
   sendResponse({ success: true });
 }
 
@@ -329,13 +366,17 @@ interface StatsData {
 const MAX_STATS_SITES = 100;
 
 async function getStatsData(): Promise<StatsData> {
-  const result = await chrome.storage.local.get('recognitionStats');
-  return result.recognitionStats || { sites: {}, total: 0, updated: Date.now() };
+  try {
+    const result = await browser.storage.local.get('recognitionStats');
+    return result?.recognitionStats || { sites: {}, total: 0, updated: Date.now() };
+  } catch {
+    return { sites: {}, total: 0, updated: Date.now() };
+  }
 }
 
 async function saveStatsData(data: StatsData): Promise<void> {
   data.updated = Date.now();
-  await chrome.storage.local.set({ recognitionStats: data });
+  await browser.storage.local.set({ recognitionStats: data });
 }
 
 async function handleRecordStats(
@@ -377,7 +418,7 @@ async function handleClearStats(sendResponse: (response: any) => void): Promise<
 }
 
 function getDefaultSettings(): ExtensionSettings {
-return {
+  return {
     autoDetect: true,
     captchaSelector: '',
     inputSelector: '',
@@ -409,4 +450,4 @@ return {
   };
 }
 
-console.log('[Service Worker] 初始化完成');
+console.log('[Background Firefox] 初始化完成');

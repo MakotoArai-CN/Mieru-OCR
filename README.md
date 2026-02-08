@@ -19,6 +19,7 @@
 >
 > 截止2026-01-28，浏览器扩展版本已经通过edge浏览器应用商店的审核，现在已经可以通过应用商店安装：[https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl](https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl)
 > Chrome应用商店由于注册账号需要支付5美刀，本项目也是非盈利项目，所以没有上架，Chrome浏览器只能通过开发者模式安装浏览器扩展。
+> 截止2026年2月9日，正式支持火狐浏览器，火狐浏览器支持v140+版本
 
 ## ✨ 特性
 
@@ -38,25 +39,55 @@
 | 类型       | 安装方式            | 传送门                                                                                     | 描述                                                  |
 | ---------- | ------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
 | 浏览器扩展 | Edge应用商店        | [Edge](https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl) | Edge浏览器浏览器扩展                                  |
+| 浏览器扩展 | FireFox应用商店        | 审核中 | FireFox/WaterFox/Zen浏览器浏览器扩展（内核大于140都可以安装使用）                                  |
 | 油猴脚本   | Chrome/Edge/Firefox | [ScriptCat](https://scriptcat.org/zh-CN/script-show-page/4781)                             | 支持油猴/脚本猫等浏览器扩展，只要支持浏览器扩展就能用 |
 | 浏览器扩展 | 仓库安装            | [Github](https://github.com/MakotoArai-CN/ddddocr-webjs/releases/latest)                   | 直接下载压缩包文件，解压后安装浏览器扩展              |
 
 ### 在线安装
+
+#### Userscript
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/)、[Violentmonkey](https://violentmonkey.github.io/)或者[ScriptCat](https://www.scriptcat.org/) 等油猴插件
 2. 安装脚本: 在[Greasy Fork](https://greasyfork.org/)脚本市场、[ScriptCat](https://www.scriptcat.org/)脚本市场中搜索 "DDDD OCR WEBJS" 安装
 3. 等待脚本加载完毕，打开设置页设置白名单（必须）
 4. 浏览器扩展版本目前还没有上架，请等待后续更新
 
-### 本地编译安装
+#### EXTENSION
+
+1. Edge Browser 用户打开链接: [https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl](https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl)
+2. 点击安装按钮，等待安装完成
+3. 安装完毕回打开扩展设置页，根据需要对扩展进行设置
+
+> Google Chrome / Firefox 用户暂时不支持在线安装，请自行下载扩展包安装
+
+### 编译安装
+
+#### Userscript
 
 1. 下载模型文件:
-   - [common.onnx](https://github.com/MakotoArai-CN/ddddocr-webjs/blob/main/public/common.onnx)
-   - [charsets.json](https://github.com/MakotoArai-CN/ddddocr-webjs/blob/main/public/charsets.json)
-2. 放到你能找到的目录，后续导入到脚本中（需要开启扩展的 **允许访问文件URL** ）
-3. 构建: `bun run build`
+   - [common.onnx](https://github.com/MakotoArai-CN/ddddocr-webjs/releases/latest/download/common.onnx)
+   - [charsets.json](https://github.com/MakotoArai-CN/ddddocr-webjs/releases/latest/download//charsets.json)
+2. 放到你能找到的目录，后续导 入到脚本中（需要开启扩展的 **允许访问文件URL** ）
+3. `git clone https://github.com/MakotoArai-CN/ddddocr-webjs.git && cd ddddocr-webjs`，构建: `bun run install && bun run build`
 4. 安装 `dist\userscript\ddddocr-web.user.js`，浏览器扩展开启开发者模式后，选择目录`dist\extension`即可安装
 5. 等待脚本加载完毕，打开设置页设置白名单（必须）
+
+> 1.1.3版本开始添加量化模型，模型体积减少约48%，可以在最新版本的Release中下载
+
+#### EXTENSION
+
+1. 拉取仓库源代码编译
+
+```bash
+  git clone https://github.com/MakotoArai-CN/ddddocr-webjs.git
+  cd ddddocr-webjs
+
+  bun run install
+  bun run build
+```
+
+1. 打开浏览器扩展页面，开启开发者模式，选择目录`dist\extension`(FireFox选择`dist\firefox`)，等待安装完成
+2. 安装完毕回打开扩展设置页，根据需要对扩展进行设置
 
 ## 🛠️ 开发
 
@@ -69,14 +100,25 @@ bun run dev
 
 # 构建脚本
 bun run build
+
+# 构建全部
+bun run build:all
 ```
 
 ## 📖 使用
 
+### Userscript
+
 1. 访问任意网页
-2. 右上角出现 "🔤 DDDD OCR" 面板
+2. 右上角出现 "DDDD OCR" 面板
 3. 点击扩展，找到 "DDDD OCR" 面板的**打开设置**，配置脚本白名单
 4. 等待模型加载完毕（首次加载需要下载模型，可能需要几分钟）
+
+### EXTENSION
+
+1. 访问任意网页的的登录页
+2. 如果扩展没有识别到验证码和验证码输入框，请扩展窗口
+3. 点击选择验证码或者验证码输入框，根据提示进行选择，选择完毕会自动识别
 
 ## 注意事项
 
@@ -93,14 +135,22 @@ bun run build
 - [x] 适配vue/react等前端框架
 - [x] 修正脚本执行顺序，实现模块化
 - [x] 适配动态生成的弹窗中的验证码
-- [ ] 尝试优化/压缩油猴脚本的模型
-- [ ] 适配火狐浏览器扩展
+- [x] 适配火狐浏览器扩展
+- [ ] 对DDDDOCR模型进行量化，减少模型体积
+- [ ] 排查修复潜在的安全漏洞
+- [x] 优化浏览器扩展UI设计
 
 ## 📝 许可
 
 本项目沿用原项目 [ddddocr](https://github.com/sml2h3/ddddocr) 的许可证[MIT License](./LICENSE)
 
 ## 更新日志
+
+- V1.1.3
+  - 修复验证码存在连续字符时会被过滤的bug
+  - 优化验证码元素组件识别逻辑
+  - 优化浏览器扩展UI，美化样式
+  - 优化移动端浏览器扩展UI
 
 - V1.1.2
   - 修复部分站点登录弹窗无法识别验证码的bug

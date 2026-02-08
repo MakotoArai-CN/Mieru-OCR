@@ -8,18 +8,6 @@ function readVersion(): string {
   if (existsSync(versionPath)) {
     return readFileSync(versionPath, 'utf-8').trim();
   }
-  // 如果mainifest.json的版本号低于version值，修改manifest.json的版本号为version值
-  const manifestPath = resolve(__dirname,'manifest.json');
-  if (existsSync(manifestPath)) {
-    const manifestContent = readFileSync(manifestPath, 'utf-8');
-    const manifest = JSON.parse(manifestContent);
-    const manifestVersion = manifest.version;
-    if (manifestVersion < readFileSync(versionPath, 'utf-8').trim()) {
-      manifest.version = readFileSync(versionPath, 'utf-8').trim();
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-      console.log(`Updated manifest.json version to ${manifest.version}`);
-    }
-  }
   return '1.1.0';
 }
 
@@ -39,11 +27,11 @@ function copyDirRecursive(srcDir: string, destDir: string): void {
   }
 }
 
-function copyPublicAssets() {
+function copyFirefoxAssets() {
   return {
-    name: 'copy-public-assets',
+    name: 'copy-firefox-assets',
     closeBundle() {
-      const distDir = resolve(__dirname, 'dist/extension');
+      const distDir = resolve(__dirname, 'dist/firefox');
       const publicDir = resolve(__dirname, 'public');
       const iconsDir = resolve(__dirname, 'icons');
       const localeDir = resolve(__dirname, '_locales');
@@ -57,22 +45,12 @@ function copyPublicAssets() {
       if (existsSync(modelPath)) {
         copyFileSync(modelPath, resolve(distDir, 'common.onnx'));
         console.log('Copied common.onnx');
-      } else {
-        console.warn('common.onnx not found in public/, skipping...');
       }
 
       const charsetsPath = resolve(publicDir, 'charsets.json');
       if (existsSync(charsetsPath)) {
         copyFileSync(charsetsPath, resolve(distDir, 'charsets.json'));
         console.log('Copied charsets.json');
-      } else {
-        console.warn('charsets.json not found in public/, skipping...');
-      }
-
-      const testHtmlPath = resolve(publicDir, 'test.html');
-      if (existsSync(testHtmlPath)) {
-        copyFileSync(testHtmlPath, resolve(distDir, 'test.html'));
-        console.log('Copied test.html');
       }
 
       const ortDistDir = resolve(__dirname, 'node_modules/onnxruntime-web/dist');
@@ -83,11 +61,8 @@ function copyPublicAssets() {
           if (f.startsWith('ort-') && f.endsWith('.wasm')) return true;
           if (f.startsWith('ort-') && f.endsWith('.mjs')) return true;
           if (f.startsWith('ort-') && f.endsWith('.worker.js')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.jsep.mjs')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.jsep.wasm')) return true;
           return false;
         });
-
         runtimeFiles.forEach((file) => {
           const srcPath = resolve(ortDistDir, file);
           const destPath = resolve(distDir, file);
@@ -96,12 +71,6 @@ function copyPublicAssets() {
             console.log(`Copied ${file}`);
           }
         });
-
-        if (!runtimeFiles.includes('ort.min.js')) {
-          console.warn('ort.min.js not found in onnxruntime-web/dist, runtime may fail');
-        }
-      } else {
-        console.warn('onnxruntime-web dist not found, skipping runtime files...');
       }
 
       const distIconsDir = resolve(distDir, 'icons');
@@ -109,17 +78,11 @@ function copyPublicAssets() {
         mkdirSync(distIconsDir, { recursive: true });
       }
       if (existsSync(iconsDir)) {
-        try {
-          const iconFiles = readdirSync(iconsDir).filter(f => f.endsWith('.png'));
-          iconFiles.forEach(icon => {
-            copyFileSync(resolve(iconsDir, icon), resolve(distIconsDir, icon));
-            console.log(`Copied icons/${icon}`);
-          });
-        } catch (err) {
-          console.warn('Failed to copy icons:', err);
-        }
-      } else {
-        console.warn('icons/ directory not found, skipping...');
+        const iconFiles = readdirSync(iconsDir).filter(f => f.endsWith('.png'));
+        iconFiles.forEach(icon => {
+          copyFileSync(resolve(iconsDir, icon), resolve(distIconsDir, icon));
+          console.log(`Copied icons/${icon}`);
+        });
       }
 
       const distLocaleDir = resolve(distDir, '_locales');
@@ -127,72 +90,64 @@ function copyPublicAssets() {
         mkdirSync(distLocaleDir, { recursive: true });
       }
       if (existsSync(localeDir)) {
-        try {
-          const localeFiles = readdirSync(localeDir);
-          localeFiles.forEach(locale => {
-            const srcPath = resolve(localeDir, locale);
-            const destPath = resolve(distLocaleDir, locale);
-            if (statSync(srcPath).isDirectory()) {
-              copyDirRecursive(srcPath, destPath);
-              console.log(`Copied _locales/${locale}`);
-            }
-          });
-        } catch (err) {
-          console.warn('Failed to copy _locales:', err);
-        }
-      } else {
-        console.warn('_locales/ directory not found, skipping...');
+        const localeEntries = readdirSync(localeDir);
+        localeEntries.forEach(locale => {
+          const srcPath = resolve(localeDir, locale);
+          const destPath = resolve(distLocaleDir, locale);
+          if (statSync(srcPath).isDirectory()) {
+            copyDirRecursive(srcPath, destPath);
+            console.log(`Copied _locales/${locale}`);
+          }
+        });
       }
 
-      const manifestSrcPath = resolve(__dirname, 'manifest.json');
+      const manifestSrcPath = resolve(__dirname, 'manifest.firefox.json');
       const manifestDistPath = resolve(distDir, 'manifest.json');
       if (existsSync(manifestSrcPath)) {
         const manifestContent = readFileSync(manifestSrcPath, 'utf-8');
         const manifest = JSON.parse(manifestContent);
         manifest.version = version;
         writeFileSync(manifestDistPath, JSON.stringify(manifest, null, 2));
-        console.log(`Copied manifest.json with version ${version}`);
-      } else {
-        console.warn('manifest.json not found!');
+        console.log(`Copied manifest.firefox.json as manifest.json with version ${version}`);
       }
 
-      const nestedPopup = resolve(distDir, 'src/extension/popup/popup.html');
-      const nestedOptions = resolve(distDir, 'src/extension/options/options.html');
-      const nestedOffscreen = resolve(distDir, 'src/extension/offscreen/offscreen.html');
+      const nestedPopup = resolve(distDir, 'src/extension/popup/popup-firefox.html');
+      const nestedOptions = resolve(distDir, 'src/extension/options/options-firefox.html');
+      const nestedBgHtml = resolve(distDir, 'src/extension/background/background-firefox.html');
+
       const rootPopup = resolve(distDir, 'popup.html');
       const rootOptions = resolve(distDir, 'options.html');
-      const rootOffscreen = resolve(distDir, 'offscreen.html');
+      const rootBgHtml = resolve(distDir, 'background.html');
 
       if (existsSync(nestedPopup)) {
         copyFileSync(nestedPopup, rootPopup);
-        console.log('Copied popup.html to root');
+        console.log('Copied popup-firefox.html to popup.html');
       }
       if (existsSync(nestedOptions)) {
         copyFileSync(nestedOptions, rootOptions);
-        console.log('Copied options.html to root');
+        console.log('Copied options-firefox.html to options.html');
       }
-      if (existsSync(nestedOffscreen)) {
-        copyFileSync(nestedOffscreen, rootOffscreen);
-        console.log('Copied offscreen.html to root');
+      if (existsSync(nestedBgHtml)) {
+        copyFileSync(nestedBgHtml, rootBgHtml);
+        console.log('Copied background-firefox.html to background.html');
       }
 
       const nestedSrcDir = resolve(distDir, 'src');
       if (existsSync(nestedSrcDir)) {
         try {
           rmSync(nestedSrcDir, { recursive: true, force: true });
-          console.log('Removed dist/extension/src');
+          console.log('Removed dist/firefox/src');
         } catch (err) {
-          console.warn('Failed to remove dist/extension/src:', err);
+          console.warn('Failed to remove dist/firefox/src:', err);
         }
       }
 
       const zipFile = new AdmZip();
       zipFile.addLocalFolder(distDir);
-      const zipPath = resolve(import.meta.dirname, `dist/ddddocr-extension-v${version}.zip`);
+      const zipPath = resolve(__dirname, `dist/ddddocr-firefox-v${version}.zip`);
       zipFile.writeZip(zipPath);
       console.log(`Created ${zipPath}`);
-
-      console.log(`Build completed (version ${version})`);
+      console.log(`Firefox build completed (version ${version})`);
     }
   };
 }
@@ -205,15 +160,15 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist/extension',
+    outDir: 'dist/firefox',
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        popup: resolve(__dirname, 'src/extension/popup/popup.html'),
-        options: resolve(__dirname, 'src/extension/options/options.html'),
-        offscreen: resolve(__dirname, 'src/extension/offscreen/offscreen.html'),
-        background: resolve(__dirname, 'src/extension/background/service-worker.ts'),
-        content: resolve(__dirname, 'src/extension/content/content.ts'),
+        'popup-firefox': resolve(__dirname, 'src/extension/popup/popup-firefox.html'),
+        'options-firefox': resolve(__dirname, 'src/extension/options/options-firefox.html'),
+        'background-html': resolve(__dirname, 'src/extension/background/background-firefox.html'),
+        background: resolve(__dirname, 'src/extension/background/background-firefox.ts'),
+        content: resolve(__dirname, 'src/extension/content/content-firefox.ts'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
@@ -251,5 +206,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [copyPublicAssets()],
+  plugins: [copyFirefoxAssets()],
 });

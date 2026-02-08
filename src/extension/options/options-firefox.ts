@@ -1,4 +1,4 @@
-import { showConfirm } from '../ui/modal';
+declare const browser: any;
 
 interface CalculateRule {
   pattern: string;
@@ -130,12 +130,24 @@ async function applyTheme(): Promise<void> {
 }
 
 async function getSettings(): Promise<any> {
-  const result = await chrome.storage.local.get('settings');
-  return result.settings || getDefaultSettings();
+  try {
+    const result = await browser.storage.local.get('settings');
+    if (result && result.settings) {
+      return result.settings;
+    }
+    return getDefaultSettings();
+  } catch (e) {
+    console.warn('获取设置失败:', e);
+    return getDefaultSettings();
+  }
 }
 
 async function saveSettings(settings: any): Promise<void> {
-  await chrome.storage.local.set({ settings });
+  try {
+    await browser.storage.local.set({ settings });
+  } catch (e) {
+    console.error('保存设置失败:', e);
+  }
 }
 
 function getDefaultSettings(): any {
@@ -161,6 +173,7 @@ function getDefaultSettings(): any {
 
 async function loadSettings(): Promise<void> {
   const settings = await getSettings();
+
   (elements.theme as HTMLSelectElement).value = settings.theme || 'auto';
   (elements.autoFill as HTMLInputElement).checked = settings.autoFill !== false;
   (elements.typewriterEffect as HTMLInputElement).checked = settings.typewriterEffect !== false;
@@ -170,7 +183,9 @@ async function loadSettings(): Promise<void> {
   (elements.captchaSelector as HTMLInputElement).value = settings.captchaSelector || '';
   (elements.inputSelector as HTMLInputElement).value = settings.inputSelector || '';
   (elements.submitSelector as HTMLInputElement).value = settings.submitSelector || '';
+
   renderAgreementSelectors(settings.agreementSelectors || []);
+
   (elements.autoCalculate as HTMLInputElement).checked = settings.autoCalculate || false;
   (elements.calculateOutputMode as HTMLSelectElement).value = settings.calculateOutputMode || 'result';
   if (settings.autoCalculate) {
@@ -178,6 +193,7 @@ async function loadSettings(): Promise<void> {
     (elements.calculateRulesCard as HTMLElement).style.display = 'block';
   }
   renderCalculateRules(settings.calculateRules || []);
+
   (elements.timeout as HTMLInputElement).value = String((settings.timeout || 30000) / 1000);
   (elements.retryCount as HTMLInputElement).value = String(settings.retryCount || 3);
   (elements.debugMode as HTMLInputElement).checked = settings.debugMode || false;
@@ -191,11 +207,11 @@ function renderAgreementSelectors(selectors: string[]): void {
     return;
   }
   container.innerHTML = selectors.map((selector, index) => `
-<div class="selector-item" data-index="${index}">
-<code>${escapeHtml(selector)}</code>
-<button class="btn btn-danger btn-sm btn-delete-agreement" data-index="${index}">删除</button>
-</div>
-`).join('');
+    <div class="selector-item" data-index="${index}">
+      <code>${escapeHtml(selector)}</code>
+      <button class="btn btn-danger btn-sm btn-delete-agreement" data-index="${index}">删除</button>
+    </div>
+  `).join('');
   container.querySelectorAll('.btn-delete-agreement').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const index = parseInt((e.target as HTMLElement).dataset.index || '0');
@@ -243,21 +259,21 @@ function renderCalculateRules(rules: CalculateRule[]): void {
     return;
   }
   container.innerHTML = rules.map((rule, index) => `
-<div class="calc-rule-item" data-index="${index}">
-<div class="calc-rule-info">
-<div class="calc-rule-pattern">${escapeHtml(rule.pattern)}</div>
-<div class="calc-rule-meta">
-<span class="calc-rule-badge">${rule.matchType === 'regex' ? '正则' : '通配符'}</span>
-<span class="calc-rule-badge ${rule.outputMode === 'result' ? 'output-result' : 'output-equation'}">
-${rule.outputMode === 'result' ? '仅结果' : '完整等式'}
-</span>
-</div>
-</div>
-<div class="calc-rule-actions">
-<button class="btn btn-danger btn-sm btn-delete-calc-rule" data-index="${index}">删除</button>
-</div>
-</div>
-`).join('');
+    <div class="calc-rule-item" data-index="${index}">
+      <div class="calc-rule-info">
+        <div class="calc-rule-pattern">${escapeHtml(rule.pattern)}</div>
+        <div class="calc-rule-meta">
+          <span class="calc-rule-badge">${rule.matchType === 'regex' ? '正则' : '通配符'}</span>
+          <span class="calc-rule-badge ${rule.outputMode === 'result' ? 'output-result' : 'output-equation'}">
+            ${rule.outputMode === 'result' ? '仅结果' : '完整等式'}
+          </span>
+        </div>
+      </div>
+      <div class="calc-rule-actions">
+        <button class="btn btn-danger btn-sm btn-delete-calc-rule" data-index="${index}">删除</button>
+      </div>
+    </div>
+  `).join('');
   container.querySelectorAll('.btn-delete-calc-rule').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const index = parseInt((e.target as HTMLElement).dataset.index || '0');
@@ -333,35 +349,43 @@ async function saveAdvancedSettings(): Promise<void> {
 }
 
 async function loadRules(): Promise<void> {
-  const result = await chrome.storage.local.get('siteRules');
-  const rules = result.siteRules || {};
+  let rules: Record<string, any> = {};
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    rules = (result && result.siteRules) ? result.siteRules : {};
+  } catch {
+    rules = {};
+  }
+
   const rulesList = elements.rulesList as HTMLElement;
   if (Object.keys(rules).length === 0) {
     rulesList.innerHTML = '<div class="empty-state"><p>暂无保存的规则</p><span>使用弹窗中的"选择元素"功能添加规则</span></div>';
     return;
   }
+
   rulesList.innerHTML = Object.entries(rules).map(([key, rule]: [string, any]) => {
     const displayKey = key.length > 40 ? key.substring(0, 40) + '...' : key;
     const selectorDisplay = rule.selector.length > 30 ? rule.selector.substring(0, 30) + '...' : rule.selector;
     return `
-<div class="rule-item" data-key="${escapeHtml(key)}">
-<div class="rule-info">
-<div class="rule-hostname">${escapeHtml(displayKey)}</div>
-<div class="rule-selector">${escapeHtml(selectorDisplay)}</div>
-${rule.fullUrl ? '<div class="rule-badge">完整URL匹配</div>' : ''}
-</div>
-<div class="rule-actions">
-<button class="btn btn-secondary btn-sm btn-edit-rule" data-key="${escapeHtml(key)}">编辑</button>
-<button class="btn btn-danger btn-sm btn-delete-rule" data-key="${escapeHtml(key)}">删除</button>
-</div>
-</div>
-`;
+      <div class="rule-item" data-key="${escapeHtml(key)}">
+        <div class="rule-info">
+          <div class="rule-hostname">${escapeHtml(displayKey)}</div>
+          <div class="rule-selector">${escapeHtml(selectorDisplay)}</div>
+          ${rule.fullUrl ? '<div class="rule-badge">完整URL匹配</div>' : ''}
+        </div>
+        <div class="rule-actions">
+          <button class="btn btn-secondary btn-sm btn-edit-rule" data-key="${escapeHtml(key)}">编辑</button>
+          <button class="btn btn-danger btn-sm btn-delete-rule" data-key="${escapeHtml(key)}">删除</button>
+        </div>
+      </div>
+    `;
   }).join('');
+
   rulesList.querySelectorAll('.btn-delete-rule').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const key = (e.target as HTMLElement).dataset.key;
       if (key) {
-        await chrome.runtime.sendMessage({ action: 'deleteSiteRule', ruleKey: key });
+        await browser.runtime.sendMessage({ action: 'deleteSiteRule', ruleKey: key });
         await loadRules();
         showToast('规则已删除', 'success');
       }
@@ -378,23 +402,29 @@ ${rule.fullUrl ? '<div class="rule-badge">完整URL匹配</div>' : ''}
 }
 
 async function editRule(key: string): Promise<void> {
-  const result = await chrome.storage.local.get('siteRules');
-  const rules = result.siteRules || {};
+  let rules: Record<string, any> = {};
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    rules = (result && result.siteRules) ? result.siteRules : {};
+  } catch {
+    rules = {};
+  }
+
   const rule = rules[key];
   if (!rule) {
     showToast('规则不存在', 'error');
     return;
   }
+
   currentEditRuleKey = key;
   (elements.editRuleKey as HTMLInputElement).value = key;
   (elements.editRuleOriginalKey as HTMLInputElement).value = key;
   (elements.editRuleSelector as HTMLInputElement).value = rule.selector || '';
   (elements.editRuleInput as HTMLInputElement).value = rule.inputSelector || '';
   (elements.editRuleUrl as HTMLInputElement).value = rule.fullUrl || '';
-  switchSection('rules');
 
-  const editKeyEl = elements.editRuleKey as HTMLInputElement | null;
-  const editCard = editKeyEl ? editKeyEl.closest('.card') : null;
+  switchSection('rules');
+  const editCard = document.querySelector('.card:has(#edit-rule-key)');
   if (editCard) {
     editCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -406,13 +436,21 @@ async function saveEditRule(): Promise<void> {
   const selector = (elements.editRuleSelector as HTMLInputElement).value.trim();
   const inputSelector = (elements.editRuleInput as HTMLInputElement).value.trim();
   const fullUrl = (elements.editRuleUrl as HTMLInputElement).value.trim();
+
   if (!selector) {
     showToast('验证码选择器不能为空', 'error');
     return;
   }
-  const result = await chrome.storage.local.get('siteRules');
-  const rules = result.siteRules || {};
+
+  let rules: Record<string, any> = {};
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    rules = (result && result.siteRules) ? result.siteRules : {};
+  } catch {
+    rules = {};
+  }
   const oldRule = rules[originalKey] || {};
+
   const newRule: SiteRule = {
     ...oldRule,
     selector,
@@ -421,11 +459,13 @@ async function saveEditRule(): Promise<void> {
     enabled: true,
     updatedAt: Date.now(),
   };
-  await chrome.runtime.sendMessage({
+
+  await browser.runtime.sendMessage({
     action: 'updateSiteRule',
     oldKey: originalKey,
     newRule,
   });
+
   cancelEditRule();
   await loadRules();
   showToast('规则已更新', 'success');
@@ -446,13 +486,14 @@ async function addBulkRules(): Promise<void> {
     showToast('请输入规则', 'error');
     return;
   }
+
   try {
     const rules = JSON.parse(text);
     if (!Array.isArray(rules)) throw new Error('格式错误');
     let count = 0;
     for (const rule of rules) {
       if (!rule.hostname || !rule.selector) continue;
-      await chrome.runtime.sendMessage({
+      await browser.runtime.sendMessage({
         action: 'saveSiteRule',
         hostname: rule.hostname,
         rule: {
@@ -473,8 +514,13 @@ async function addBulkRules(): Promise<void> {
 }
 
 async function exportRules(): Promise<void> {
-  const result = await chrome.storage.local.get('siteRules');
-  const rules = result.siteRules || {};
+  let rules: Record<string, any> = {};
+  try {
+    const result = await browser.storage.local.get('siteRules');
+    rules = (result && result.siteRules) ? result.siteRules : {};
+  } catch {
+    rules = {};
+  }
   const exportData = Object.entries(rules).map(([key, rule]: [string, any]) => ({
     hostname: rule.hostname || key,
     selector: rule.selector,
@@ -486,8 +532,12 @@ async function exportRules(): Promise<void> {
 }
 
 async function exportConfig(): Promise<void> {
-  const result = await chrome.storage.local.get(['settings', 'siteRules']);
-  downloadJson(result, 'ddddocr-config.json');
+  try {
+    const result = await browser.storage.local.get(['settings', 'siteRules']);
+    downloadJson(result, 'ddddocr-config.json');
+  } catch (e) {
+    showToast('导出失败', 'error');
+  }
 }
 
 function downloadJson(data: any, filename: string): void {
@@ -501,96 +551,104 @@ function downloadJson(data: any, filename: string): void {
 }
 
 let importMode = '';
-
 function triggerImport(mode: string): void {
   importMode = mode;
   (elements.fileImport as HTMLInputElement).click();
 }
 
 async function loadStats(): Promise<void> {
-  const response = await chrome.runtime.sendMessage({ action: 'getStats' });
-  if (!response.success) return;
-  const stats = response.stats;
-  const sites = Object.entries(stats.sites || {}) as [string, { count: number; lastTime: number; totalTime: number }][];
-  const totalTime = sites.reduce((sum, [, s]) => sum + s.totalTime, 0);
-  const avgTime = stats.total > 0 ? Math.round(totalTime / stats.total) : 0;
-  const lastUpdate = stats.updated ? new Date(stats.updated).toLocaleString() : '-';
-  const statsGrid = document.getElementById('stats-grid');
-  if (statsGrid) {
-    statsGrid.innerHTML = `
-<div class="stat-card">
-<div class="stat-label">总识别次数</div>
-<div class="stat-value">${stats.total}<span class="stat-unit">次</span></div>
-</div>
-<div class="stat-card accent">
-<div class="stat-label">统计站点数</div>
-<div class="stat-value">${sites.length}<span class="stat-unit">个</span></div>
-</div>
-<div class="stat-card success">
-<div class="stat-label">平均识别耗时</div>
-<div class="stat-value">${avgTime}<span class="stat-unit">ms</span></div>
-</div>
-<div class="stat-card warning">
-<div class="stat-label">最后更新</div>
-<div class="stat-value" style="font-size: 16px;">${lastUpdate}</div>
-</div>
-`;
+  try {
+    const response = await browser.runtime.sendMessage({ action: 'getStats' });
+    if (!response || !response.success) return;
+
+    const stats = response.stats;
+    const sites = Object.entries(stats.sites || {}) as [string, { count: number; lastTime: number; totalTime: number }][];
+    const totalTime = sites.reduce((sum, [, s]) => sum + s.totalTime, 0);
+    const avgTime = stats.total > 0 ? Math.round(totalTime / stats.total) : 0;
+    const lastUpdate = stats.updated ? new Date(stats.updated).toLocaleString() : '-';
+
+    const statsGrid = document.getElementById('stats-grid');
+    if (statsGrid) {
+      statsGrid.innerHTML = `
+        <div class="stat-card">
+          <div class="stat-label">总识别次数</div>
+          <div class="stat-value">${stats.total}<span class="stat-unit">次</span></div>
+        </div>
+        <div class="stat-card accent">
+          <div class="stat-label">统计站点数</div>
+          <div class="stat-value">${sites.length}<span class="stat-unit">个</span></div>
+        </div>
+        <div class="stat-card success">
+          <div class="stat-label">平均识别耗时</div>
+          <div class="stat-value">${avgTime}<span class="stat-unit">ms</span></div>
+        </div>
+        <div class="stat-card warning">
+          <div class="stat-label">最后更新</div>
+          <div class="stat-value" style="font-size: 16px;">${lastUpdate}</div>
+        </div>
+      `;
+    }
+
+    const statsList = elements.statsList as HTMLElement;
+    if (sites.length === 0) {
+      statsList.innerHTML = '<div class="empty-state"><p>暂无统计数据</p><span>开始使用后将自动记录</span></div>';
+      return;
+    }
+
+    sites.sort((a, b) => b[1].count - a[1].count);
+    const topSites = sites.slice(0, 20);
+    const maxCount = topSites.length > 0 ? topSites[0][1].count : 1;
+
+    statsList.innerHTML = topSites.map(([hostname, siteStats], index) => {
+      const siteAvgTime = siteStats.count > 0 ? Math.round(siteStats.totalTime / siteStats.count) : 0;
+      const lastTime = new Date(siteStats.lastTime).toLocaleDateString();
+      const progressWidth = Math.round((siteStats.count / maxCount) * 100);
+      return `
+        <div class="rank-item">
+          <div class="rank-num">${index + 1}</div>
+          <div class="rank-info">
+            <div class="rank-host">${escapeHtml(hostname)}</div>
+            <div class="rank-meta">
+              <span>平均 ${siteAvgTime}ms</span>
+              <span>最后: ${lastTime}</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${progressWidth}%"></div>
+            </div>
+          </div>
+          <div class="rank-count">${siteStats.count}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    console.warn('加载统计数据失败:', e);
   }
-  const statsList = elements.statsList as HTMLElement;
-  if (sites.length === 0) {
-    statsList.innerHTML = '<div class="empty-state"><p>暂无统计数据</p><span>开始使用后将自动记录</span></div>';
-    return;
-  }
-  sites.sort((a, b) => b[1].count - a[1].count);
-  const topSites = sites.slice(0, 20);
-  const maxCount = topSites.length > 0 ? topSites[0][1].count : 1;
-  statsList.innerHTML = topSites.map(([hostname, siteStats], index) => {
-    const siteAvgTime = siteStats.count > 0 ? Math.round(siteStats.totalTime / siteStats.count) : 0;
-    const lastTime = new Date(siteStats.lastTime).toLocaleDateString();
-    const progressWidth = Math.round((siteStats.count / maxCount) * 100);
-    return `
-<div class="rank-item">
-<div class="rank-num">${index + 1}</div>
-<div class="rank-info">
-<div class="rank-host">${escapeHtml(hostname)}</div>
-<div class="rank-meta">
-<span>平均 ${siteAvgTime}ms</span>
-<span>最后: ${lastTime}</span>
-</div>
-<div class="progress-bar">
-<div class="progress-fill" style="width: ${progressWidth}%"></div>
-</div>
-</div>
-<div class="rank-count">${siteStats.count}</div>
-</div>
-`;
-  }).join('');
 }
 
 async function clearStats(): Promise<void> {
-  const ok = await showConfirm({
-    title: '清除统计',
-    message: '确定要清除所有统计数据吗？',
-    confirmText: '确定清除',
-    cancelText: '取消',
-  });
-  if (!ok) return;
-  await chrome.runtime.sendMessage({ action: 'clearStats' });
-  await loadStats();
-  showToast('统计数据已清除', 'success');
+  if (!confirm('确定要清除所有统计数据吗？')) return;
+  try {
+    await browser.runtime.sendMessage({ action: 'clearStats' });
+    await loadStats();
+    showToast('统计数据已清除', 'success');
+  } catch (e) {
+    showToast('清除失败', 'error');
+  }
 }
 
 async function handleFileImport(e: Event): Promise<void> {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
+
   try {
     const text = await file.text();
     const data = JSON.parse(text);
+
     if (importMode === 'rules') {
       if (!Array.isArray(data)) throw new Error('格式错误');
       for (const rule of data) {
         if (!rule.hostname || !rule.selector) continue;
-        await chrome.runtime.sendMessage({
+        await browser.runtime.sendMessage({
           action: 'saveSiteRule',
           hostname: rule.hostname,
           rule: {
@@ -604,7 +662,7 @@ async function handleFileImport(e: Event): Promise<void> {
       await loadRules();
       showToast('规则已导入', 'success');
     } else if (importMode === 'config') {
-      await chrome.storage.local.set(data);
+      await browser.storage.local.set(data);
       await loadSettings();
       await loadRules();
       showToast('配置已导入', 'success');
@@ -612,21 +670,20 @@ async function handleFileImport(e: Event): Promise<void> {
   } catch {
     showToast('导入失败，请检查文件格式', 'error');
   }
+
   (elements.fileImport as HTMLInputElement).value = '';
 }
 
 async function resetAll(): Promise<void> {
-  const ok = await showConfirm({
-    title: '重置所有设置',
-    message: '确定要重置所有设置吗？此操作不可恢复。',
-    confirmText: '确定重置',
-    cancelText: '取消',
-  });
-  if (!ok) return;
-  await chrome.storage.local.clear();
-  await loadSettings();
-  await loadRules();
-  showToast('已重置所有设置', 'success');
+  if (!confirm('确定要重置所有设置吗？此操作不可恢复。')) return;
+  try {
+    await browser.storage.local.clear();
+    await loadSettings();
+    await loadRules();
+    showToast('已重置所有设置', 'success');
+  } catch (e) {
+    showToast('重置失败', 'error');
+  }
 }
 
 function showToast(message: string, type: 'success' | 'error'): void {
@@ -637,14 +694,19 @@ function showToast(message: string, type: 'success' | 'error'): void {
 }
 
 function displayVersion(): void {
-  const manifest = chrome.runtime.getManifest();
-  const versionEl = document.querySelectorAll('.version');
-  if (versionEl) {
-    versionEl.forEach(el => {
-      el.textContent = manifest.version;
-    });
+  try {
+    const manifest = browser.runtime.getManifest();
+    const versionEl = document.querySelectorAll('.version');
+    if (versionEl) {
+      versionEl.forEach((el: Element) => {
+        el.textContent = manifest.version;
+      });
+    }
+  } catch {
+    console.warn('无法获取版本信息');
   }
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
 export { };

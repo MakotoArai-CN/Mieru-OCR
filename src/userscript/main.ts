@@ -486,10 +486,10 @@ class AutoDetector {
     if (config.autoCalculate) {
       return Calculator.processResult(
         text, {
-          autoCalculate: true,
-          outputMode: config.calculateOutputMode,
-          rules: config.calculateRules || [],
-        },
+        autoCalculate: true,
+        outputMode: config.calculateOutputMode,
+        rules: config.calculateRules || [],
+      },
         window.location.hostname
       );
     }
@@ -550,8 +550,17 @@ class AutoDetector {
     const height = svg.clientHeight || parseInt(svg.getAttribute('height') || '0');
     if (width < CONSTANTS.MIN_CAPTCHA_WIDTH || height < CONSTANTS.MIN_CAPTCHA_HEIGHT) return false;
     if (width > CONSTANTS.MAX_CAPTCHA_WIDTH || height > CONSTANTS.MAX_CAPTCHA_HEIGHT) return false;
-    const text = (svg.className.baseVal + svg.id).toLowerCase();
-    return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
+    const text = ((svg.className?.baseVal || '') + (svg.id || '')).toLowerCase();
+    if (CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword))) return true;
+    let parent = svg.parentElement;
+    let depth = 0;
+    while (parent && depth < 3) {
+      const parentText = ((parent.className?.toString?.() || '') + (parent.id || '')).toLowerCase();
+      if (CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => parentText.includes(keyword))) return true;
+      parent = parent.parentElement;
+      depth++;
+    }
+    return this.findNearbyInput(svg) !== null;
   }
 
   private isCaptchaDiv(div: HTMLElement): boolean {

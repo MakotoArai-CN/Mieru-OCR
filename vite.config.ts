@@ -44,17 +44,17 @@ export default defineConfig({
       compress: {
         ecma: 2020,
         keep_infinity: true,
-        drop_console: true,
+        drop_console: false,
         drop_debugger: true,
         passes: 3,
       },
       mangle: {
         toplevel: true,
-        keep_classnames: true,
-        keep_fnames: true,
+        keep_classnames: false,
+        keep_fnames: false,
       },
       format: {
-        comments: false,
+        comments: true,
         quote_style: 3,
         beautify: false,
       },
