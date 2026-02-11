@@ -39,7 +39,7 @@
 | 类型       | 安装方式            | 传送门                                                                                     | 描述                                                  |
 | ---------- | ------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
 | 浏览器扩展 | Edge应用商店        | [Edge](https://microsoftedge.microsoft.com/addons/detail/lbdjhikpmfggijmddllmekoepdkhfanl) | Edge浏览器浏览器扩展                                  |
-| 浏览器扩展 | FireFox应用商店        | 审核中 | FireFox/WaterFox/Zen浏览器浏览器扩展（内核大于140都可以安装使用）                                  |
+| 浏览器扩展 | FireFox应用商店        | [FireFox](https://addons.mozilla.org/addon/dddd-ocr-extension) | FireFox/WaterFox/Zen浏览器浏览器扩展（内核大于140都可以安装使用）                                  |
 | 油猴脚本   | Chrome/Edge/Firefox | [ScriptCat](https://scriptcat.org/zh-CN/script-show-page/4781)                             | 支持油猴/脚本猫等浏览器扩展，只要支持浏览器扩展就能用 |
 | 浏览器扩展 | 仓库安装            | [Github](https://github.com/MakotoArai-CN/ddddocr-webjs/releases/latest)                   | 直接下载压缩包文件，解压后安装浏览器扩展              |
 
@@ -138,6 +138,7 @@ bun run build:all
 - [x] 适配火狐浏览器扩展
 - [ ] 对DDDDOCR模型进行量化，减少模型体积
 - [ ] 排查修复潜在的安全漏洞
+- [ ] 新增支持自定义排除元素关键字
 - [x] 优化浏览器扩展UI设计
 
 ## 📝 许可
