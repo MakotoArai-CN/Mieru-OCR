@@ -139,17 +139,44 @@ bun run build:all
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Rank Model                               Score  CharAcc  ExactAcc   AvgMs   P95Ms    Load    Size
   ─────────────────────────────────────────────────────────────────────────────────────────────────
-  #1 common_q8_static_full_entropy...     94.4    88.9%     76.0%     6.3     7.2   109ms   25.0M
-  #2 common_q8_qoperator.onnx             93.6    88.0%     75.0%     7.1     7.8    98ms   27.6M
-  #3 common_q8_conservative.onnx          93.4    87.9%     74.5%     7.4     8.4    96ms   27.6M
-  #4 common_q8_static_percentile.onnx     92.9    88.3%     75.0%     7.1     7.8   109ms   27.6M
-  #5 common_q4_nbits_asym.onnx            92.7    90.4%     77.5%    11.5    12.5    93ms   24.5M
-  #6 common_q8_pertensor.onnx             92.1    86.9%     73.5%     7.0     7.9   105ms   27.5M
-  #7 common_q8_balanced.onnx              92.0    88.0%     75.0%     7.3     8.5   108ms   27.6M
-  #8 common_q8_mixed_precision.onnx       90.9    87.9%     74.5%     7.2     8.5   104ms   27.6M
-  #9 common_q4_nbits.onnx                 90.8    90.4%     77.5%    11.8    12.8    90ms   24.5M
-  #10common_q4_nbits_b128.onnx            90.7    86.5%     74.0%    11.7    13.1    88ms   23.8M
+  #1 common_q8_accuracy_opt.onnx          93.7    91.3%     80.0%     6.5     7.6    90ms   27.6M
+  #2 common_q8_asymmetric.onnx            92.9    90.8%     79.5%     6.7     7.5    89ms   27.6M
+  #3 common_q8_balanced.onnx              92.8    91.0%     80.0%     6.5     7.4    94ms   27.6M
+  #4 common_q8_qoperator.onnx             92.8    91.0%     80.0%     6.3     7.1   100ms   27.6M
+  #5 common_q8_accuracy.onnx              92.6    91.3%     80.0%     6.8     7.9    95ms   27.6M
+  #6 common_q8_mixed_precision.onnx       92.4    91.3%     80.0%     6.5     7.3   101ms   27.6M
+  #7 common_q8_pertensor.onnx             92.4    91.1%     80.5%     6.5     7.4   101ms   27.5M
+  #8 common_q8_static_minmax.onnx         92.3    91.3%     80.0%     6.5     7.6   102ms   27.6M
+  #9 common_q8_static_entropy.onnx        91.9    91.3%     80.0%     6.8     7.8   100ms   27.6M
+  #10common_q8_conservative.onnx          91.8    91.3%     80.0%     6.6     8.0   101ms   27.6M
   ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  📊 详细分析
+    最高字符准确:  common_q8_full_qdq.onnx (96.4%)
+    最高完全匹配:  common_q8_full_qdq.onnx (87.0%)
+    推理最快:      common_q8_static_full_entropy.onnx (5.8ms avg)
+    体积最小:      common_q4_nbits_b128.onnx (23.8M)
+    综合最佳:      common_q8_accuracy_opt.onnx (score: 93.7)
+
+
+  📋 剩余模型
+  #11 common_q4_nbits.onnx             score= 91.6 charAcc= 91.4% avgMs=  10.7
+  #12 common_q8_static_full_entropy.onnx score= 91.5 charAcc= 90.7% avgMs=   5.8
+  #13 common_q8_static_percentile.onnx score= 91.2 charAcc= 91.3% avgMs=   6.5
+  #14 common_q4_nbits_opt.onnx         score= 90.7 charAcc= 91.4% avgMs=  11.3
+  #15 common_q4_nbits_b128.onnx        score= 89.6 charAcc= 89.7% avgMs=  10.9
+  #16 common_fp16_opt.onnx             score= 88.3 charAcc= 90.8% avgMs=   7.6
+  #17 common_fp16_mixed.onnx           score= 88.2 charAcc= 90.8% avgMs=   7.4
+  #18 common_fp16.onnx                 score= 87.1 charAcc= 90.8% avgMs=   7.6
+  #19 common_opt_extended.onnx         score= 84.8 charAcc= 90.8% avgMs=   7.3
+  #20 common_opt_device.onnx           score= 84.3 charAcc= 90.8% avgMs=   7.2
+  #21 common_opt_basic.onnx            score= 83.7 charAcc= 90.8% avgMs=   7.4
+  #22 common_q4_nbits_asym.onnx        score= 81.8 charAcc= 91.4% avgMs=  11.7
+  #23 common.onnx                      score= 79.9 charAcc= 90.8% avgMs=   7.2
+  #24 common_q8_speed_opt.onnx         score= 76.5 charAcc= 96.4% avgMs=  33.6
+  #25 common_q8_speed.onnx             score= 76.3 charAcc= 96.4% avgMs=  33.6
+  #26 common_q8_full_qdq.onnx          score= 75.0 charAcc= 96.4% avgMs=  33.7
+  #27 common_q8_aggressive.onnx        score= 74.7 charAcc= 95.9% avgMs=  33.6
 ```
 
 ## Todolist
@@ -162,7 +189,7 @@ bun run build:all
 - [x] 适配火狐浏览器扩展
 - [x] 对DDDDOCR模型进行量化，减少模型体积
 - [ ] 排查修复潜在的安全漏洞
-- [ ] 新增支持自定义排除元素关键字
+- [x] 新增支持自定义排除元素关键字
 - [x] 优化浏览器扩展UI设计
 
 ## 📝 许可
@@ -172,7 +199,7 @@ bun run build:all
 ## 更新日志
 
 - V1.1.4
-- 添加量化模型，模型体积减少约48%，量化项目还有待优化，暂时不开源
+- 添加量化模型，模型体积减少约48%，量化项目还有待优化，暂时不开源，模型可以在models文件夹中下载
 - 针对浏览器扩展版本新增网站黑名单，不需要识别的网站不会再触发识别
 - 新增规则自定义（高级功能），除非你知道你在干什么，否则内置的规则够用了
 - 修复任意网站非验证码触发识别的bug
