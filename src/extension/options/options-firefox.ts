@@ -48,6 +48,9 @@ function cacheElements(): void {
   elements.agreementSelectors = document.getElementById('agreementSelectors');
   elements.newAgreementSelector = document.getElementById('newAgreementSelector');
   elements.autoCalculate = document.getElementById('autoCalculate');
+  elements.customIncludeKeywords = document.getElementById('customIncludeKeywords');
+  elements.customExcludePatterns = document.getElementById('customExcludePatterns');
+  elements.siteBlacklist = document.getElementById('siteBlacklist');
   elements.calculateOutputMode = document.getElementById('calculateOutputMode');
   elements.calculateOptionsGroup = document.getElementById('calculateOptionsGroup');
   elements.calculateRulesCard = document.getElementById('calculateRulesCard');
@@ -197,6 +200,9 @@ async function loadSettings(): Promise<void> {
   (elements.timeout as HTMLInputElement).value = String((settings.timeout || 30000) / 1000);
   (elements.retryCount as HTMLInputElement).value = String(settings.retryCount || 3);
   (elements.debugMode as HTMLInputElement).checked = settings.debugMode || false;
+  (elements.customIncludeKeywords as HTMLTextAreaElement).value = (settings.customIncludeKeywords || []).join('\n');
+  (elements.customExcludePatterns as HTMLTextAreaElement).value = (settings.customExcludePatterns || []).join('\n');
+  (elements.siteBlacklist as HTMLTextAreaElement).value = (settings.siteBlacklist || []).join('\n');
 }
 
 function renderAgreementSelectors(selectors: string[]): void {
@@ -344,6 +350,12 @@ async function saveAdvancedSettings(): Promise<void> {
   settings.timeout = parseInt((elements.timeout as HTMLInputElement).value) * 1000;
   settings.retryCount = parseInt((elements.retryCount as HTMLInputElement).value);
   settings.debugMode = (elements.debugMode as HTMLInputElement).checked;
+  settings.customIncludeKeywords = (elements.customIncludeKeywords as HTMLTextAreaElement).value
+    .split('\n').map((s: string) => s.trim()).filter(Boolean);
+  settings.customExcludePatterns = (elements.customExcludePatterns as HTMLTextAreaElement).value
+    .split('\n').map((s: string) => s.trim()).filter(Boolean);
+  settings.siteBlacklist = (elements.siteBlacklist as HTMLTextAreaElement).value
+    .split('\n').map((s: string) => s.trim()).filter(Boolean);
   await saveSettings(settings);
   showToast('设置已保存', 'success');
 }

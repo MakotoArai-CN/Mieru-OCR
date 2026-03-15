@@ -24,7 +24,38 @@ export class CaptchaDetector {
   private detectedCaptchas: DetectedCaptcha[] = [];
   private processedElements = new WeakMap<Element, string>();
   private checkedAgreements = new WeakSet<HTMLInputElement>();
+  private customIncludeKeywords: string[] = [];
+  private customExcludePatterns: string[] = [];
   captureForOCR: any;
+
+  setCustomPatterns(include: string[], exclude: string[]): void {
+    this.customIncludeKeywords = include.map(k => k.toLowerCase().trim()).filter(Boolean);
+    this.customExcludePatterns = exclude.map(p => p.toLowerCase().trim()).filter(Boolean);
+  }
+
+  private getCaptchaKeywords(): string[] {
+    if (this.customIncludeKeywords.length === 0) return CONSTANTS.CAPTCHA_KEYWORDS;
+    return [...CONSTANTS.CAPTCHA_KEYWORDS, ...this.customIncludeKeywords];
+  }
+
+  private getExcludePatterns(): string[] {
+    if (this.customExcludePatterns.length === 0) return CONSTANTS.EXCLUDE_PATTERNS;
+    return [...CONSTANTS.EXCLUDE_PATTERNS, ...this.customExcludePatterns];
+  }
+
+  private hasNearbyCaptchaInput(element: Element): boolean {
+    const input = this.findRelatedInput(element);
+    if (!input) return false;
+    return this.isCaptchaInputByName(input);
+  }
+
+  private isExcludedElement(element: Element): boolean {
+    const className = ((element as HTMLElement).className?.toString?.() || '').toLowerCase();
+    const id = ((element as HTMLElement).id || '').toLowerCase();
+    const excludePatterns = this.getExcludePatterns();
+    const combined = `${className} ${id}`.trim();
+    return excludePatterns.some(pattern => combined.includes(pattern));
+  }
 
   scan(): DetectedCaptcha[] {
     this.detectedCaptchas = [];
@@ -177,9 +208,9 @@ export class CaptchaDetector {
     if (this.matchesKeywords(img)) return true;
     if (this.srcContainsKeywords(img.src)) return true;
     if (this.parentContainsKeywords(img)) return true;
-    if (this.hasNearbyInput(img)) return true;
+    if (this.hasNearbyCaptchaInput(img)) return true;
     if (this.isDataUrlImage(img) && this.isCaptchaSize(width, height)) {
-      if (this.hasNearbyInput(img) || this.parentContainsKeywords(img)) return true;
+      if (this.hasNearbyCaptchaInput(img) || this.parentContainsKeywords(img)) return true;
     }
     return false;
   }
@@ -191,6 +222,10 @@ export class CaptchaDetector {
   private isVisibleOrHasSize(element: Element, effectiveWidth: number, effectiveHeight: number): boolean {
     const style = window.getComputedStyle(element);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 && rect.height <= 0) {
       return false;
     }
     return effectiveWidth > 0 && effectiveHeight > 0;
@@ -215,7 +250,7 @@ export class CaptchaDetector {
     const alt = (img.alt || '').toLowerCase();
     const className = (img.className?.toString?.() || '').toLowerCase();
     const id = (img.id || '').toLowerCase();
-    const excludePatterns = CONSTANTS.EXCLUDE_PATTERNS;
+    const excludePatterns = this.getExcludePatterns();
     const combined = `${src} ${alt} ${className} ${id}`.trim();
     return excludePatterns.some(pattern => combined.includes(pattern));
   }
@@ -228,9 +263,12 @@ export class CaptchaDetector {
     if (!this.isVisible(canvas)) {
       return false;
     }
+    if (this.isExcludedElement(canvas)) {
+      return false;
+    }
     if (this.matchesKeywords(canvas)) return true;
     if (this.parentContainsKeywords(canvas)) return true;
-    if (this.hasNearbyInput(canvas)) return true;
+    if (this.hasNearbyCaptchaInput(canvas)) return true;
     return false;
   }
 
@@ -243,9 +281,12 @@ export class CaptchaDetector {
     if (!this.isVisible(svg)) {
       return false;
     }
+    if (this.isExcludedElement(svg)) {
+      return false;
+    }
     if (this.matchesKeywords(svg)) return true;
     if (this.parentContainsKeywords(svg)) return true;
-    if (this.hasNearbyInput(svg)) return true;
+    if (this.hasNearbyCaptchaInput(svg)) return true;
     return false;
   }
 
@@ -259,10 +300,13 @@ export class CaptchaDetector {
     if (!this.isVisible(el)) {
       return false;
     }
+    if (this.isExcludedElement(el)) {
+      return false;
+    }
     if (this.matchesKeywords(el)) return true;
     if (this.parentContainsKeywords(el)) return true;
-    if (this.hasNearbyInput(el)) return true;
-    if (bgImage.includes('data:image/')) return this.hasNearbyInput(el) || this.parentContainsKeywords(el);
+    if (this.hasNearbyCaptchaInput(el)) return true;
+    if (bgImage.includes('data:image/')) return this.hasNearbyCaptchaInput(el) || this.parentContainsKeywords(el);
     return false;
   }
 
@@ -394,7 +438,8 @@ export class CaptchaDetector {
   private matchesKeywords(element: Element): boolean {
     const className = ((element as any).className?.toString?.() || '').toLowerCase();
     const id = ((element as any).id || '').toLowerCase();
-    return CONSTANTS.CAPTCHA_KEYWORDS.some(
+    const keywords = this.getCaptchaKeywords();
+    return keywords.some(
       keyword => className.includes(keyword) || id.includes(keyword)
     );
   }
@@ -402,7 +447,8 @@ export class CaptchaDetector {
   private srcContainsKeywords(src: string): boolean {
     if (!src) return false;
     const lowerSrc = src.toLowerCase();
-    return CONSTANTS.CAPTCHA_KEYWORDS.some(keyword => lowerSrc.includes(keyword));
+    const keywords = this.getCaptchaKeywords();
+    return keywords.some(keyword => lowerSrc.includes(keyword));
   }
 
   private parentContainsKeywords(element: Element): boolean {

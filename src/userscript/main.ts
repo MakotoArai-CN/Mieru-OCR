@@ -533,6 +533,7 @@ class AutoDetector {
     if (width < CONSTANTS.MIN_CAPTCHA_WIDTH || height < CONSTANTS.MIN_CAPTCHA_HEIGHT) return false;
     if (width > CONSTANTS.MAX_CAPTCHA_WIDTH || height > CONSTANTS.MAX_CAPTCHA_HEIGHT) return false;
     const text = (img.src + img.className + img.id + img.alt + (img.getAttribute('data-src') || '')).toLowerCase();
+    if (CONSTANTS.EXCLUDE_PATTERNS.some(pattern => text.includes(pattern))) return false;
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
 
@@ -542,6 +543,7 @@ class AutoDetector {
     if (width < CONSTANTS.MIN_CAPTCHA_WIDTH || height < CONSTANTS.MIN_CAPTCHA_HEIGHT) return false;
     if (width > CONSTANTS.MAX_CAPTCHA_WIDTH || height > CONSTANTS.MAX_CAPTCHA_HEIGHT) return false;
     const text = (canvas.className + canvas.id + (canvas.getAttribute('data-type') || '')).toLowerCase();
+    if (CONSTANTS.EXCLUDE_PATTERNS.some(pattern => text.includes(pattern))) return false;
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
 
@@ -560,7 +562,10 @@ class AutoDetector {
       parent = parent.parentElement;
       depth++;
     }
-    return this.findNearbyInput(svg) !== null;
+    const input = this.findNearbyInput(svg);
+    if (!input) return false;
+    const inputText = (input.name + input.id + input.className + input.placeholder).toLowerCase();
+    return CONSTANTS.INPUT_KEYWORDS.some(keyword => inputText.includes(keyword));
   }
 
   private isCaptchaDiv(div: HTMLElement): boolean {

@@ -447,6 +447,9 @@ function getDefaultSettings(): ExtensionSettings {
     autoSolveOnRule: true,
     debugMode: false,
     historyRetention: 7,
+    customIncludeKeywords: [],
+    customExcludePatterns: [],
+    siteBlacklist: [],
   };
 }
 

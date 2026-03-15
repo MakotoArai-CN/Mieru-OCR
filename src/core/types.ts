@@ -112,6 +112,8 @@ export interface OCRConfig {
   autoCalculate: boolean;
   calculateOutputMode: 'result' | 'equation';
   calculateRules: CalculateRule[];
+  customIncludeKeywords: string[];
+  customExcludePatterns: string[];
   enableNotification: boolean;
 }
 
@@ -121,6 +123,7 @@ export interface ExtensionSettings extends OCRConfig {
   autoFill: boolean;
   autoSubmit: boolean;
   autoSolveOnRule: boolean;
+  siteBlacklist: string[];
   historyRetention: number;
 }
 

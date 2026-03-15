@@ -32,6 +32,7 @@ let agreementSelectors: string[] = [];
 let captchaSelector = '';
 let inputSelector = '';
 let submitSelector = '';
+let siteBlacklist: string[] = [];
 
 let guessedElements: GuessedElement[] = [];
 let guessMode: 'captcha' | 'input' | null = null;
@@ -124,6 +125,11 @@ async function initSettings(): Promise<void> {
       captchaSelector = response.settings.captchaSelector || '';
       inputSelector = response.settings.inputSelector || '';
       submitSelector = response.settings.submitSelector || '';
+      siteBlacklist = response.settings.siteBlacklist || [];
+      detector.setCustomPatterns(
+        response.settings.customIncludeKeywords || [],
+        response.settings.customExcludePatterns || []
+      );
       Logger.setDebugMode(debugMode);
       Logger.info('设置已加载:', response.settings);
     }
@@ -137,6 +143,24 @@ function getFullUrl(): string {
 }
 function getUrlPattern(): string {
   return window.location.origin + window.location.pathname;
+}
+
+function isBlacklisted(): boolean {
+  const hostname = location.hostname;
+  const fullUrl = location.href;
+  return siteBlacklist.some(pattern => {
+    if (!pattern) return false;
+    try {
+      const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+      const regex = new RegExp('^' + escaped + '$', 'i');
+      if (regex.test(hostname)) return true;
+      if (regex.test(fullUrl)) return true;
+      if (!pattern.includes('*') && (fullUrl.startsWith(pattern) || fullUrl.split('#')[0] === pattern.split('#')[0] && pattern.includes('#'))) return true;
+      return false;
+    } catch {
+      return hostname === pattern || fullUrl.startsWith(pattern);
+    }
+  });
 }
 
 function getCaptchaTypeFromElement(element: Element): 'image' | 'canvas' | 'svg' | 'background' {
@@ -206,6 +230,10 @@ async function init(): Promise<void> {
     });
   });
   setTimeout(async () => {
+    if (isBlacklisted()) {
+      Logger.info('当前站点在黑名单中，跳过自动识别');
+      return;
+    }
     await checkAndApplySiteRule();
     scanPage();
     startAutoDetector();

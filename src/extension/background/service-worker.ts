@@ -162,44 +162,44 @@ async function getDebugMode(): Promise<boolean> {
 }
 
 async function handleRecognize(
-message: any,
-sendResponse: (response: any) => void
+  message: any,
+  sendResponse: (response: any) => void
 ): Promise<void> {
-const startTime = Date.now();
-const debugMode = await getDebugMode();
-try {
-if (debugMode) {
-console.log('[Service Worker] 开始识别, 图像大小:', message.imageData?.length);
-}
-setOcrStatus('initializing', '正在初始化OCR引擎...');
-await ensureOffscreenDocument();
-if (debugMode) {
-console.log('[Service Worker] Offscreen document 就绪, 发送识别请求...');
-}
-const resp = await chrome.runtime.sendMessage({
-action: 'offscreen:recognize',
-imageData: message.imageData,
-});
-const totalElapsed = Date.now() - startTime;
+  const startTime = Date.now();
+  const debugMode = await getDebugMode();
+  try {
+    if (debugMode) {
+      console.log('[Service Worker] 开始识别, 图像大小:', message.imageData?.length);
+    }
+    setOcrStatus('initializing', '正在初始化OCR引擎...');
+    await ensureOffscreenDocument();
+    if (debugMode) {
+      console.log('[Service Worker] Offscreen document 就绪, 发送识别请求...');
+    }
+    const resp = await chrome.runtime.sendMessage({
+      action: 'offscreen:recognize',
+      imageData: message.imageData,
+    });
+    const totalElapsed = Date.now() - startTime;
 
-if (resp?.success) {
-setOcrStatus('ready', '识别完成');
-const elapsed = typeof resp.elapsed === 'number' ? resp.elapsed : totalElapsed;
-if (debugMode) {
-console.log('[Service Worker] 识别成功:', resp.text, '耗时:', elapsed, 'ms');
-}
-sendResponse({ success: true, text: resp.text, elapsed });
-} else {
-setOcrStatus('fault', resp?.error || '识别失败');
-console.error('[Service Worker] 识别失败:', resp?.error);
-sendResponse({ success: false, error: resp?.error || '识别失败', elapsed: totalElapsed });
-}
-} catch (error) {
-const elapsed = Date.now() - startTime;
-setOcrStatus('fault', (error as Error).message);
-console.error('[Service Worker] 识别异常:', error);
-sendResponse({ success: false, error: (error as Error).message, elapsed });
-}
+    if (resp?.success) {
+      setOcrStatus('ready', '识别完成');
+      const elapsed = typeof resp.elapsed === 'number' ? resp.elapsed : totalElapsed;
+      if (debugMode) {
+        console.log('[Service Worker] 识别成功:', resp.text, '耗时:', elapsed, 'ms');
+      }
+      sendResponse({ success: true, text: resp.text, elapsed });
+    } else {
+      setOcrStatus('fault', resp?.error || '识别失败');
+      console.error('[Service Worker] 识别失败:', resp?.error);
+      sendResponse({ success: false, error: resp?.error || '识别失败', elapsed: totalElapsed });
+    }
+  } catch (error) {
+    const elapsed = Date.now() - startTime;
+    setOcrStatus('fault', (error as Error).message);
+    console.error('[Service Worker] 识别异常:', error);
+    sendResponse({ success: false, error: (error as Error).message, elapsed });
+  }
 }
 
 async function handleGetSettings(sendResponse: (response: any) => void): Promise<void> {
@@ -377,7 +377,7 @@ async function handleClearStats(sendResponse: (response: any) => void): Promise<
 }
 
 function getDefaultSettings(): ExtensionSettings {
-return {
+  return {
     autoDetect: true,
     captchaSelector: '',
     inputSelector: '',
@@ -406,6 +406,9 @@ return {
     autoSolveOnRule: true,
     debugMode: false,
     historyRetention: 7,
+    customIncludeKeywords: [],
+    customExcludePatterns: [],
+    siteBlacklist: [],
   };
 }
 

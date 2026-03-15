@@ -40,6 +40,7 @@ export const CONSTANTS = {
     'background', 'bg', 'profile', 'user', 'photo',
     'emoji', 'emoticon', 'sticker', 'gif',
     'loading', 'spinner', 'placeholder',
+    'slider', 'slide', 'drag', 'puzzle', 'jigsaw',
   ],
   MIN_CAPTCHA_WIDTH: 50,
   MIN_CAPTCHA_HEIGHT: 20,
@@ -92,6 +93,8 @@ export const DEFAULT_CONFIG: OCRConfig = {
   autoCalculate: false,
   calculateOutputMode: 'result',
   calculateRules: [],
+  customIncludeKeywords: [],
+  customExcludePatterns: [],
   enableNotification: true,
 };
 
@@ -102,6 +105,7 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   autoFill: true,
   autoSubmit: false,
   autoSolveOnRule: true,
+  siteBlacklist: [],
   historyRetention: 7,
 };
 

@@ -6,3 +6,4 @@ LLM*
 *.log
 .DS_Store
 .vscode/
+models/

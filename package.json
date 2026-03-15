@@ -23,7 +23,9 @@
     "vite-plugin-monkey": "^7.1.4"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.96",
     "adm-zip": "^0.5.16",
+    "onnxruntime-node": "^1.24.3",
     "onnxruntime-web": "^1.17.0"
   }
 }

@@ -263,6 +263,30 @@
         </div>
 
         <div class="card">
+          <h3>自定义检测规则</h3>
+          <div class="form-group">
+            <label for="customIncludeKeywords">自定义触发关键词</label>
+            <textarea id="customIncludeKeywords" rows="3" placeholder="每行一个关键词，元素的class/id/src包含该词时触发识别"></textarea>
+            <span class="hint">内置关键词: captcha, verify, code, vcode, authcode, 验证码, checkcode, yzm, kaptcha 等</span>
+          </div>
+          <div class="form-group">
+            <label for="customExcludePatterns">自定义排除关键词</label>
+            <textarea id="customExcludePatterns" rows="3" placeholder="每行一个关键词，元素的class/id/src包含该词时不识别"></textarea>
+            <span class="hint">内置排除词: avatar, logo, icon, banner, ad, sponsor, background, profile, emoji, loading
+              等</span>
+          </div>
+        </div>
+        <div class="card">
+          <h3>站点黑名单</h3>
+          <div class="form-group">
+            <label for="siteBlacklist">不自动识别的网站</label>
+            <textarea id="siteBlacklist" rows="4"
+              placeholder="每行一个域名，支持通配符&#10;example.com&#10;*.example.com"></textarea>
+            <span class="hint">在这些网站上不会自动识别验证码，支持域名、完整URL和 * 通配符。例如: example.com 或 https://example.com/login</span>
+          </div>
+        </div>
+
+        <div class="card">
           <h3>四则运算</h3>
           <div class="form-group switch-group">
             <div class="switch-label">
@@ -411,8 +435,8 @@
           <br>
           <p style="color: var(--text-secondary); font-size: 14px;">
             🏠 仓库地址：<a href="https://github.com/MakotoArai-CN/ddddocr-webjs" target="_blank"
-              style="color: var(--primary);text-decoration-line: none;">ddddocr-webjs</a> 开源不易，基于本项目修改请注明出处，感谢你的支持和肯定。<span
-              style="display: none;">😉</span>
+              style="color: var(--primary);text-decoration-line: none;">ddddocr-webjs</a>
+            开源不易，基于本项目修改请注明出处，感谢你的支持和肯定。<span style="display: none;">😉</span>
           </p>
         </div>
       </section>

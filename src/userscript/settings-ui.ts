@@ -649,6 +649,16 @@ export class SettingsUI {
           </div>
         </div>
 
+        <div class="ddddocr-card">
+          <div class="ddddocr-card-title">自定义检测规则</div>
+          <div class="ddddocr-row-label">自定义触发关键词</div>
+          <textarea class="ddddocr-textarea" data-key="customIncludeKeywords" placeholder="每行一个关键词" style="min-height: 60px;">${(config.customIncludeKeywords || []).join('\n')}</textarea>
+          <div class="ddddocr-hint">内置关键词: captcha, verify, code, vcode, authcode, 验证码, checkcode, yzm 等</div>
+          <div class="ddddocr-row-label" style="margin-top: 12px;">自定义排除关键词</div>
+          <textarea class="ddddocr-textarea" data-key="customExcludePatterns" placeholder="每行一个关键词" style="min-height: 60px;">${(config.customExcludePatterns || []).join('\n')}</textarea>
+          <div class="ddddocr-hint">内置排除词: avatar, logo, icon, banner, ad, sponsor, background, emoji, loading 等</div>
+      </div>
+
         <!-- 网站规则 -->
         <div class="ddddocr-panel" data-panel="rules">
           <div class="ddddocr-card">
