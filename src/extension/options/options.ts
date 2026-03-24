@@ -62,6 +62,8 @@ function cacheElements(): void {
   elements.fileImport = document.getElementById('file-import');
   elements.customIncludeKeywords = document.getElementById('customIncludeKeywords');
   elements.customExcludePatterns = document.getElementById('customExcludePatterns');
+  elements.customAgreementKeywords = document.getElementById('customAgreementKeywords');
+  elements.customInputExcludeKeywords = document.getElementById('customInputExcludeKeywords');
   elements.siteBlacklist = document.getElementById('siteBlacklist');
   elements.editRuleKey = document.getElementById('edit-rule-key');
   elements.editRuleOriginalKey = document.getElementById('edit-rule-original-key');
@@ -186,6 +188,8 @@ async function loadSettings(): Promise<void> {
   (elements.debugMode as HTMLInputElement).checked = settings.debugMode || false;
   (elements.customIncludeKeywords as HTMLTextAreaElement).value = (settings.customIncludeKeywords || []).join('\n');
   (elements.customExcludePatterns as HTMLTextAreaElement).value = (settings.customExcludePatterns || []).join('\n');
+  (elements.customAgreementKeywords as HTMLTextAreaElement).value = (settings.customAgreementKeywords || []).join('\n');
+  (elements.customInputExcludeKeywords as HTMLTextAreaElement).value = (settings.customInputExcludeKeywords || []).join('\n');
   (elements.siteBlacklist as HTMLTextAreaElement).value = (settings.siteBlacklist || []).join('\n');
 }
 
@@ -337,6 +341,10 @@ async function saveAdvancedSettings(): Promise<void> {
   settings.customIncludeKeywords = (elements.customIncludeKeywords as HTMLTextAreaElement).value
     .split('\n').map((s: string) => s.trim()).filter(Boolean);
   settings.customExcludePatterns = (elements.customExcludePatterns as HTMLTextAreaElement).value
+    .split('\n').map((s: string) => s.trim()).filter(Boolean);
+  settings.customAgreementKeywords = (elements.customAgreementKeywords as HTMLTextAreaElement).value
+    .split('\n').map((s: string) => s.trim()).filter(Boolean);
+  settings.customInputExcludeKeywords = (elements.customInputExcludeKeywords as HTMLTextAreaElement).value
     .split('\n').map((s: string) => s.trim()).filter(Boolean);
   settings.siteBlacklist = (elements.siteBlacklist as HTMLTextAreaElement).value
     .split('\n').map((s: string) => s.trim()).filter(Boolean);

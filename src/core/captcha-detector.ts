@@ -26,11 +26,15 @@ export class CaptchaDetector {
   private checkedAgreements = new WeakSet<HTMLInputElement>();
   private customIncludeKeywords: string[] = [];
   private customExcludePatterns: string[] = [];
+  private customAgreementKeywords: string[] = [];
+  private customInputExcludeKeywords: string[] = [];
   captureForOCR: any;
 
-  setCustomPatterns(include: string[], exclude: string[]): void {
+  setCustomPatterns(include: string[], exclude: string[], agreementKeywords?: string[], inputExcludeKeywords?: string[]): void {
     this.customIncludeKeywords = include.map(k => k.toLowerCase().trim()).filter(Boolean);
     this.customExcludePatterns = exclude.map(p => p.toLowerCase().trim()).filter(Boolean);
+    this.customAgreementKeywords = (agreementKeywords || []).map(k => k.toLowerCase().trim()).filter(Boolean);
+    this.customInputExcludeKeywords = (inputExcludeKeywords || []).map(k => k.toLowerCase().trim()).filter(Boolean);
   }
 
   private getCaptchaKeywords(): string[] {
@@ -41,6 +45,16 @@ export class CaptchaDetector {
   private getExcludePatterns(): string[] {
     if (this.customExcludePatterns.length === 0) return CONSTANTS.EXCLUDE_PATTERNS;
     return [...CONSTANTS.EXCLUDE_PATTERNS, ...this.customExcludePatterns];
+  }
+
+  private getAgreementKeywords(): string[] {
+    if (this.customAgreementKeywords.length === 0) return CONSTANTS.AGREEMENT_KEYWORDS;
+    return [...CONSTANTS.AGREEMENT_KEYWORDS, ...this.customAgreementKeywords];
+  }
+
+  private getInputExcludeKeywords(): string[] {
+    if (this.customInputExcludeKeywords.length === 0) return CONSTANTS.INPUT_EXCLUDE_KEYWORDS;
+    return [...CONSTANTS.INPUT_EXCLUDE_KEYWORDS, ...this.customInputExcludeKeywords];
   }
 
   private hasNearbyCaptchaInput(element: Element): boolean {
@@ -502,9 +516,11 @@ export class CaptchaDetector {
       'username', 'user', 'account', 'email', 'phone', 'mobile', 'tel',
       'password', 'pwd', 'pass',
       'search', 'query', 'keyword',
-      '用户名', '账号', '密码', '手机', '手机号', '邮箱', '搜索', '查询', '关键字',
+      '用户名', '账号', '密码', '手机号', '邮箱', '搜索', '查询', '关键字',
     ];
-    return excluded.some(k => text.includes(k));
+    const inputExcludeKeywords = this.getInputExcludeKeywords();
+    const allExcluded = [...excluded, ...inputExcludeKeywords];
+    return allExcluded.some(k => text.includes(k));
   }
 
   private scoreInputCandidate(input: HTMLInputElement, captchaRect: DOMRect, inputRect: DOMRect): number {
@@ -800,7 +816,7 @@ export class CaptchaDetector {
         textSources.push((formItem as HTMLElement).className || '');
       }
       const combinedText = textSources.join(' ').toLowerCase();
-      const hasKeyword = CONSTANTS.AGREEMENT_KEYWORDS.some(keyword => combinedText.includes(keyword));
+      const hasKeyword = this.getAgreementKeywords().some(keyword => combinedText.includes(keyword));
       if (hasKeyword) {
         const clickTarget = this.findClickableTarget(htmlCheckbox);
         guessed.push({

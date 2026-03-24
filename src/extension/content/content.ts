@@ -212,7 +212,9 @@ async function initSettings(): Promise<void> {
       siteBlacklist = response.settings.siteBlacklist || [];
       detector.setCustomPatterns(
         response.settings.customIncludeKeywords || [],
-        response.settings.customExcludePatterns || []
+        response.settings.customExcludePatterns || [],
+        response.settings.customAgreementKeywords || [],
+        response.settings.customInputExcludeKeywords || [],
       );
       Logger.setDebugMode(debugMode);
       Logger.info('设置已加载:', response.settings);

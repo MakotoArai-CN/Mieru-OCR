@@ -114,6 +114,8 @@ export interface OCRConfig {
   calculateRules: CalculateRule[];
   customIncludeKeywords: string[];
   customExcludePatterns: string[];
+  customAgreementKeywords: string[];
+  customInputExcludeKeywords: string[];
   enableNotification: boolean;
 }
 

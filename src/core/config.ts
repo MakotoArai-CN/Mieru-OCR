@@ -24,7 +24,11 @@ export const CONSTANTS = {
   AGREEMENT_KEYWORDS: [
     'agree', 'agreement', 'accept', 'terms', 'policy', 'privacy',
     '同意', '协议', '条款', '隐私', '用户协议', '隐私政策',
-    'tos', 'consent', 'checkbox', 'check',
+    'tos', 'consent',
+  ],
+  INPUT_EXCLUDE_KEYWORDS: [
+    '手机', '短信', 'sms', 'phone', 'mobile',
+    '手机验证码', '短信验证码', '手机号','滑动验证码',
   ],
   EXCLUDED_INPUT_TYPES: [
     'password', 'email', 'tel', 'phone', 'mobile', 'hidden',
@@ -95,6 +99,8 @@ export const DEFAULT_CONFIG: OCRConfig = {
   calculateRules: [],
   customIncludeKeywords: [],
   customExcludePatterns: [],
+  customAgreementKeywords: [],
+  customInputExcludeKeywords: [],
   enableNotification: true,
 };
 

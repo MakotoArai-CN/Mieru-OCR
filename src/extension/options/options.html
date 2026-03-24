@@ -275,6 +275,16 @@
             <span class="hint">内置排除词: avatar, logo, icon, banner, ad, sponsor, background, profile, emoji, loading
               等</span>
           </div>
+          <div class="form-group">
+            <label for="customAgreementKeywords">自定义协议检测关键词</label>
+            <textarea id="customAgreementKeywords" rows="3" placeholder="每行一个关键词，复选框周围文本包含该词时自动勾选"></textarea>
+            <span class="hint">内置关键词: agree, accept, terms, policy, privacy, 同意, 协议, 条款, 隐私 等</span>
+          </div>
+          <div class="form-group">
+            <label for="customInputExcludeKeywords">自定义输入框排除关键词</label>
+            <textarea id="customInputExcludeKeywords" rows="3" placeholder="每行一个关键词，输入框的placeholder/label包含该词时不会被识别为验证码输入框"></textarea>
+            <span class="hint">内置排除词: 手机, 短信, sms, phone, mobile, 手机验证码, 短信验证码 等。用于避免将短信验证码输入框误识别为图片验证码输入框</span>
+          </div>
         </div>
         <div class="card">
           <h3>站点黑名单</h3>
