@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      manifest_version: ${{ steps.version.outputs.manifest_version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
       tag_exists: ${{ steps.check_tag.outputs.exists }}
     steps:
       - uses: actions/checkout@v4
@@ -25,8 +27,18 @@ jobs:
         id: version
         run: |
           VERSION=$(cat version | tr -d '[:space:]')
+          MANIFEST_VERSION=$(printf '%s' "$VERSION" | sed 's/^v//I' | sed 's/-.*$//')
+          if printf '%s' "$VERSION" | grep -q -- '-pre'; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "manifest_version=$MANIFEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "Detected version: $VERSION"
+          echo "Manifest version: $MANIFEST_VERSION"
+          echo "Prerelease: $IS_PRERELEASE"
 
       - name: Check if tag already exists
         id: check_tag
@@ -60,13 +72,14 @@ jobs:
       - name: Sync version to manifests
         run: |
           VERSION="${{ needs.get-version.outputs.version }}"
+          MANIFEST_VERSION="${{ needs.get-version.outputs.manifest_version }}"
           # Update package.json
           jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
           # Update manifest.json
-          jq --arg v "$VERSION" '.version = $v' manifest.json > tmp.json && mv tmp.json manifest.json
+          jq --arg v "$MANIFEST_VERSION" '.version = $v' manifest.json > tmp.json && mv tmp.json manifest.json
           # Update manifest.firefox.json
-          jq --arg v "$VERSION" '.version = $v' manifest.firefox.json > tmp.json && mv tmp.json manifest.firefox.json
-          echo "Synced version $VERSION to all manifests"
+          jq --arg v "$MANIFEST_VERSION" '.version = $v' manifest.firefox.json > tmp.json && mv tmp.json manifest.firefox.json
+          echo "Synced package version $VERSION and manifest version $MANIFEST_VERSION"
 
       - name: Build userscript
         run: bun run build
@@ -226,4 +239,4 @@ jobs:
             > 💡 所有识别均在本地离线完成，不上传任何数据。
           files: release-assets/*
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.get-version.outputs.is_prerelease == 'true' }}

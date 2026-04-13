@@ -408,6 +408,17 @@ function getDefaultSettings(): ExtensionSettings {
     historyRetention: 7,
     customIncludeKeywords: [],
     customExcludePatterns: [],
+    customAgreementKeywords: [],
+    customInputExcludeKeywords: [],
+    disabledCaptchaKeywords: [],
+    disabledExcludePatterns: [],
+    disabledAgreementKeywords: [],
+    disabledInputExcludeKeywords: [],
+    enableInteractiveCaptchaAssist: false,
+    enableInteractiveCaptchaDebugOverlay: false,
+    enableSliderPuzzleAssist: true,
+    enableSingleSliderAssist: true,
+    enableClickSelectAssist: false,
     siteBlacklist: [],
   };
 }

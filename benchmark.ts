@@ -10,9 +10,19 @@
  *   bun run benchmark.ts --models ./models --count 300 --top 15
  */
 
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync, copyFileSync } from 'fs';
 import { resolve, basename, join } from 'path';
 import { tmpdir } from 'os';
+
+declare const process: {
+    argv: string[];
+    cwd(): string;
+    env: Record<string, string | undefined>;
+    stdout: { write(message: string): void };
+    exit(code?: number): never;
+};
+
+declare function require(name: string): any;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,15 +33,34 @@ interface CLIArgs {
     warmup: number;
     top: number;
     saveCaptchas: string | null;
+    datasetDir: string | null;
     outputJson: string | null;
     timeout: number;
 }
 
 interface TestCaptcha {
+    id: string;
     text: string;
     width: number;
     height: number;
     pngPath: string;
+    fileName: string;
+    generatedAt: string;
+}
+
+interface DatasetManifest {
+    generatedAt: string;
+    source: 'benchmark.ts';
+    count: number;
+    charsetsPath: string;
+    samples: Array<{
+        id: string;
+        fileName: string;
+        text: string;
+        width: number;
+        height: number;
+        generatedAt: string;
+    }>;
 }
 
 interface WorkerResult {
@@ -92,6 +121,7 @@ function parseArgs(): CLIArgs {
         warmup: 5,
         top: 10,
         saveCaptchas: null,
+        datasetDir: null,
         outputJson: null,
         timeout: 120000,
     };
@@ -104,6 +134,7 @@ function parseArgs(): CLIArgs {
             case '--warmup': case '-w': result.warmup = parseInt(args[++i]) || result.warmup; break;
             case '--top': case '-t': result.top = parseInt(args[++i]) || result.top; break;
             case '--save-captchas': result.saveCaptchas = args[++i] || null; break;
+            case '--dataset-dir': result.datasetDir = args[++i] || null; break;
             case '--output': case '-o': result.outputJson = args[++i] || null; break;
             case '--timeout': result.timeout = parseInt(args[++i]) * 1000 || result.timeout; break;
             case '--help': case '-h': printHelp(); process.exit(0);
@@ -133,7 +164,8 @@ ${C.cyan}Options:${C.reset}
   --warmup, -w <num>       预热轮数 (默认: 5)
   --top, -t <num>          显示前N个模型 (默认: 10)
   --timeout <seconds>      每个模型超时秒数 (默认: 120)
-  --save-captchas <dir>    保存生成的验证码图片
+  --save-captchas <dir>    兼容旧参数，保存生成的验证码图片
+  --dataset-dir <dir>      导出稳定数据集目录（图片 + captchas.json）
   --output, -o <file>      结果输出JSON文件
   --help, -h               显示帮助
 `);
@@ -270,11 +302,21 @@ function generateCaptchaImages(count: number, charsets: string[], outDir: string
             ctx.restore();
         }
 
-        const pngPath = join(outDir, `${String(i).padStart(4, '0')}_${text}.png`);
+        const fileName = `${String(i).padStart(4, '0')}_${text}.png`;
+        const pngPath = join(outDir, fileName);
         const pngBuffer = canvas.toBuffer('image/png');
+        const generatedAt = new Date().toISOString();
         writeFileSync(pngPath, pngBuffer);
 
-        captchas.push({ text, width: w, height: h, pngPath });
+        captchas.push({
+            id: `captcha-${String(i).padStart(4, '0')}`,
+            text,
+            width: w,
+            height: h,
+            pngPath,
+            fileName,
+            generatedAt,
+        });
     }
 
     return captchas;
@@ -740,29 +782,84 @@ ${C.bold}  📊 详细分析${C.reset}
     }
 }
 
-function saveResults(metrics: ModelMetrics[], outputPath: string): void {
+function buildDatasetManifest(captchas: TestCaptcha[], charsetsPath: string): DatasetManifest {
+    return {
+        generatedAt: new Date().toISOString(),
+        source: 'benchmark.ts',
+        count: captchas.length,
+        charsetsPath,
+        samples: captchas.map((captcha) => ({
+            id: captcha.id,
+            fileName: captcha.fileName,
+            text: captcha.text,
+            width: captcha.width,
+            height: captcha.height,
+            generatedAt: captcha.generatedAt,
+        })),
+    };
+}
+
+function exportDataset(captchas: TestCaptcha[], datasetDir: string, charsetsPath: string): void {
+    if (!existsSync(datasetDir)) {
+        mkdirSync(datasetDir, { recursive: true });
+    }
+    for (const captcha of captchas) {
+        copyFileSync(captcha.pngPath, join(datasetDir, captcha.fileName));
+    }
+    const manifest = buildDatasetManifest(captchas, charsetsPath);
+    writeFileSync(join(datasetDir, 'captchas.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+}
+
+function getDatasetDir(args: CLIArgs): string {
+    const requestedDir = args.datasetDir || args.saveCaptchas;
+    if (requestedDir) {
+        return resolve(requestedDir);
+    }
+    return resolve('benchmark_dataset');
+}
+
+function getOutputPath(args: CLIArgs): string {
+    return args.outputJson || `benchmark_${new Date().toISOString().slice(0, 10)}.json`;
+}
+
+function cleanupTempDir(tempDir: string): void {
+    try {
+        const { rmSync } = require('fs');
+        rmSync(tempDir, { recursive: true, force: true });
+    } catch { }
+}
+
+function saveResults(metrics: ModelMetrics[], outputPath: string, datasetDir: string | null, captchas: TestCaptcha[]): void {
     const sorted = [...metrics].sort((a, b) => b.compositeScore - a.compositeScore);
-    const exportData = sorted.map((m, i) => ({
-        rank: i + 1,
-        name: m.name,
-        compositeScore: m.compositeScore,
-        charAccuracy: Math.round(m.charAccuracy * 100) / 100,
-        exactMatchRate: Math.round(m.exactMatchRate * 100) / 100,
-        avgLevenshtein: Math.round(m.avgLevenshtein * 100) / 100,
-        avgTimeMs: m.avgTimeMs,
-        medianTimeMs: m.medianTimeMs,
-        p95TimeMs: m.p95TimeMs,
-        p99TimeMs: m.p99TimeMs,
-        minTimeMs: m.minTimeMs,
-        maxTimeMs: m.maxTimeMs,
-        stddevTimeMs: m.stddevTimeMs,
-        loadTimeMs: m.loadTimeMs,
-        fileSize: m.fileSize,
-        fileSizeFormatted: formatSize(m.fileSize),
-        errorCount: m.errorCount,
-        loadError: m.loadError,
-        crashed: m.crashed,
-    }));
+    const exportData = {
+        generatedAt: new Date().toISOString(),
+        dataset: {
+            directory: datasetDir,
+            count: captchas.length,
+            manifest: datasetDir ? join(datasetDir, 'captchas.json') : null,
+        },
+        models: sorted.map((m, i) => ({
+            rank: i + 1,
+            name: m.name,
+            compositeScore: m.compositeScore,
+            charAccuracy: Math.round(m.charAccuracy * 100) / 100,
+            exactMatchRate: Math.round(m.exactMatchRate * 100) / 100,
+            avgLevenshtein: Math.round(m.avgLevenshtein * 100) / 100,
+            avgTimeMs: m.avgTimeMs,
+            medianTimeMs: m.medianTimeMs,
+            p95TimeMs: m.p95TimeMs,
+            p99TimeMs: m.p99TimeMs,
+            minTimeMs: m.minTimeMs,
+            maxTimeMs: m.maxTimeMs,
+            stddevTimeMs: m.stddevTimeMs,
+            loadTimeMs: m.loadTimeMs,
+            fileSize: m.fileSize,
+            fileSizeFormatted: formatSize(m.fileSize),
+            errorCount: m.errorCount,
+            loadError: m.loadError,
+            crashed: m.crashed,
+        })),
+    };
     writeFileSync(outputPath, JSON.stringify(exportData, null, 2), 'utf-8');
     console.log(`${C.green}💾 结果已保存: ${outputPath}${C.reset}`);
 }
@@ -824,16 +921,9 @@ ${C.bold}${C.blue}╚═══════════════════�
     const distStr = Array.from(charLenDist.entries()).sort((a, b) => a[0] - b[0]).map(([len, count]) => `${count}×${len}字符`).join(', ');
     console.log(`  ${C.green}✓${C.reset} 已生成 ${captchas.length} 张验证码 (${distStr})`);
 
-    if (args.saveCaptchas) {
-        const saveDir = resolve(args.saveCaptchas);
-        if (!existsSync(saveDir)) mkdirSync(saveDir, { recursive: true });
-        for (const c of captchas) {
-            const destPath = join(saveDir, basename(c.pngPath));
-            const buf = readFileSync(c.pngPath);
-            writeFileSync(destPath, buf);
-        }
-        console.log(`  ${C.green}✓${C.reset} 验证码图片已复制到: ${saveDir}`);
-    }
+    const datasetDir = getDatasetDir(args);
+    exportDataset(captchas, datasetDir, charsetsPath);
+    console.log(`  ${C.green}✓${C.reset} 验证码数据集已导出到: ${datasetDir}`);
 
     // write captcha list and worker script
     const captchaListPath = join(tempDir, 'captchas.json');
@@ -893,14 +983,10 @@ ${C.bold}${C.blue}╚═══════════════════�
     calculateScores(allMetrics);
     printResults(allMetrics, args.top);
 
-    const outputPath = args.outputJson || `benchmark_${new Date().toISOString().slice(0, 10)}.json`;
-    saveResults(allMetrics, outputPath);
+    const outputPath = getOutputPath(args);
+    saveResults(allMetrics, outputPath, datasetDir, captchas);
 
-    // cleanup temp
-    try {
-        const { rmSync } = require('fs');
-        rmSync(tempDir, { recursive: true, force: true });
-    } catch { }
+    cleanupTempDir(tempDir);
 }
 
 main().catch(e => {

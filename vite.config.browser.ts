@@ -8,19 +8,21 @@ function readVersion(): string {
   if (existsSync(versionPath)) {
     return readFileSync(versionPath, 'utf-8').trim();
   }
-  // 如果mainifest.json的版本号低于version值，修改manifest.json的版本号为version值
-  const manifestPath = resolve(__dirname,'manifest.json');
-  if (existsSync(manifestPath)) {
-    const manifestContent = readFileSync(manifestPath, 'utf-8');
-    const manifest = JSON.parse(manifestContent);
-    const manifestVersion = manifest.version;
-    if (manifestVersion < readFileSync(versionPath, 'utf-8').trim()) {
-      manifest.version = readFileSync(versionPath, 'utf-8').trim();
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-      console.log(`Updated manifest.json version to ${manifest.version}`);
-    }
-  }
   return '1.1.0';
+}
+
+function toManifestVersion(version: string): string {
+  const normalized = version.trim().replace(/^v/i, '');
+  const base = normalized.split('-')[0];
+  return /^\d+(?:\.\d+){0,3}$/.test(base) ? base : '1.1.0';
+}
+
+function getBuildVersions(): { releaseVersion: string; manifestVersion: string } {
+  const releaseVersion = readVersion();
+  return {
+    releaseVersion,
+    manifestVersion: toManifestVersion(releaseVersion),
+  };
 }
 
 function copyDirRecursive(srcDir: string, destDir: string): void {
@@ -39,15 +41,31 @@ function copyDirRecursive(srcDir: string, destDir: string): void {
   }
 }
 
+async function bundleContentScript(distDir: string, entryPath: string): Promise<void> {
+  const esbuild = await import('esbuild');
+  await esbuild.build({
+    entryPoints: [entryPath],
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: ['es2020'],
+    tsconfig: resolve(__dirname, 'tsconfig.json'),
+    outfile: resolve(distDir, 'content.js'),
+    allowOverwrite: true,
+    legalComments: 'none',
+    logLevel: 'silent',
+  });
+}
+
 function copyPublicAssets() {
   return {
     name: 'copy-public-assets',
-    closeBundle() {
+    async closeBundle() {
       const distDir = resolve(__dirname, 'dist/extension');
       const publicDir = resolve(__dirname, 'public');
       const iconsDir = resolve(__dirname, 'icons');
       const localeDir = resolve(__dirname, '_locales');
-      const version = readVersion();
+      const { releaseVersion, manifestVersion } = getBuildVersions();
 
       if (!existsSync(distDir)) {
         mkdirSync(distDir, { recursive: true });
@@ -149,9 +167,9 @@ function copyPublicAssets() {
       if (existsSync(manifestSrcPath)) {
         const manifestContent = readFileSync(manifestSrcPath, 'utf-8');
         const manifest = JSON.parse(manifestContent);
-        manifest.version = version;
+        manifest.version = manifestVersion;
         writeFileSync(manifestDistPath, JSON.stringify(manifest, null, 2));
-        console.log(`Copied manifest.json with version ${version}`);
+        console.log(`Copied manifest.json with version ${manifestVersion}`);
       } else {
         console.warn('manifest.json not found!');
       }
@@ -186,13 +204,16 @@ function copyPublicAssets() {
         }
       }
 
+      await bundleContentScript(distDir, resolve(__dirname, 'src/extension/content/content.ts'));
+      console.log('Rebundled content.js as classic script');
+
       const zipFile = new AdmZip();
       zipFile.addLocalFolder(distDir);
-      const zipPath = resolve(import.meta.dirname, `dist/ddddocr-extension-v${version}.zip`);
+      const zipPath = resolve(import.meta.dirname, `dist/ddddocr-extension-v${releaseVersion}.zip`);
       zipFile.writeZip(zipPath);
       console.log(`Created ${zipPath}`);
 
-      console.log(`Build completed (version ${version})`);
+      console.log(`Build completed (release ${releaseVersion}, manifest ${manifestVersion})`);
     }
   };
 }

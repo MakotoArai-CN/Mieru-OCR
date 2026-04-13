@@ -74,12 +74,14 @@
         <div class="card">
           <h3>外观</h3>
           <div class="form-group">
-            <label for="theme">主题</label>
-            <select id="theme">
-              <option value="auto">跟随系统</option>
-              <option value="light">浅色</option>
-              <option value="dark">深色</option>
-            </select>
+            <label>主题</label>
+            <input type="hidden" id="theme" value="auto">
+            <div class="theme-switcher" role="radiogroup" aria-label="主题切换">
+              <button type="button" class="theme-option" data-theme-value="auto" role="radio" aria-checked="false">跟随系统</button>
+              <button type="button" class="theme-option" data-theme-value="light" role="radio" aria-checked="false">浅色</button>
+              <button type="button" class="theme-option" data-theme-value="dark" role="radio" aria-checked="false">深色</button>
+            </div>
+            <span class="hint">自动模式会跟随系统主题变化即时切换</span>
           </div>
         </div>
 
@@ -260,17 +262,7 @@
 
         <div class="card">
           <h3>自定义检测规则</h3>
-          <div class="form-group">
-            <label for="customIncludeKeywords">自定义触发关键词</label>
-            <textarea id="customIncludeKeywords" rows="3" placeholder="每行一个关键词，元素的class/id/src包含该词时触发识别"></textarea>
-            <span class="hint">内置关键词: captcha, verify, code, vcode, authcode, 验证码, checkcode, yzm, kaptcha 等</span>
-          </div>
-          <div class="form-group">
-            <label for="customExcludePatterns">自定义排除关键词</label>
-            <textarea id="customExcludePatterns" rows="3" placeholder="每行一个关键词，元素的class/id/src包含该词时不识别"></textarea>
-            <span class="hint">内置排除词: avatar, logo, icon, banner, ad, sponsor, background, profile, emoji, loading
-              等</span>
-          </div>
+          <div id="keyword-chip-groups"></div>
         </div>
         <div class="card">
           <h3>站点黑名单</h3>

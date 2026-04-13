@@ -28,14 +28,17 @@ export const CONSTANTS = {
   ],
   INPUT_EXCLUDE_KEYWORDS: [
     '手机', '短信', 'sms', 'phone', 'mobile',
-    '手机验证码', '短信验证码', '手机号','滑动验证码',
+    '手机验证码', '短信验证码', '手机号', '滑动验证码',
+    'email', 'mail', '邮箱', '邮箱验证码', '邮件验证码',
+    'username', 'user', 'account', '账号', '用户名',
+    'otp', 'one time', 'verification code', '动态码', '校验码', '短信校验', '手机校验码',
   ],
   EXCLUDED_INPUT_TYPES: [
     'password', 'email', 'tel', 'phone', 'mobile', 'hidden',
     'submit', 'button', 'reset', 'file', 'image', 'checkbox', 'radio',
   ],
   EXCLUDED_INPUT_NAMES: [
-    'username', 'user', 'account', 'email', 'phone', 'mobile', 'tel',
+    'username', 'user', 'account', 'email', 'mail', 'phone', 'mobile', 'tel',
     'password', 'pwd', 'pass', 'name', 'realname', 'nickname',
     'search', 'query', 'q', 'keyword', 'address', 'city',
   ],
@@ -101,6 +104,15 @@ export const DEFAULT_CONFIG: OCRConfig = {
   customExcludePatterns: [],
   customAgreementKeywords: [],
   customInputExcludeKeywords: [],
+  disabledCaptchaKeywords: [],
+  disabledExcludePatterns: [],
+  disabledAgreementKeywords: [],
+  disabledInputExcludeKeywords: [],
+  enableInteractiveCaptchaAssist: false,
+  enableInteractiveCaptchaDebugOverlay: false,
+  enableSliderPuzzleAssist: true,
+  enableSingleSliderAssist: true,
+  enableClickSelectAssist: false,
   enableNotification: true,
 };
 

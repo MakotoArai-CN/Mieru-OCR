@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>验证码识别测试页面</title>
+    <link rel="icon" href="data:,">
 
     <!-- Vue + Element Plus -->
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
@@ -439,6 +440,164 @@
             background: var(--accent-blue-hover);
         }
 
+        .interactive-section {
+            grid-column: 1 / -1;
+        }
+
+        .interactive-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .interactive-card {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            background: var(--bg-input);
+        }
+
+        .interactive-card h3 {
+            font-size: 15px;
+            margin-bottom: 10px;
+            color: var(--text-primary);
+        }
+
+        .interactive-card p {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+
+        .slider-stage {
+            position: relative;
+            width: 100%;
+            max-width: 360px;
+            height: 190px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: linear-gradient(135deg, #dbeafe, #fce7f3);
+            border: 1px solid var(--border-color);
+            margin-bottom: 12px;
+        }
+
+        .slider-stage canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .slider-status,
+        .click-status {
+            min-height: 20px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .slider-status.success,
+        .click-status.success {
+            color: var(--success-color);
+        }
+
+        .slider-status.error,
+        .click-status.error {
+            color: var(--error-color);
+        }
+
+        .slider-track {
+            position: relative;
+            width: 100%;
+            max-width: 360px;
+            height: 52px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            user-select: none;
+            margin-bottom: 12px;
+        }
+
+        .slider-track-fill {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 0;
+            background: linear-gradient(90deg, rgba(74, 144, 226, 0.22), rgba(82, 196, 140, 0.22));
+            transition: width 0.05s linear;
+        }
+
+        .slider-target-gap {
+            position: absolute;
+            top: 7px;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 2px dashed rgba(30, 58, 95, 0.35);
+            background: rgba(255, 255, 255, 0.75);
+            box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+        }
+
+        .slider-handle {
+            position: absolute;
+            top: 7px;
+            left: 7px;
+            width: 38px;
+            height: 38px;
+            border: none;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+            color: white;
+            font-size: 18px;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 6px 14px rgba(74, 144, 226, 0.25);
+            transition: box-shadow 0.2s ease;
+        }
+
+        .slider-handle.dragging {
+            cursor: grabbing;
+            box-shadow: 0 10px 18px rgba(74, 144, 226, 0.32);
+        }
+
+        .click-captcha-wrap {
+            width: 100%;
+            max-width: 360px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            background: white;
+            margin-bottom: 12px;
+        }
+
+        .click-captcha-canvas {
+            display: block;
+            width: 100%;
+            cursor: crosshair;
+            background: linear-gradient(135deg, #eff6ff, #fdf2f8);
+        }
+
+        .click-prompt {
+            padding: 10px 12px;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .click-prompt strong {
+            color: var(--accent-blue);
+        }
+
+        .click-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
         @media screen and (max-width: 480px) {
             .grid {
                 grid-template-columns: 1fr;
@@ -468,6 +627,7 @@
     <script src="https://unpkg.com/element-plus/dist/index.full.min.js" defer></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" defer></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" defer></script>
+    <script src="https://unpkg.com/dayjs/dayjs.min.js" defer></script>
     <script src="https://unpkg.com/antd@5/dist/antd.min.js" defer></script>
     <script src="https://unpkg.com/angular@1.8.3/angular.min.js" defer></script>
 </head>
@@ -475,6 +635,7 @@
     <div class="container">
         <div class="header">
             <h1>🔐 验证码识别测试</h1>
+            <a href="test-interactive.html" style="font-size:13px;color:var(--text-secondary);text-decoration:none;padding:6px 12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border-color);transition:all 0.2s;">交互式验证码测试 &rarr;</a>
             <div class="theme-toggle">
                 <button class="theme-btn" data-theme="light" title="浅色">☀️</button>
                 <button class="theme-btn" data-theme="auto" title="自动">🌗</button>
@@ -620,6 +781,129 @@
                 <p class="framework-hint">ng-model 双向绑定</p>
                 <div id="angularRoot"></div>
             </div>
+
+            <!-- 输入框误识别测试 -->
+            <div class="test-section">
+                <h2>输入框误识别场景：邮箱在上，验证码在下</h2>
+                <p class="framework-hint">用于验证不会把邮箱/邮箱验证码输入框误选为图形验证码输入框</p>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div class="input-group" style="max-width:320px;">
+                        <input type="text" id="emailTopInput" placeholder="请输入邮箱" style="max-width:none;width:100%;">
+                    </div>
+                    <div class="input-group" style="max-width:320px;">
+                        <input type="text" id="emailCodeInput" placeholder="邮箱验证码" style="max-width:none;width:100%;">
+                    </div>
+                    <div class="captcha-row">
+                        <div class="captcha-box">
+                            <img id="emailMisleadCaptcha" width="120" height="40" alt="图形验证码">
+                        </div>
+                        <div class="input-group" style="max-width:320px;">
+                            <input type="text" id="realCaptchaInput" placeholder="请输入验证码" maxlength="4" style="max-width:none;width:100%;">
+                            <span class="status-icon" id="realCaptchaStatus"></span>
+                        </div>
+                        <button onclick="refreshEmailMisleadCaptcha()">🔄 刷新</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 手机短信误导场景 -->
+            <div class="test-section">
+                <h2>输入框误识别场景：短信验证码邻近</h2>
+                <p class="framework-hint">用于验证附近存在手机号/短信验证码输入框时，仍优先匹配图形验证码输入框</p>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div class="captcha-row">
+                        <div class="captcha-box">
+                            <canvas id="smsMisleadCaptcha" width="120" height="40"></canvas>
+                        </div>
+                        <div class="input-group" style="max-width:320px;">
+                            <input type="text" id="smsRealCaptchaInput" placeholder="图形验证码" maxlength="4" style="max-width:none;width:100%;">
+                            <span class="status-icon" id="smsRealCaptchaStatus"></span>
+                        </div>
+                    </div>
+                    <div class="input-group" style="max-width:320px;">
+                        <input type="text" id="smsPhoneInput" placeholder="手机号" style="max-width:none;width:100%;">
+                    </div>
+                    <div class="input-group" style="max-width:320px;">
+                        <input type="text" id="smsCodeInput" placeholder="短信验证码" style="max-width:none;width:100%;">
+                    </div>
+                    <button onclick="refreshSmsMisleadCaptcha()">🔄 刷新</button>
+                </div>
+            </div>
+
+            <!-- 无关图片干扰场景 -->
+            <div class="test-section">
+                <h2>无关图片干扰场景</h2>
+                <p class="framework-hint">页面包含头像、Logo、Banner、小图标，只有带验证码语义的图片应该被识别</p>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div class="captcha-row" style="align-items:flex-start;">
+                        <img id="fakeAvatar" width="56" height="56" alt="user avatar">
+                        <img id="fakeLogo" width="100" height="40" alt="site logo">
+                        <img id="fakeBanner" width="180" height="60" alt="promo banner">
+                    </div>
+                    <div class="captcha-row">
+                        <div class="captcha-box">
+                            <img id="realSemanticCaptcha" width="120" height="40" alt="captcha image">
+                        </div>
+                        <div class="input-group" style="max-width:320px;">
+                            <input type="text" id="semanticCaptchaInput" placeholder="请输入图形验证码" maxlength="4" style="max-width:none;width:100%;">
+                            <span class="status-icon" id="semanticCaptchaStatus"></span>
+                        </div>
+                        <button onclick="refreshSemanticCaptchaGroup()">🔄 刷新</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="test-section interactive-section">
+                <h2>交互式验证码几何校验</h2>
+                <p class="framework-hint">用于回归拼图滑块 1:1 位移、单轨滑块目标尺寸一致、点选字符命中区域验证。</p>
+                <div class="interactive-grid">
+                    <div class="interactive-card">
+                        <h3>拼图滑块验证码</h3>
+                        <p>拖动下方滑块，让拼图块与缺口完全重合。拼图块位移与拖块位移为 1:1。</p>
+                        <div class="slider-stage">
+                            <canvas id="puzzleBgCanvas" width="360" height="190"></canvas>
+                            <canvas id="puzzlePieceCanvas" width="360" height="190"></canvas>
+                        </div>
+                        <div id="puzzleStatus" class="slider-status">拖动滑块开始验证</div>
+                        <div class="slider-track" id="puzzleTrack">
+                            <div class="slider-track-fill" id="puzzleFill"></div>
+                            <button type="button" class="slider-handle" id="puzzleHandle">⇆</button>
+                        </div>
+                        <div class="click-actions">
+                            <button onclick="refreshPuzzleSlider()">🔄 刷新拼图</button>
+                        </div>
+                    </div>
+
+                    <div class="interactive-card">
+                        <h3>单轨道滑块验证码</h3>
+                        <p>目标空缺大小与滑块大小一致，命中逻辑按滑块中心与目标中心偏差判断。</p>
+                        <div id="railStatus" class="slider-status">拖动圆形滑块对准目标空位</div>
+                        <div class="slider-track" id="railTrack">
+                            <div class="slider-track-fill" id="railFill"></div>
+                            <div class="slider-target-gap" id="railTarget"></div>
+                            <button type="button" class="slider-handle" id="railHandle">⇆</button>
+                        </div>
+                        <div class="click-actions">
+                            <button onclick="refreshRailSlider()">🔄 刷新轨道</button>
+                        </div>
+                    </div>
+
+                    <div class="interactive-card">
+                        <h3>点选字符验证码</h3>
+                        <p>点击图中指定字符，命中判定基于实际字符中心和命中半径，不再出现“点中了却失败”。</p>
+                        <div class="click-captcha-wrap">
+                            <canvas id="clickCaptchaCanvas" class="click-captcha-canvas" width="360" height="210"></canvas>
+                            <div class="click-prompt">请依次点击：<strong id="clickPromptText"></strong></div>
+                        </div>
+                        <div id="clickStatus" class="click-status">按提示顺序点击字符</div>
+                        <div class="click-actions">
+                            <button onclick="refreshClickCaptcha()">🔄 刷新点选</button>
+                            <button onclick="resetClickSelection()">↺ 清空已选</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -760,8 +1044,23 @@
             status.classList.remove('visible');
         }
 
+        function clamp(value, min, max) {
+            return Math.min(max, Math.max(min, value));
+        }
+
+        function setStatus(el, message, type) {
+            if (!el) return;
+            el.textContent = message;
+            el.classList.remove('success', 'error');
+            if (type) el.classList.add(type);
+        }
+
         /* ========== 验证码生成 ========== */
         let canvasCode = '', imgCode = '', base64Code = '', svgCode = '', noisyCode = '', mathAnswer = 0, cssCode = '';
+        let emailMisleadCode = '', smsMisleadCode = '', semanticCaptchaCode = '';
+        let puzzleSliderState = null;
+        let railSliderState = null;
+        let clickCaptchaState = null;
 
         function refreshCanvas() {
             const canvas = document.getElementById('canvasCaptcha');
@@ -888,6 +1187,383 @@
             resetInput('cssInput', 'cssStatus');
         }
 
+        function refreshEmailMisleadCaptcha() {
+            emailMisleadCode = randomStr(4);
+            document.getElementById('emailMisleadCaptcha').src = createCaptchaDataUrl(emailMisleadCode, 120, 40);
+            resetInput('realCaptchaInput', 'realCaptchaStatus');
+        }
+
+        function refreshSmsMisleadCaptcha() {
+            const canvas = document.getElementById('smsMisleadCaptcha');
+            const ctx = canvas.getContext('2d');
+            smsMisleadCode = randomStr(4);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.font = 'bold 22px Arial';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i < smsMisleadCode.length; i++) {
+                ctx.save();
+                ctx.translate(16 + i * 24, 20);
+                ctx.rotate((Math.random() - 0.5) * 0.25);
+                ctx.fillStyle = randomColor();
+                ctx.fillText(smsMisleadCode[i], 0, 0);
+                ctx.restore();
+            }
+            resetInput('smsRealCaptchaInput', 'smsRealCaptchaStatus');
+        }
+
+        function refreshSemanticCaptchaGroup() {
+            semanticCaptchaCode = randomStr(4);
+            document.getElementById('realSemanticCaptcha').src = createCaptchaDataUrl(semanticCaptchaCode, 120, 40);
+            document.getElementById('fakeAvatar').src = createCaptchaDataUrl('AV', 56, 56);
+            document.getElementById('fakeLogo').src = createCaptchaDataUrl('LOGO', 100, 40);
+            document.getElementById('fakeBanner').src = createCaptchaDataUrl('SALE', 180, 60);
+            resetInput('semanticCaptchaInput', 'semanticCaptchaStatus');
+        }
+
+        /* ========== 交互式验证码 ========== */
+        function attachDragSlider(handle, getOffset, setOffset, onEnd) {
+            const startDrag = (clientX) => {
+                const startX = clientX;
+                const startOffset = getOffset();
+                handle.classList.add('dragging');
+                const move = (moveX) => setOffset(startOffset + moveX - startX);
+                const stop = () => {
+                    handle.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    document.removeEventListener('touchmove', onTouchMove);
+                    document.removeEventListener('touchend', onTouchEnd);
+                    onEnd();
+                };
+                const onMouseMove = (event) => move(event.clientX);
+                const onMouseUp = () => stop();
+                const onTouchMove = (event) => {
+                    move(event.touches[0].clientX);
+                    event.preventDefault();
+                };
+                const onTouchEnd = () => stop();
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                document.addEventListener('touchmove', onTouchMove, { passive: false });
+                document.addEventListener('touchend', onTouchEnd);
+            };
+
+            handle.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                startDrag(event.clientX);
+            });
+            handle.addEventListener('touchstart', (event) => {
+                startDrag(event.touches[0].clientX);
+            }, { passive: true });
+        }'}]} assistant to=functions.Edit კომენტary  彩神争霸苹果json  天天送钱{
+
+        function createPieceShape(ctx, x, y, size) {
+            const bump = Math.round(size * 0.22);
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + size * 0.32, y);
+            ctx.bezierCurveTo(x + size * 0.38, y - bump, x + size * 0.62, y - bump, x + size * 0.68, y);
+            ctx.lineTo(x + size, y);
+            ctx.lineTo(x + size, y + size * 0.32);
+            ctx.bezierCurveTo(x + size + bump, y + size * 0.38, x + size + bump, y + size * 0.62, x + size, y + size * 0.68);
+            ctx.lineTo(x + size, y + size);
+            ctx.lineTo(x + size * 0.68, y + size);
+            ctx.bezierCurveTo(x + size * 0.62, y + size - bump, x + size * 0.38, y + size - bump, x + size * 0.32, y + size);
+            ctx.lineTo(x, y + size);
+            ctx.lineTo(x, y + size * 0.68);
+            ctx.bezierCurveTo(x - bump, y + size * 0.62, x - bump, y + size * 0.38, x, y + size * 0.32);
+            ctx.closePath();
+        }
+
+        function drawPuzzleScene(pieceOffsetX) {
+            if (!puzzleSliderState) return;
+            const { width, height, pieceSize, targetX, pieceY, sourceX } = puzzleSliderState;
+            const bgCanvas = document.getElementById('puzzleBgCanvas');
+            const pieceCanvas = document.getElementById('puzzlePieceCanvas');
+            const bgCtx = bgCanvas.getContext('2d');
+            const pieceCtx = pieceCanvas.getContext('2d');
+
+            bgCtx.clearRect(0, 0, width, height);
+            const grad = bgCtx.createLinearGradient(0, 0, width, height);
+            grad.addColorStop(0, '#bfdbfe');
+            grad.addColorStop(0.5, '#c4b5fd');
+            grad.addColorStop(1, '#fbcfe8');
+            bgCtx.fillStyle = grad;
+            bgCtx.fillRect(0, 0, width, height);
+
+            for (let i = 0; i < 18; i++) {
+                bgCtx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.22)' : 'rgba(30,64,175,0.12)';
+                bgCtx.beginPath();
+                bgCtx.arc(Math.random() * width, Math.random() * height, 8 + Math.random() * 20, 0, Math.PI * 2);
+                bgCtx.fill();
+            }
+
+            bgCtx.fillStyle = 'rgba(255,255,255,0.65)';
+            bgCtx.fillRect(0, height - 54, width, 54);
+            bgCtx.fillStyle = '#1e3a5f';
+            bgCtx.font = '600 18px Arial';
+            bgCtx.fillText('拖动拼图块完成拼接', 18, height - 22);
+
+            bgCtx.save();
+            createPieceShape(bgCtx, targetX, pieceY, pieceSize);
+            bgCtx.fillStyle = 'rgba(15, 23, 42, 0.18)';
+            bgCtx.fill();
+            bgCtx.setLineDash([6, 4]);
+            bgCtx.strokeStyle = 'rgba(255,255,255,0.85)';
+            bgCtx.lineWidth = 2;
+            bgCtx.stroke();
+            bgCtx.restore();
+
+            pieceCtx.clearRect(0, 0, width, height);
+            pieceCtx.save();
+            createPieceShape(pieceCtx, sourceX + pieceOffsetX, pieceY, pieceSize);
+            pieceCtx.fillStyle = 'rgba(255,255,255,0.9)';
+            pieceCtx.shadowColor = 'rgba(15,23,42,0.28)';
+            pieceCtx.shadowBlur = 10;
+            pieceCtx.fill();
+            pieceCtx.shadowBlur = 0;
+            pieceCtx.strokeStyle = 'rgba(30,58,95,0.4)';
+            pieceCtx.lineWidth = 2;
+            pieceCtx.stroke();
+            pieceCtx.restore();
+        }
+
+        function updatePuzzleSlider(offset) {
+            if (!puzzleSliderState) return;
+            const handle = document.getElementById('puzzleHandle');
+            const fill = document.getElementById('puzzleFill');
+            const maxOffset = puzzleSliderState.maxOffset;
+            puzzleSliderState.currentOffset = clamp(offset, 0, maxOffset);
+            handle.style.left = `${7 + puzzleSliderState.currentOffset}px`;
+            fill.style.width = `${26 + puzzleSliderState.currentOffset}px`;
+            drawPuzzleScene(puzzleSliderState.currentOffset);
+            setStatus(document.getElementById('puzzleStatus'), `当前位移：${Math.round(puzzleSliderState.currentOffset)}px / 目标：${Math.round(puzzleSliderState.targetOffset)}px`, '');
+        }
+
+        function verifyPuzzleSlider() {
+            if (!puzzleSliderState) return;
+            const diff = Math.abs(puzzleSliderState.currentOffset - puzzleSliderState.targetOffset);
+            if (diff <= 6) {
+                setStatus(document.getElementById('puzzleStatus'), `验证成功，偏差 ${diff.toFixed(1)}px`, 'success');
+            } else {
+                setStatus(document.getElementById('puzzleStatus'), `验证失败，偏差 ${diff.toFixed(1)}px，请重试`, 'error');
+                setTimeout(() => updatePuzzleSlider(0), 450);
+            }
+        }
+
+        function refreshPuzzleSlider() {
+            const width = 360;
+            const height = 190;
+            const pieceSize = 54;
+            const sourceX = 18;
+            const targetX = 160 + Math.random() * 120;
+            const pieceY = 42 + Math.random() * 44;
+            const maxOffset = width - pieceSize - 14;
+            puzzleSliderState = {
+                width,
+                height,
+                pieceSize,
+                sourceX,
+                targetX,
+                pieceY,
+                maxOffset,
+                targetOffset: targetX - sourceX,
+                currentOffset: 0,
+            };
+            updatePuzzleSlider(0);
+            setStatus(document.getElementById('puzzleStatus'), '拖动滑块开始验证', '');
+        }
+
+        function updateRailSlider(offset) {
+            if (!railSliderState) return;
+            const handle = document.getElementById('railHandle');
+            const fill = document.getElementById('railFill');
+            railSliderState.currentOffset = clamp(offset, 0, railSliderState.maxOffset);
+            handle.style.left = `${7 + railSliderState.currentOffset}px`;
+            fill.style.width = `${26 + railSliderState.currentOffset}px`;
+            setStatus(document.getElementById('railStatus'), `当前位置：${Math.round(railSliderState.currentOffset)}px / 目标：${Math.round(railSliderState.targetOffset)}px`, '');
+        }
+
+        function verifyRailSlider() {
+            if (!railSliderState) return;
+            const diff = Math.abs(railSliderState.currentOffset - railSliderState.targetOffset);
+            if (diff <= 6) {
+                setStatus(document.getElementById('railStatus'), `验证成功，中心偏差 ${diff.toFixed(1)}px`, 'success');
+            } else {
+                setStatus(document.getElementById('railStatus'), `验证失败，中心偏差 ${diff.toFixed(1)}px，请重试`, 'error');
+                setTimeout(() => updateRailSlider(0), 450);
+            }
+        }
+
+        function refreshRailSlider() {
+            const target = document.getElementById('railTarget');
+            const handle = document.getElementById('railHandle');
+            const track = document.getElementById('railTrack');
+            const handleSize = 38;
+            const usableWidth = track.clientWidth - 14 - handleSize;
+            const targetOffset = 80 + Math.random() * Math.max(40, usableWidth - 120);
+            railSliderState = {
+                handleSize,
+                maxOffset: usableWidth,
+                targetOffset,
+                currentOffset: 0,
+            };
+            target.style.left = `${7 + targetOffset}px`;
+            handle.style.width = `${handleSize}px`;
+            handle.style.height = `${handleSize}px`;
+            target.style.width = `${handleSize}px`;
+            target.style.height = `${handleSize}px`;
+            updateRailSlider(0);
+            setStatus(document.getElementById('railStatus'), '拖动圆形滑块对准目标空位', '');
+        }
+
+        function drawClickCaptcha() {
+            if (!clickCaptchaState) return;
+            const canvas = document.getElementById('clickCaptchaCanvas');
+            const ctx = canvas.getContext('2d');
+            const { characters, selectedIndices, promptIndices } = clickCaptchaState;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            grad.addColorStop(0, '#eff6ff');
+            grad.addColorStop(1, '#fdf2f8');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < 30; i++) {
+                ctx.fillStyle = `rgba(74,144,226,${0.05 + Math.random() * 0.05})`;
+                ctx.beginPath();
+                ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height, 6 + Math.random() * 14, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            characters.forEach((char, index) => {
+                const isPrompt = promptIndices.includes(index);
+                const selectedOrder = selectedIndices.indexOf(index);
+                ctx.save();
+                ctx.translate(char.x, char.y);
+                ctx.rotate(char.rotation);
+                ctx.font = `${char.size}px "Microsoft YaHei", Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = isPrompt ? '#1d4ed8' : '#1e3a5f';
+                ctx.fillText(char.char, 0, 0);
+                if (selectedOrder !== -1) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = selectedOrder === promptIndices.indexOf(index) ? '#10b981' : '#ef4444';
+                    ctx.lineWidth = 3;
+                    ctx.arc(0, 0, char.hitRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(char.hitRadius - 6, -char.hitRadius + 6, 11, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#1e3a5f';
+                    ctx.font = 'bold 12px Arial';
+                    ctx.fillText(String(selectedOrder + 1), char.hitRadius - 6, -char.hitRadius + 6);
+                }
+                ctx.restore();
+            });
+        }
+
+        function updateClickPrompt() {
+            if (!clickCaptchaState) return;
+            const prompt = clickCaptchaState.promptIndices.map((index) => clickCaptchaState.characters[index].char).join(' → ');
+            document.getElementById('clickPromptText').textContent = prompt;
+        }
+
+        function evaluateClickCaptcha() {
+            if (!clickCaptchaState) return;
+            const { selectedIndices, promptIndices } = clickCaptchaState;
+            if (selectedIndices.length < promptIndices.length) {
+                setStatus(document.getElementById('clickStatus'), `已选择 ${selectedIndices.length}/${promptIndices.length} 个字符`, '');
+                return;
+            }
+            const ok = promptIndices.every((index, order) => selectedIndices[order] === index);
+            if (ok) {
+                setStatus(document.getElementById('clickStatus'), '验证成功，命中区域与字符位置一致', 'success');
+            } else {
+                setStatus(document.getElementById('clickStatus'), '顺序或命中错误，请重新点击', 'error');
+            }
+        }
+
+        function resetClickSelection() {
+            if (!clickCaptchaState) return;
+            clickCaptchaState.selectedIndices = [];
+            drawClickCaptcha();
+            setStatus(document.getElementById('clickStatus'), '按提示顺序点击字符', '');
+        }
+
+        function refreshClickCaptcha() {
+            const canvas = document.getElementById('clickCaptchaCanvas');
+            const chars = ['春', '夏', '秋', '冬', '风', '雨', '云', '星'];
+            const indices = [];
+            const characters = chars.map((char, index) => {
+                const x = 42 + (index % 4) * 88 + Math.random() * 18;
+                const y = 54 + Math.floor(index / 4) * 78 + Math.random() * 14;
+                indices.push(index);
+                return {
+                    char,
+                    x,
+                    y,
+                    size: 28 + Math.floor(Math.random() * 8),
+                    rotation: (Math.random() - 0.5) * 0.35,
+                    hitRadius: 24,
+                };
+            });
+            const shuffled = [...indices].sort(() => Math.random() - 0.5);
+            clickCaptchaState = {
+                characters,
+                promptIndices: shuffled.slice(0, 3),
+                selectedIndices: [],
+            };
+            updateClickPrompt();
+            drawClickCaptcha();
+            setStatus(document.getElementById('clickStatus'), `按提示顺序点击字符（画布 ${canvas.width}×${canvas.height}）`, '');
+        }
+
+        function bindInteractiveCaptchas() {
+            attachDragSlider(
+                document.getElementById('puzzleHandle'),
+                () => puzzleSliderState?.currentOffset || 0,
+                (offset) => updatePuzzleSlider(offset),
+                verifyPuzzleSlider
+            );
+
+            attachDragSlider(
+                document.getElementById('railHandle'),
+                () => railSliderState?.currentOffset || 0,
+                (offset) => updateRailSlider(offset),
+                verifyRailSlider
+            );
+
+            document.getElementById('clickCaptchaCanvas').addEventListener('click', (event) => {
+                if (!clickCaptchaState) return;
+                const canvas = event.currentTarget;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const x = (event.clientX - rect.left) * scaleX;
+                const y = (event.clientY - rect.top) * scaleY;
+                const hitIndex = clickCaptchaState.characters.findIndex((char) => {
+                    const dx = x - char.x;
+                    const dy = y - char.y;
+                    return Math.sqrt(dx * dx + dy * dy) <= char.hitRadius;
+                });
+                if (hitIndex === -1) {
+                    setStatus(document.getElementById('clickStatus'), '未命中任何字符，请点击字符中心附近', 'error');
+                    return;
+                }
+                if (!clickCaptchaState.selectedIndices.includes(hitIndex)) {
+                    clickCaptchaState.selectedIndices.push(hitIndex);
+                }
+                drawClickCaptcha();
+                evaluateClickCaptcha();
+            });
+        }
+
         /* ========== 框架加载 ========== */
         function waitFor(getter, timeout) {
             const start = Date.now();
@@ -951,17 +1627,16 @@
                 const React = await waitFor(() => window.React, 15000);
                 const ReactDOM = await waitFor(() => window.ReactDOM, 15000);
                 const antd = await waitFor(() => window.antd, 15000);
-                const el = document.getElementById('reactAntdRoot');
-                if (!el) return;
+                const baseRoot = document.getElementById('reactAntdRoot');
+                if (!baseRoot) return;
 
                 const e = React.createElement;
 
-                function App() {
+                function BasicApp() {
                     const [code, setCode] = React.useState(() => randomStr(4));
                     const [src, setSrc] = React.useState('');
                     const [value, setValue] = React.useState('');
                     const [status, setStatus] = React.useState('');
-
                     const refresh = React.useCallback(() => {
                         const c = randomStr(4);
                         setCode(c);
@@ -969,26 +1644,17 @@
                         setValue('');
                         setStatus('');
                     }, []);
-
                     React.useEffect(refresh, []);
-
                     const onChange = (ev) => {
                         const v = ev.target.value;
                         setValue(v);
                         if (!v) { setStatus(''); return; }
-                        if (v.length >= code.length) {
-                            setStatus(v.toUpperCase() === code ? 'success' : 'error');
-                        }
+                        if (v.length >= code.length) setStatus(v.toUpperCase() === code ? 'success' : 'error');
                     };
-
                     return e('div', { className: 'captcha-row' },
                         e(antd.Input, {
-                            placeholder: '验证码',
-                            value,
-                            onChange,
-                            maxLength: 4,
-                            style: { maxWidth: '200px' },
-                            status: status === 'error' ? 'error' : undefined,
+                            placeholder: '验证码', value, onChange, maxLength: 4,
+                            style: { maxWidth: '200px' }, status: status === 'error' ? 'error' : undefined,
                             addonAfter: e('img', { src, style: { height: '28px', cursor: 'pointer' }, onClick: refresh, alt: 'captcha' })
                         }),
                         e(antd.Button, { onClick: refresh }, '🔄 刷新'),
@@ -996,7 +1662,7 @@
                     );
                 }
 
-                ReactDOM.createRoot(el).render(e(App));
+                ReactDOM.createRoot(baseRoot).render(e(BasicApp));
             } catch (e) { console.warn('React init failed:', e); }
         }
 
@@ -1055,6 +1721,13 @@
             refreshNoisy();
             refreshMath();
             refreshCSS();
+            refreshEmailMisleadCaptcha();
+            refreshSmsMisleadCaptcha();
+            refreshSemanticCaptchaGroup();
+            refreshPuzzleSlider();
+            refreshRailSlider();
+            refreshClickCaptcha();
+            bindInteractiveCaptchas();
 
             setupAutoValidation('canvasInput', 'canvasStatus', () => canvasCode);
             setupAutoValidation('imgInput', 'imgStatus', () => imgCode);
@@ -1063,6 +1736,9 @@
             setupAutoValidation('noisyInput', 'noisyStatus', () => noisyCode);
             setupAutoValidation('mathInput', 'mathStatus', () => mathAnswer);
             setupAutoValidation('cssInput', 'cssStatus', () => cssCode);
+            setupAutoValidation('realCaptchaInput', 'realCaptchaStatus', () => emailMisleadCode);
+            setupAutoValidation('smsRealCaptchaInput', 'smsRealCaptchaStatus', () => smsMisleadCode);
+            setupAutoValidation('semanticCaptchaInput', 'semanticCaptchaStatus', () => semanticCaptchaCode);
 
             setTimeout(() => {
                 initVue();

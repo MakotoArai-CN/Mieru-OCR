@@ -21,7 +21,7 @@ function readVersion(): string {
 }
 
 const APP_VERSION = readVersion();
-const MODEL_VERSION = '1.5.1';
+const MODEL_VERSION = '1.6.0';
 const WASM_VERSION = '1.17.0';
 const BUILDATE = new Date().toLocaleString();
 

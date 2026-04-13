@@ -116,6 +116,15 @@ export interface OCRConfig {
   customExcludePatterns: string[];
   customAgreementKeywords: string[];
   customInputExcludeKeywords: string[];
+  disabledCaptchaKeywords: string[];
+  disabledExcludePatterns: string[];
+  disabledAgreementKeywords: string[];
+  disabledInputExcludeKeywords: string[];
+  enableInteractiveCaptchaAssist: boolean;
+  enableInteractiveCaptchaDebugOverlay: boolean;
+  enableSliderPuzzleAssist: boolean;
+  enableSingleSliderAssist: boolean;
+  enableClickSelectAssist: boolean;
   enableNotification: boolean;
 }
 

@@ -11,6 +11,20 @@ function readVersion(): string {
   return '1.1.0';
 }
 
+function toManifestVersion(version: string): string {
+  const normalized = version.trim().replace(/^v/i, '');
+  const base = normalized.split('-')[0];
+  return /^\d+(?:\.\d+){0,3}$/.test(base) ? base : '1.1.0';
+}
+
+function getBuildVersions(): { releaseVersion: string; manifestVersion: string } {
+  const releaseVersion = readVersion();
+  return {
+    releaseVersion,
+    manifestVersion: toManifestVersion(releaseVersion),
+  };
+}
+
 function copyDirRecursive(srcDir: string, destDir: string): void {
   if (!existsSync(srcDir)) return;
   if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
@@ -27,15 +41,31 @@ function copyDirRecursive(srcDir: string, destDir: string): void {
   }
 }
 
+async function bundleContentScript(distDir: string, entryPath: string): Promise<void> {
+  const esbuild = await import('esbuild');
+  await esbuild.build({
+    entryPoints: [entryPath],
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: ['es2020'],
+    tsconfig: resolve(__dirname, 'tsconfig.json'),
+    outfile: resolve(distDir, 'content.js'),
+    allowOverwrite: true,
+    legalComments: 'none',
+    logLevel: 'silent',
+  });
+}
+
 function copyFirefoxAssets() {
   return {
     name: 'copy-firefox-assets',
-    closeBundle() {
+    async closeBundle() {
       const distDir = resolve(__dirname, 'dist/firefox');
       const publicDir = resolve(__dirname, 'public');
       const iconsDir = resolve(__dirname, 'icons');
       const localeDir = resolve(__dirname, '_locales');
-      const version = readVersion();
+      const { releaseVersion, manifestVersion } = getBuildVersions();
 
       if (!existsSync(distDir)) {
         mkdirSync(distDir, { recursive: true });
@@ -106,9 +136,9 @@ function copyFirefoxAssets() {
       if (existsSync(manifestSrcPath)) {
         const manifestContent = readFileSync(manifestSrcPath, 'utf-8');
         const manifest = JSON.parse(manifestContent);
-        manifest.version = version;
+        manifest.version = manifestVersion;
         writeFileSync(manifestDistPath, JSON.stringify(manifest, null, 2));
-        console.log(`Copied manifest.firefox.json as manifest.json with version ${version}`);
+        console.log(`Copied manifest.firefox.json as manifest.json with version ${manifestVersion}`);
       }
 
       const nestedPopup = resolve(distDir, 'src/extension/popup/popup-firefox.html');
@@ -142,12 +172,15 @@ function copyFirefoxAssets() {
         }
       }
 
+      await bundleContentScript(distDir, resolve(__dirname, 'src/extension/content/content-firefox.ts'));
+      console.log('Rebundled Firefox content.js as classic script');
+
       const zipFile = new AdmZip();
       zipFile.addLocalFolder(distDir);
-      const zipPath = resolve(__dirname, `dist/ddddocr-firefox-v${version}.zip`);
+      const zipPath = resolve(__dirname, `dist/ddddocr-firefox-v${releaseVersion}.zip`);
       zipFile.writeZip(zipPath);
       console.log(`Created ${zipPath}`);
-      console.log(`Firefox build completed (version ${version})`);
+      console.log(`Firefox build completed (release ${releaseVersion}, manifest ${manifestVersion})`);
     }
   };
 }
