@@ -4,6 +4,8 @@ import { CONSTANTS, Logger } from '@core/config';
 import { Calculator } from '@core/calculator';
 import { CaptchaDetector, type DetectedCaptcha, type GuessedElement } from '@core/captcha-detector';
 import { EventEmitter, type OCREvents, type OCRConfig, type SiteRule } from '@core/types';
+import { initLocale, setLocale, t } from '@core/i18n';
+import type { Locale } from '@core/i18n';
 import { loadModel, clearModelCache } from './model-loader';
 import { setupWASMCache, clearWASMCache } from './wasm-cache';
 import { SettingsUI } from './settings-ui';
@@ -500,13 +502,13 @@ class AutoDetector {
     const config = getConfig();
     await this.autoFill.fill(input, text, {
       simulate: true,
-      autoSubmit: false,
+      autoSubmit: config.autoSubmit ?? false,
       typewriterEffect: config.typewriterEffect,
     });
     if (config.enableNotification && typeof GM_notification !== 'undefined') {
       GM_notification({
-        title: '验证码已自动填充',
-        text: `识别结果: ${text}`,
+        title: t('us.captchaFilled'),
+        text: t('us.captchaFilledResult', text),
         timeout: 3000,
       });
     }
@@ -630,10 +632,11 @@ class OCRApp {
     this.ocr = new DdddOCR();
     this.detector = new AutoDetector(this.ocr, this.eventEmitter);
     this.settingsUI = new SettingsUI();
+    const config = getConfig();
+    initLocale(config.language);
+    Logger.setDebugMode(config.debugMode || false);
     this.registerMenuCommands();
     this.settingsUI.setOnConfigChange((config) => this.handleConfigChange(config));
-    const config = getConfig();
-    Logger.setDebugMode(config.debugMode || false);
   }
 
   async init(): Promise<void> {
@@ -642,28 +645,27 @@ class OCRApp {
       return;
     }
     if (this.initialized) return;
-    const config = getConfig();
     this.initialized = true;
     this.loadingIndicator = new LoadingIndicator();
     Logger.info('DDDD OCR 启动');
     try {
-      this.loadingIndicator.show('正在初始化 DDDD OCR');
-      this.loadingIndicator.updateText('正在加载模型文件');
+      this.loadingIndicator.show(t('us.loading'));
+      this.loadingIndicator.updateText(t('us.loadingModel'));
       await this.ocr.init();
       Logger.info('OCR 已就绪');
-      this.loadingIndicator.updateText('DDDD OCR 已就绪');
+      this.loadingIndicator.updateText(t('us.ready'));
+      const config = getConfig();
       if (config.autoDetect) {
         this.detector.start();
         Logger.info('自动检测已启动');
       }
       setTimeout(() => this.loadingIndicator?.hide(), 2000);
-      this.showNotification('DDDD OCR 已就绪', config.autoDetect ? '自动检测已启用' : '点击菜单启用自动检测');
-      this.refreshMenuCommands();
+      this.showNotification(t('us.ready'), config.autoDetect ? t('us.readyAutoDetect') : t('us.readyManual'));
     } catch (error) {
       Logger.error('初始化失败:', error);
-      this.loadingIndicator?.updateText('初始化失败: ' + String(error));
+      this.loadingIndicator?.updateText(t('us.initFailedMsg', String(error)));
       setTimeout(() => this.loadingIndicator?.hide(), 3000);
-      this.showNotification('初始化失败', String(error), true);
+      this.showNotification(t('us.initFailed'), String(error), true);
     }
   }
 
@@ -672,25 +674,31 @@ class OCRApp {
   }
 
   private refreshMenuCommands(): void {
-    const settingsId = GM_registerMenuCommand('打开设置', () => this.settingsUI.show(), 's');
+    // 先清除旧菜单
+    for (const id of this.menuCommandIds.values()) {
+      try { GM_unregisterMenuCommand(id); } catch {}
+    }
+    this.menuCommandIds.clear();
+
+    const settingsId = GM_registerMenuCommand(t('us.menuOpenSettings'), () => this.settingsUI.show(), 's');
     this.menuCommandIds.set('settings', settingsId);
 
-    const cacheId = GM_registerMenuCommand('清除缓存', async () => {
+    const cacheId = GM_registerMenuCommand(t('us.menuClearCache'), async () => {
       Dialog.confirm({
-        title: '清除缓存',
-        content: '确定要清除所有缓存吗（包括模型和 WASM）？下次启动将重新下载。',
-        confirmText: '确定清除',
-        cancelText: '取消',
+        title: t('us.clearCacheTitle'),
+        content: t('us.clearCacheMsg'),
+        confirmText: t('us.clearCacheConfirm'),
+        cancelText: t('common.cancel'),
         onConfirm: async () => {
           await clearModelCache();
           await clearWASMCache();
-          this.showNotification('缓存已清除', '请刷新页面');
+          this.showNotification(t('us.cacheCleared'), t('us.cacheClearedMsg'));
         },
       });
     }, 'd');
     this.menuCommandIds.set('cache', cacheId);
 
-    const statusId = GM_registerMenuCommand('查看状态', () => this.showStatus(), 'i');
+    const statusId = GM_registerMenuCommand(t('us.menuViewStatus'), () => this.showStatus(), 'i');
     this.menuCommandIds.set('status', statusId);
   }
 
@@ -700,29 +708,37 @@ class OCRApp {
     const rules = getSiteRules();
     const stats = statsManager.getStats();
 
+    const yn = (v: boolean) => v ? t('common.enabled') : t('common.disabled');
     const content = `
-<b>脚本状态:</b> ${this.initialized ? '已初始化' : '未初始化'}
-<b>当前站点:</b> ${window.location.hostname}
-<b>白名单状态:</b> ${config.enableWhitelist ? '已启用' : '已禁用'}
-<b>白名单数量:</b> ${config.whitelist?.length || 0} 个站点
-<b>当前站点匹配:</b> ${whitelisted ? '在白名单中' : '不在白名单中'}
-<b>自动检测:</b> ${config.autoDetect ? '已启用' : '已禁用'}
-<b>打字机效果:</b> ${config.typewriterEffect ? '已启用' : '已禁用'}
-<b>自动勾选协议:</b> ${config.autoCheckAgreement ? '已启用' : '已禁用'}
-<b>协议选择器数:</b> ${config.agreementSelectors?.length || 0} 个
-<b>自动计算:</b> ${config.autoCalculate ? '已启用' : '已禁用'}
-<b>计算输出:</b> ${config.calculateOutputMode === 'result' ? '仅结果' : '完整等式'}
-<b>计算规则数:</b> ${config.calculateRules?.length || 0} 条
-<b>站点规则数:</b> ${Object.keys(rules).length} 条
-<b>调试模式:</b> ${config.debugMode ? '已启用' : '已禁用'}
-<b>上传模型:</b> ${config.useUploadedModel ? '已启用' : '未启用'}
-<b>自动下载:</b> ${config.autoDownload ? '已启用' : '已禁用'}
-<b>总识别次数:</b> ${stats.total} 次`;
+<b>${t('status.scriptStatus')}</b> ${this.initialized ? t('status.initialized') : t('status.notInitialized')}
+<b>${t('status.currentSite')}</b> ${window.location.hostname}
+<b>${t('status.whitelistStatus')}</b> ${yn(config.enableWhitelist)}
+<b>${t('status.whitelistCount')}</b> ${config.whitelist?.length || 0} ${t('common.sites')}
+<b>${t('status.siteMatch')}</b> ${whitelisted ? t('status.inWhitelist') : t('status.notInWhitelist')}
+<b>${t('status.autoDetect')}</b> ${yn(config.autoDetect)}
+<b>${t('status.typewriterEffect')}</b> ${yn(config.typewriterEffect)}
+<b>${t('status.autoCheckAgreement')}</b> ${yn(config.autoCheckAgreement)}
+<b>${t('status.agreementSelectorCount')}</b> ${config.agreementSelectors?.length || 0}
+<b>${t('status.autoCalculate')}</b> ${yn(config.autoCalculate)}
+<b>${t('status.calcOutput')}</b> ${config.calculateOutputMode === 'result' ? t('status.calcOutputResult') : t('status.calcOutputEquation')}
+<b>${t('status.calcRuleCount')}</b> ${config.calculateRules?.length || 0}
+<b>${t('status.siteRuleCount')}</b> ${Object.keys(rules).length}
+<b>${t('status.debugMode')}</b> ${yn(config.debugMode)}
+<b>${t('status.uploadedModel')}</b> ${config.useUploadedModel ? t('common.enabled') : t('common.notEnabled')}
+<b>${t('status.autoDownload')}</b> ${yn(config.autoDownload)}
+<b>${t('status.totalRecognitions')}</b> ${stats.total} ${t('common.times')}`;
 
-    Dialog.show({ title: '当前状态', content });
+    Dialog.show({ title: t('status.title'), content });
   }
 
   private handleConfigChange(config: OCRConfig): void {
+    // 更新 locale
+    if (config.language === 'auto') {
+      initLocale('auto');
+    } else {
+      setLocale(config.language as Locale);
+    }
+
     Logger.setDebugMode(config.debugMode || false);
     if (config.autoDetect && !this.initialized) {
       this.init();

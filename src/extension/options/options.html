@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DDDD OCR - 设置</title>
+  <title data-i18n="settings.pageTitle">DDDD OCR - 设置</title>
   <link rel="stylesheet" href="options.css">
 </head>
 
@@ -27,13 +27,13 @@
             <path
               d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-          <span>基本设置</span>
+          <span data-i18n="settings.tab.general">基本设置</span>
         </a>
         <a href="#rules" class="nav-item" data-section="rules">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
-          <span>网站规则</span>
+          <span data-i18n="settings.tab.rules">网站规则</span>
         </a>
         <a href="#stats" class="nav-item" data-section="stats">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -41,7 +41,7 @@
             <line x1="12" y1="20" x2="12" y2="4" />
             <line x1="6" y1="20" x2="6" y2="14" />
           </svg>
-          <span>识别统计</span>
+          <span data-i18n="settings.tab.stats">识别统计</span>
         </a>
         <a href="#advanced" class="nav-item" data-section="advanced">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -49,7 +49,7 @@
             <polyline points="2 17 12 22 22 17" />
             <polyline points="2 12 12 17 22 12" />
           </svg>
-          <span>高级选项</span>
+          <span data-i18n="settings.tab.advanced">高级选项</span>
         </a>
         <a href="#about" class="nav-item" data-section="about">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -57,7 +57,7 @@
             <line x1="12" y1="16" x2="12" y2="12" />
             <line x1="12" y1="8" x2="12.01" y2="8" />
           </svg>
-          <span>关于</span>
+          <span data-i18n="settings.tab.about">关于</span>
         </a>
       </nav>
 
@@ -70,30 +70,41 @@
       <!-- 基本设置 -->
       <section id="general" class="section active">
         <div class="section-header">
-          <h2>基本设置</h2>
-          <p>配置验证码识别的基本行为</p>
+          <h2 data-i18n="settings.tab.general">基本设置</h2>
+          <p data-i18n="settings.generalDesc">配置验证码识别的基本行为</p>
         </div>
 
         <div class="card">
-          <h3>外观</h3>
+          <h3 data-i18n="settings.appearance">外观</h3>
           <div class="form-group">
-            <label>主题</label>
+            <label data-i18n="settings.theme">主题</label>
             <input type="hidden" id="theme" value="auto">
-            <div class="theme-switcher" role="radiogroup" aria-label="主题切换">
-              <button type="button" class="theme-option" data-theme-value="auto" role="radio" aria-checked="false">跟随系统</button>
-              <button type="button" class="theme-option" data-theme-value="light" role="radio" aria-checked="false">浅色</button>
-              <button type="button" class="theme-option" data-theme-value="dark" role="radio" aria-checked="false">深色</button>
+            <div class="theme-switcher" role="radiogroup" data-i18n-aria-label="settings.theme.toggle">
+              <button type="button" class="theme-option" data-theme-value="auto" role="radio" aria-checked="false" data-i18n="settings.theme.auto">跟随系统</button>
+              <button type="button" class="theme-option" data-theme-value="light" role="radio" aria-checked="false" data-i18n="settings.theme.light">浅色</button>
+              <button type="button" class="theme-option" data-theme-value="dark" role="radio" aria-checked="false" data-i18n="settings.theme.dark">深色</button>
             </div>
-            <span class="hint">自动模式会跟随系统主题变化即时切换</span>
+            <span class="hint" data-i18n="settings.theme.hint">自动模式会跟随系统主题变化即时切换</span>
+          </div>
+          <div class="form-group">
+            <label data-i18n="settings.language">语言</label>
+            <input type="hidden" id="language" value="auto">
+            <div class="theme-switcher lang-switcher" role="radiogroup" data-i18n-aria-label="settings.language">
+              <button type="button" class="lang-option" data-lang-value="auto" role="radio" aria-checked="false" data-i18n="settings.language.auto">自动</button>
+              <button type="button" class="lang-option" data-lang-value="zh" role="radio" aria-checked="false" data-i18n="settings.language.zh">中文</button>
+              <button type="button" class="lang-option" data-lang-value="ja" role="radio" aria-checked="false" data-i18n="settings.language.ja">日本語</button>
+              <button type="button" class="lang-option" data-lang-value="en" role="radio" aria-checked="false" data-i18n="settings.language.en">English</button>
+            </div>
+            <span class="hint" data-i18n="settings.language.hint">选择界面语言，自动模式跟随系统语言</span>
           </div>
         </div>
 
         <div class="card">
-          <h3>自动填充</h3>
+          <h3 data-i18n="settings.autoFill">自动填充</h3>
           <div class="form-group switch-group">
             <div class="switch-label">
-              <label>识别成功后自动填充</label>
-              <span class="hint">将识别结果自动填入输入框</span>
+              <label data-i18n="settings.autoFill.label">识别成功后自动填充</label>
+              <span class="hint" data-i18n="settings.autoFill.hint">将识别结果自动填入输入框</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="autoFill" checked>
@@ -103,8 +114,8 @@
 
           <div class="form-group switch-group">
             <div class="switch-label">
-              <label>打字机效果</label>
-              <span class="hint">模拟人工逐字输入，关闭则一次性填充</span>
+              <label data-i18n="settings.typewriter">打字机效果</label>
+              <span class="hint" data-i18n="settings.typewriter.hint">模拟人工逐字输入，关闭则一次性填充</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="typewriterEffect" checked>
@@ -114,8 +125,8 @@
 
           <div class="form-group switch-group">
             <div class="switch-label">
-              <label>匹配规则时自动识别</label>
-              <span class="hint">检测到保存的规则时自动开始识别</span>
+              <label data-i18n="settings.autoSolveOnRule">匹配规则时自动识别</label>
+              <span class="hint" data-i18n="settings.autoSolveOnRule.hint">检测到保存的规则时自动开始识别</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="autoSolveOnRule">
@@ -125,8 +136,8 @@
 
           <div class="form-group switch-group">
             <div class="switch-label">
-              <label>自动提交表单</label>
-              <span class="hint">填充后自动提交（谨慎使用，验证码识别准确率并不是100%）</span>
+              <label data-i18n="settings.autoSubmit">自动提交表单</label>
+              <span class="hint" data-i18n="settings.autoSubmit.hint">填充后自动提交（谨慎使用，验证码识别准确率并不是100%）</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="autoSubmit">
@@ -136,8 +147,8 @@
 
           <div class="form-group switch-group">
             <div class="switch-label">
-              <label>自动勾选协议</label>
-              <span class="hint">自动勾选用户协议、隐私政策等复选框</span>
+              <label data-i18n="settings.autoCheckAgreement">自动勾选协议</label>
+              <span class="hint" data-i18n="settings.autoCheckAgreement.hint">自动勾选用户协议、隐私政策等复选框</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="autoCheckAgreement" checked>
@@ -147,111 +158,111 @@
         </div>
 
         <div class="card">
-          <h3>默认选择器</h3>
+          <h3 data-i18n="settings.selectors.default">默认选择器</h3>
           <div class="form-group">
-            <label for="captchaSelector">验证码选择器</label>
-            <input type="text" id="captchaSelector" placeholder="例如: img.captcha, #captchaImage">
-            <span class="hint">留空则自动检测</span>
+            <label for="captchaSelector" data-i18n="settings.captchaSelector">验证码选择器</label>
+            <input type="text" id="captchaSelector" data-i18n-placeholder="settings.captchaSelector.placeholder" placeholder="例如: img.captcha, #captchaImage">
+            <span class="hint" data-i18n="settings.captchaSelector.hint">留空则自动检测</span>
           </div>
 
           <div class="form-group">
-            <label for="inputSelector">输入框选择器</label>
-            <input type="text" id="inputSelector" placeholder="例如: input#captcha">
-            <span class="hint">留空则自动查找</span>
+            <label for="inputSelector" data-i18n="settings.inputSelector">输入框选择器</label>
+            <input type="text" id="inputSelector" data-i18n-placeholder="settings.inputSelector.placeholder" placeholder="例如: input#captcha">
+            <span class="hint" data-i18n="settings.inputSelector.hint">留空则自动查找</span>
           </div>
 
           <div class="form-group">
-            <label for="submitSelector">提交按钮选择器</label>
-            <input type="text" id="submitSelector" placeholder="例如: button[type=submit]">
-            <span class="hint">留空则自动查找</span>
+            <label for="submitSelector" data-i18n="settings.submitSelector">提交按钮选择器</label>
+            <input type="text" id="submitSelector" data-i18n-placeholder="settings.submitSelector.placeholder" placeholder="例如: button[type=submit]">
+            <span class="hint" data-i18n="settings.submitSelector.hint">留空则自动查找</span>
           </div>
 
           <div class="form-group">
-            <label>协议复选框选择器</label>
+            <label data-i18n="settings.agreementSelector">协议复选框选择器</label>
             <div id="agreementSelectors" class="selector-list"></div>
             <div class="form-row" style="margin-top: 8px;">
-              <input type="text" id="newAgreementSelector" placeholder="例如: input#agree, .privacy-checkbox">
-              <button id="btn-add-agreement" class="btn btn-secondary btn-sm">添加</button>
+              <input type="text" id="newAgreementSelector" data-i18n-placeholder="settings.agreementSelector.placeholder" placeholder="例如: input#agree, .privacy-checkbox">
+              <button id="btn-add-agreement" class="btn btn-secondary btn-sm" data-i18n="common.add">添加</button>
             </div>
-            <span class="hint">支持添加多个协议复选框选择器</span>
+            <span class="hint" data-i18n="settings.agreementSelector.hint">支持添加多个协议复选框选择器</span>
           </div>
         </div>
 
         <div class="action-bar">
-          <button id="btn-save-general" class="btn btn-primary">保存设置</button>
+          <button id="btn-save-general" class="btn btn-primary" data-i18n="settings.saveSettings">保存设置</button>
         </div>
       </section>
 
       <!-- 网站规则 -->
       <section id="rules" class="section">
         <div class="section-header">
-          <h2>网站规则</h2>
-          <p>管理已保存的网站验证码规则</p>
+          <h2 data-i18n="rules.title">网站规则</h2>
+          <p data-i18n="rules.description">管理已保存的网站验证码规则</p>
         </div>
 
         <div class="card">
           <div class="card-header">
-            <h3>已保存的规则</h3>
+            <h3 data-i18n="rules.saved">已保存的规则</h3>
             <div class="header-actions">
-              <button id="btn-import-rules" class="btn btn-secondary btn-sm">导入</button>
-              <button id="btn-export-rules" class="btn btn-secondary btn-sm">导出</button>
+              <button id="btn-import-rules" class="btn btn-secondary btn-sm" data-i18n="common.import">导入</button>
+              <button id="btn-export-rules" class="btn btn-secondary btn-sm" data-i18n="common.export">导出</button>
             </div>
           </div>
           <div id="rules-list" class="rules-list">
             <div class="empty-state">
-              <p>暂无保存的规则</p>
-              <span>使用弹窗中的"选择元素"功能添加规则</span>
+              <p data-i18n="rules.empty">暂无保存的规则</p>
+              <span data-i18n="rules.emptyHint">使用弹窗中的"选择元素"功能添加规则</span>
             </div>
           </div>
         </div>
 
         <div class="card">
-          <h3>编辑规则</h3>
+          <h3 data-i18n="rules.edit">编辑规则</h3>
           <div class="form-group">
-            <label for="edit-rule-key">规则标识 (URL/主机名)</label>
-            <input type="text" id="edit-rule-key" placeholder="例如: example.com 或完整URL" readonly>
+            <label for="edit-rule-key" data-i18n="rules.ruleId">规则标识 (URL/主机名)</label>
+            <input type="text" id="edit-rule-key" data-i18n-placeholder="rules.ruleId.placeholder" placeholder="例如: example.com 或完整URL" readonly>
             <input type="hidden" id="edit-rule-original-key">
           </div>
           <div class="form-group">
-            <label for="edit-rule-selector">验证码选择器</label>
-            <input type="text" id="edit-rule-selector" placeholder="例如: img.captcha">
+            <label for="edit-rule-selector" data-i18n="rules.captchaSelector">验证码选择器</label>
+            <input type="text" id="edit-rule-selector" data-i18n-placeholder="rules.captchaSelector.placeholder" placeholder="例如: img.captcha">
           </div>
           <div class="form-group">
-            <label for="edit-rule-input">输入框选择器</label>
-            <input type="text" id="edit-rule-input" placeholder="例如: input#code">
+            <label for="edit-rule-input" data-i18n="rules.inputSelector">输入框选择器</label>
+            <input type="text" id="edit-rule-input" data-i18n-placeholder="rules.inputSelector.placeholder" placeholder="例如: input#code">
           </div>
           <div class="form-group">
-            <label for="edit-rule-url">完整URL匹配</label>
-            <input type="text" id="edit-rule-url" placeholder="留空则使用主机名匹配">
+            <label for="edit-rule-url" data-i18n="rules.fullUrl">完整URL匹配</label>
+            <input type="text" id="edit-rule-url" data-i18n-placeholder="rules.fullUrl.placeholder" placeholder="留空则使用主机名匹配">
           </div>
           <div class="button-group">
-            <button id="btn-save-edit-rule" class="btn btn-primary">保存修改</button>
-            <button id="btn-cancel-edit-rule" class="btn btn-secondary">取消</button>
+            <button id="btn-save-edit-rule" class="btn btn-primary" data-i18n="rules.saveEdit">保存修改</button>
+            <button id="btn-cancel-edit-rule" class="btn btn-secondary" data-i18n="common.cancel">取消</button>
           </div>
         </div>
 
         <div class="card">
-          <h3>批量添加规则</h3>
+          <h3 data-i18n="rules.bulk">批量添加规则</h3>
           <div class="form-group">
-            <label for="bulk-rules">规则列表 (JSON格式)</label>
+            <label for="bulk-rules" data-i18n="rules.bulkLabel">规则列表 (JSON格式)</label>
             <textarea id="bulk-rules" rows="6"
               placeholder='[{"hostname": "example.com", "selector": "img.captcha", "inputSelector": "#code"}]'></textarea>
           </div>
-          <button id="btn-add-bulk-rules" class="btn btn-primary">添加规则</button>
+          <button id="btn-add-bulk-rules" class="btn btn-primary" data-i18n="rules.bulkAdd">添加规则</button>
         </div>
       </section>
 
       <!-- 识别统计 -->
       <section id="stats" class="section">
         <div class="section-header">
-          <h2>识别统计</h2>
-          <p>查看验证码识别统计数据</p>
+          <h2 data-i18n="stats.title">识别统计</h2>
+          <p data-i18n="stats.description">查看验证码识别统计数据</p>
         </div>
         <div id="stats-grid" class="stats-grid"></div>
         <div class="card">
           <div class="card-header">
-            <h3>站点排行榜</h3>
-            <button id="btn-clear-stats" class="btn btn-danger btn-sm">清除统计</button>
+            <h3 data-i18n="stats.ranking">站点排行榜</h3>
+            <button id="btn-clear-stats" class="btn btn-danger btn-sm" data-i18n="stats.clear">清除统计</button>
           </div>
           <div id="stats-list" class="rank-list"></div>
         </div>
@@ -260,30 +271,30 @@
       <!-- 高级选项 -->
       <section id="advanced" class="section">
         <div class="section-header">
-          <h2>高级选项</h2>
-          <p>高级配置和调试选项</p>
+          <h2 data-i18n="settings.tab.advanced">高级选项</h2>
+          <p data-i18n="settings.advancedDesc">高级配置和调试选项</p>
         </div>
 
         <div class="card">
-          <h3>自定义检测规则</h3>
+          <h3 data-i18n="settings.keywords.title">自定义检测规则</h3>
           <div id="keyword-chip-groups"></div>
         </div>
         <div class="card">
-          <h3>站点黑名单</h3>
+          <h3 data-i18n="blacklist.title">站点黑名单</h3>
           <div class="form-group">
-            <label for="siteBlacklist">不自动识别的网站</label>
+            <label for="siteBlacklist" data-i18n="blacklist.label">不自动识别的网站</label>
             <textarea id="siteBlacklist" rows="4"
-              placeholder="每行一个域名，支持通配符&#10;example.com&#10;*.example.com"></textarea>
-            <span class="hint">在这些网站上不会自动识别验证码，支持域名、完整URL和 * 通配符。例如: example.com 或 https://example.com/login</span>
+              data-i18n-placeholder="blacklist.placeholder" placeholder="每行一个域名，支持通配符&#10;example.com&#10;*.example.com"></textarea>
+            <span class="hint" data-i18n="blacklist.hint">在这些网站上不会自动识别验证码，支持域名、完整URL和 * 通配符。例如: example.com 或 https://example.com/login</span>
           </div>
         </div>
 
         <div class="card">
-          <h3>四则运算</h3>
+          <h3 data-i18n="calc.arithmetic">四则运算</h3>
           <div class="form-group switch-group">
             <div class="switch-label">
-              <label>自动计算结果</label>
-              <span class="hint">识别到 "3+5=" 自动计算并填充</span>
+              <label data-i18n="calc.autoCalc">自动计算结果</label>
+              <span class="hint" data-i18n="calc.autoCalcHint">识别到 "3+5=" 自动计算并填充</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="autoCalculate">
@@ -293,50 +304,50 @@
 
           <div id="calculateOptionsGroup" style="display: none;">
             <div class="form-group">
-              <label for="calculateOutputMode">默认输出格式</label>
+              <label for="calculateOutputMode" data-i18n="calc.outputMode">默认输出格式</label>
               <select id="calculateOutputMode">
-                <option value="result">仅结果 (如: 8)</option>
-                <option value="equation">完整等式 (如: 3+5=8)</option>
+                <option value="result" data-i18n="calc.outputResultExample">仅结果 (如: 8)</option>
+                <option value="equation" data-i18n="calc.outputEquationExample">完整等式 (如: 3+5=8)</option>
               </select>
-              <span class="hint">可为不同站点配置不同的输出格式</span>
+              <span class="hint" data-i18n="calc.outputHint">可为不同站点配置不同的输出格式</span>
             </div>
           </div>
         </div>
 
         <div class="card" id="calculateRulesCard" style="display: none;">
           <div class="card-header">
-            <h3>站点计算规则</h3>
+            <h3 data-i18n="calc.siteRules">站点计算规则</h3>
           </div>
           <div id="calculate-rules-list" class="rules-list">
             <div class="empty-state">
-              <p>暂无规则，将使用默认输出格式</p>
+              <p data-i18n="calc.noRules">暂无规则，将使用默认输出格式</p>
             </div>
           </div>
           <div class="form-group" style="margin-top: 16px;">
-            <label>添加新规则</label>
+            <label data-i18n="calc.addNew">添加新规则</label>
             <div class="form-row" style="margin-top: 8px;">
               <div class="form-group" style="margin-bottom: 0;">
-                <input type="text" id="newCalcRulePattern" placeholder="站点匹配 (如: *.example.com)">
+                <input type="text" id="newCalcRulePattern" data-i18n-placeholder="calc.patternPlaceholder" placeholder="站点匹配 (如: *.example.com)">
               </div>
               <div class="form-group" style="margin-bottom: 0;">
                 <select id="newCalcRuleMatchType">
-                  <option value="wildcard">通配符</option>
-                  <option value="regex">正则表达式</option>
+                  <option value="wildcard" data-i18n="calc.wildcard">通配符</option>
+                  <option value="regex" data-i18n="calc.regexFull">正则表达式</option>
                 </select>
               </div>
             </div>
             <div class="form-row" style="margin-top: 8px;">
               <div class="form-group" style="margin-bottom: 0;">
                 <select id="newCalcRuleOutputMode">
-                  <option value="result">仅结果</option>
-                  <option value="equation">完整等式</option>
+                  <option value="result" data-i18n="calc.outputResult">仅结果</option>
+                  <option value="equation" data-i18n="calc.outputEquation">完整等式</option>
                 </select>
               </div>
               <div class="form-group" style="margin-bottom: 0;">
-                <button id="btn-add-calc-rule" class="btn btn-primary" style="width: 100%;">添加规则</button>
+                <button id="btn-add-calc-rule" class="btn btn-primary" style="width: 100%;" data-i18n="calc.addRule">添加规则</button>
               </div>
             </div>
-            <span class="hint" style="margin-top: 8px; display: block;">
+            <span class="hint" style="margin-top: 8px; display: block;" data-i18n-html="calc.matchHint">
               <b>通配符:</b> * 匹配任意字符，? 匹配单个字符<br>
               <b>正则:</b> 使用标准正则表达式语法
             </span>
@@ -344,25 +355,25 @@
         </div>
 
         <div class="card">
-          <h3>请求设置</h3>
+          <h3 data-i18n="request.title">请求设置</h3>
           <div class="form-row">
             <div class="form-group">
-              <label for="timeout">超时时间 (秒)</label>
+              <label for="timeout" data-i18n="request.timeout">超时时间 (秒)</label>
               <input type="number" id="timeout" min="5" max="120" value="30">
             </div>
             <div class="form-group">
-              <label for="retryCount">重试次数</label>
+              <label for="retryCount" data-i18n="request.retryCount">重试次数</label>
               <input type="number" id="retryCount" min="1" max="5" value="3">
             </div>
           </div>
         </div>
 
         <div class="card">
-          <h3>调试</h3>
+          <h3 data-i18n="debug.title">调试</h3>
           <div class="form-group switch-group">
             <div class="switch-label">
-              <label>调试模式</label>
-              <span class="hint">在控制台输出详细日志，方便排查问题</span>
+              <label data-i18n="settings.debugMode">调试模式</label>
+              <span class="hint" data-i18n="settings.debugMode.hintExt">在控制台输出详细日志，方便排查问题</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="debugMode">
@@ -372,60 +383,60 @@
         </div>
 
         <div class="card">
-          <h3>数据管理</h3>
+          <h3 data-i18n="config.title">数据管理</h3>
           <div class="button-group">
-            <button id="btn-export-config" class="btn btn-secondary">导出全部配置</button>
-            <button id="btn-import-config" class="btn btn-secondary">导入配置</button>
-            <button id="btn-reset-all" class="btn btn-danger">重置所有设置</button>
+            <button id="btn-export-config" class="btn btn-secondary" data-i18n="config.exportAll">导出全部配置</button>
+            <button id="btn-import-config" class="btn btn-secondary" data-i18n="config.importConfig">导入配置</button>
+            <button id="btn-reset-all" class="btn btn-danger" data-i18n="config.resetAll">重置所有设置</button>
           </div>
         </div>
 
         <div class="action-bar">
-          <button id="btn-save-advanced" class="btn btn-primary">保存设置</button>
+          <button id="btn-save-advanced" class="btn btn-primary" data-i18n="settings.saveSettings">保存设置</button>
         </div>
       </section>
 
       <!-- 关于 -->
       <section id="about" class="section">
         <div class="section-header">
-          <h2>关于</h2>
-          <p>DDDD OCR 离线验证码识别扩展</p>
+          <h2 data-i18n="about.title">关于</h2>
+          <p data-i18n="about.description">DDDD OCR 离线验证码识别扩展</p>
         </div>
 
         <div class="card">
-          <h3>版本信息</h3>
+          <h3 data-i18n="about.version">版本信息</h3>
           <div class="info-list">
-            <div class="info-item"><span>版本:</span><span class="version">-</span></div>
-            <div class="info-item"><span>模型版本:</span><span>1.5.1</span></div>
+            <div class="info-item"><span data-i18n="about.versionLabel">版本:</span><span class="version">-</span></div>
+            <div class="info-item"><span data-i18n="about.modelVersion">模型版本:</span><span>1.5.1</span></div>
             <div class="info-item"><span>ONNX Runtime:</span><span>1.17.0</span></div>
           </div>
         </div>
 
         <div class="card">
-          <h3>特性</h3>
+          <h3 data-i18n="about.features">特性</h3>
           <ul class="feature-list">
-            <li>✅ 完全离线运行，无需网络</li>
-            <li>✅ 支持 img/canvas/svg 验证码</li>
-            <li>✅ 智能自动检测验证码</li>
-            <li>✅ 支持自定义选择器</li>
-            <li>✅ 网站规则自动保存</li>
-            <li>✅ 深色/浅色/自动主题</li>
-            <li>✅ 支持四则运算自动计算</li>
-            <li>✅ 支持Vue/React/Angular框架</li>
-            <li>✅ 智能猜测关联元素</li>
-            <li>✅ 详细的调试日志</li>
+            <li data-i18n="about.feature.offline">✅ 完全离线运行，无需网络</li>
+            <li data-i18n="about.feature.formats">✅ 支持 img/canvas/svg 验证码</li>
+            <li data-i18n="about.feature.autoDetect">✅ 智能自动检测验证码</li>
+            <li data-i18n="about.feature.customSelector">✅ 支持自定义选择器</li>
+            <li data-i18n="about.feature.autoSave">✅ 网站规则自动保存</li>
+            <li data-i18n="about.feature.theme">✅ 深色/浅色/自动主题</li>
+            <li data-i18n="about.feature.calc">✅ 支持四则运算自动计算</li>
+            <li data-i18n="about.feature.framework">✅ 支持Vue/React/Angular框架</li>
+            <li data-i18n="about.feature.guessInput">✅ 智能猜测关联元素</li>
+            <li data-i18n="about.feature.debugLog">✅ 详细的调试日志</li>
           </ul>
         </div>
 
         <div class="card">
-          <h3>开源</h3>
-          <p style="color: var(--text-secondary); font-size: 14px;">
+          <h3 data-i18n="about.openSource">开源</h3>
+          <p style="color: var(--text-secondary); font-size: 14px;" data-i18n-html="about.openSource.modelCredit">
             🚚 使用 <a href="https://github.com/sml2h3/ddddocr" target="_blank" style="color: var(--primary);">ddddocr</a>
             项目的模型进行开发
             ，遵循 MIT Lisence 许可证开源发布。如果有帮到你，请给我点个⭐，你的⭐是我持续开发的动力😁！
           </p>
           <br>
-          <p style="color: var(--text-secondary); font-size: 14px;">
+          <p style="color: var(--text-secondary); font-size: 14px;" data-i18n-html="about.openSource.repoInfo">
             🏠 仓库地址：<a href="https://github.com/MakotoArai-CN/ddddocr-webjs" target="_blank"
               style="color: var(--primary);text-decoration-line: none;">ddddocr-webjs</a>
             开源不易，基于本项目修改请注明出处，感谢你的支持和肯定。<span style="display: none;">😉</span>

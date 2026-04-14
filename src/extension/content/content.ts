@@ -4,8 +4,10 @@ import { AutoFill } from '@core/auto-fill';
 import { Calculator } from '@core/calculator';
 import { CONSTANTS, Logger } from '@core/config';
 import type { SiteRule } from '@core/types';
+import { initLocale, t } from '@core/i18n';
 
 let debugMode = false;
+let contextInvalidated = false;
 const detector = new CaptchaDetector();
 const autoFill = new AutoFill();
 
@@ -217,6 +219,7 @@ async function initSettings(): Promise<void> {
         response.settings.customInputExcludeKeywords || [],
       );
       Logger.setDebugMode(debugMode);
+      initLocale(response.settings.language || 'auto');
       Logger.info('设置已加载:', response.settings);
     }
   } catch (e) {
@@ -274,7 +277,7 @@ function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendR
       initSettings().then(() => sendResponse({ success: true }));
       return true;
     default:
-      sendResponse({ success: false, error: '未知操作' });
+      sendResponse({ success: false, error: t('content.unknownAction') });
   }
   return false;
 }
@@ -399,7 +402,7 @@ async function waitForReady(captcha: DetectedCaptcha, timeout = 8000): Promise<v
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         cleanup();
-        reject(new Error('图片加载超时'));
+        reject(new Error(t('content.imageTimeout')));
       }, timeout);
       const onLoad = () => {
         cleanup();
@@ -407,7 +410,7 @@ async function waitForReady(captcha: DetectedCaptcha, timeout = 8000): Promise<v
       };
       const onError = () => {
         cleanup();
-        reject(new Error('图片加载失败'));
+        reject(new Error(t('content.imageFailed')));
       };
       const cleanup = () => {
         clearTimeout(timer);
@@ -425,7 +428,7 @@ async function waitForReady(captcha: DetectedCaptcha, timeout = 8000): Promise<v
 async function handleRecognize(captchaId: string, sendResponse: (response: any) => void): Promise<void> {
   const processId = captchaId || 'manual-' + Date.now();
   if (!startProcessing(processId)) {
-    sendResponse({ success: false, error: '正在处理中' });
+    sendResponse({ success: false, error: t('content.processing') });
     return;
   }
   Logger.time('handleRecognize');
@@ -443,11 +446,11 @@ async function handleRecognize(captchaId: string, sendResponse: (response: any) 
         : detector.getMostLikelyCaptcha();
     }
     if (!captcha) {
-      throw new Error('未找到验证码');
+      throw new Error(t('content.captchaNotFound'));
     }
     const inputEl = resolveInputElementForCaptcha(captcha.element);
     if (!inputEl) {
-      throw new Error('未找到验证码输入框');
+      throw new Error(t('content.inputNotFound'));
     }
     captcha.inputElement = inputEl;
     currentCaptcha = captcha;
@@ -506,7 +509,7 @@ async function handleFill(text: string, options: any, sendResponse: (response: a
   try {
     const inputEl = customInputElement || queryInputElementBySelector(inputSelector) || currentCaptcha?.inputElement;
     if (!inputEl) {
-      throw new Error('未找到验证码输入框');
+      throw new Error(t('content.inputNotFound'));
     }
     const success = await autoFill.fill(inputEl, text, { ...options, typewriterEffect });
     Logger.info('填充结果:', success ? '成功' : '失败');
@@ -549,7 +552,7 @@ function handleStartPicker(sendResponse: (response: any) => void): void {
     if (result.success) {
       customCaptchaElement = normalizeCaptchaElement(result.element);
       if (!customCaptchaElement) {
-        sendResponse({ success: false, error: '请选择验证码元素' });
+        sendResponse({ success: false, error: t('picker.selectCaptcha') });
         return;
       }
       currentCaptcha = buildCaptchaFromElement(customCaptchaElement, 'manual-selected', resolveInputElementForCaptcha(customCaptchaElement));
@@ -597,7 +600,7 @@ function handleStartInputPicker(sendResponse: (response: any) => void): void {
         urlPattern: getUrlPattern(),
       });
     } else {
-      sendResponse({ success: false, error: '请选择输入框元素' });
+      sendResponse({ success: false, error: t('picker.selectInput') });
     }
   });
 }
@@ -668,8 +671,8 @@ function showGuessTooltip(mode: 'captcha' | 'input'): void {
   tooltip.id = 'ddddocr-guess-tooltip';
   tooltip.className = 'ddddocr-guessed-tooltip';
   tooltip.textContent = mode === 'captcha'
-    ? '点击粉色虚线框选择验证码'
-    : '点击粉色虚线框选择输入框';
+    ? t('picker.guessCaptcha')
+    : t('picker.guessInput');
   tooltip.style.cssText = 'top: 10px; left: 50%; transform: translateX(-50%);';
   document.body.appendChild(tooltip);
 }
@@ -726,7 +729,7 @@ async function handlePreviewCaptcha(captchaId: string, sendResponse: (response: 
         : detector.getMostLikelyCaptcha();
     }
     if (!captcha) {
-      throw new Error('未找到验证码');
+      throw new Error(t('content.captchaNotFound'));
     }
     const imageData = await detector.captureImage(captcha);
     showCaptchaPreview(imageData, captcha);
@@ -774,15 +777,15 @@ async function showCaptchaPreview(imageData: string, captcha: DetectedCaptcha): 
   const dialog = document.createElement('div');
   dialog.style.cssText = `background:${colors.bg};padding:24px;border-radius:16px;max-width:500px;color:${colors.text};border:1px solid ${colors.border};`;
   dialog.innerHTML = `
-<h3 style="margin:0 0 16px 0;color:${colors.primary};">验证码预览</h3>
+<h3 style="margin:0 0 16px 0;color:${colors.primary};">${t('popup.previewTitle')}</h3>
 <div style="background:${colors.bgSecondary};padding:16px;border-radius:8px;text-align:center;margin-bottom:16px;border:1px solid ${colors.border};">
 <img src="${imageData}" style="max-width:100%;border:2px solid #4CAF50;border-radius:4px;">
 </div>
 <div style="background:${colors.bgSecondary};padding:12px;border-radius:8px;font-size:13px;margin-bottom:16px;border:1px solid ${colors.border};">
-<div style="color:${colors.textSecondary};"><strong style="color:${colors.text};">类型:</strong> ${captcha.type.toUpperCase()}</div>
-<div style="color:${colors.textSecondary};margin-top:4px;"><strong style="color:${colors.text};">尺寸:</strong> ${captcha.elementInfo.width} × ${captcha.elementInfo.height}</div>
+<div style="color:${colors.textSecondary};"><strong style="color:${colors.text};">${t('popup.type')}</strong> ${captcha.type.toUpperCase()}</div>
+<div style="color:${colors.textSecondary};margin-top:4px;"><strong style="color:${colors.text};">${t('popup.size')}</strong> ${captcha.elementInfo.width} × ${captcha.elementInfo.height}</div>
 </div>
-<button id="preview-close" style="width:100%;padding:10px;background:${colors.primary};color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;">关闭</button>
+<button id="preview-close" style="width:100%;padding:10px;background:${colors.primary};color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;">${t('common.close')}</button>
 `;
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
@@ -796,12 +799,42 @@ let initialTimer: number | null = null;
 let pendingTimer: number | null = null;
 let agreementCheckTimer: number | null = null;
 
+function isContextValid(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
+function destroyAutoDetector(): void {
+  contextInvalidated = true;
+  autoDetectEnabled = false;
+  autoDetectorStarted = false;
+  if (observer) { observer.disconnect(); observer = null; }
+  if (intervalTimer) { clearInterval(intervalTimer); intervalTimer = null; }
+  if (initialTimer) { clearTimeout(initialTimer); initialTimer = null; }
+  if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+  if (agreementCheckTimer) { clearTimeout(agreementCheckTimer); agreementCheckTimer = null; }
+  Logger.info('扩展上下文已失效，自动识别已停止');
+}
+
+function guardContext(): boolean {
+  if (contextInvalidated) return false;
+  if (!isContextValid()) {
+    destroyAutoDetector();
+    return false;
+  }
+  return true;
+}
+
 function startAutoDetector(): void {
   if (autoDetectorStarted) return;
   autoDetectorStarted = true;
   Logger.info('自动识别已启用');
   scheduleInitialAuto();
   observer = new MutationObserver((mutations) => {
+    if (!guardContext()) return;
     let shouldCheckAgreements = false;
     for (const mutation of mutations) {
       if (mutation.type === 'childList') {
@@ -852,6 +885,7 @@ function startAutoDetector(): void {
     attributeFilter: ['src', 'data-src', 'srcset', 'style', 'href'],
   });
   intervalTimer = window.setInterval(() => {
+    if (!guardContext()) return;
     const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.scan();
     if (!captchas || captchas.length === 0) return;
     let changed = false;
@@ -869,6 +903,7 @@ function startAutoDetector(): void {
 function scheduleAgreementCheck(): void {
   if (agreementCheckTimer) clearTimeout(agreementCheckTimer);
   agreementCheckTimer = window.setTimeout(() => {
+    if (!guardContext()) return;
     checkAgreementBoxes();
   }, 500);
 }
@@ -876,15 +911,17 @@ function scheduleAgreementCheck(): void {
 function scheduleInitialAuto(): void {
   if (initialTimer) clearTimeout(initialTimer);
   initialTimer = window.setTimeout(() => {
+    if (!guardContext()) return;
     scheduleAutoSolve();
     window.setTimeout(() => {
+      if (!guardContext()) return;
       scheduleAutoSolve();
     }, 2500);
   }, 300);
 }
 
 function scheduleAutoSolve(): void {
-  if (!autoDetectEnabled) return;
+  if (!autoDetectEnabled || !guardContext()) return;
   if (pendingTimer) clearTimeout(pendingTimer);
   pendingTimer = window.setTimeout(() => {
     tryAutoSolveOnce();
@@ -892,7 +929,7 @@ function scheduleAutoSolve(): void {
 }
 
 function tryAutoSolveOnce(): void {
-  if (!autoDetectEnabled) return;
+  if (!autoDetectEnabled || !guardContext()) return;
   Logger.debug('尝试自动识别...');
 
   const fixedInput = queryInputElementBySelector(inputSelector);
@@ -927,6 +964,7 @@ function tryAutoSolveOnce(): void {
 }
 
 async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void> {
+  if (!guardContext()) return;
   if (!startProcessing(captcha.id)) return;
   currentCaptcha = captcha;
   const startTime = Date.now();
@@ -985,11 +1023,11 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
   overlay.id = 'ddddocr-picker-overlay';
   overlay.style.cssText = 'position:fixed;pointer-events:none;border:3px solid #6366f1;background:rgba(99,102,241,0.15);z-index:999998;display:none;border-radius:4px;';
   document.body.appendChild(overlay);
-  const tooltipText = mode === 'captcha' ? '点击选择验证码元素' : '点击选择输入框';
+  const tooltipText = mode === 'captcha' ? t('picker.selectCaptcha') : t('picker.selectInput');
   const tooltip = document.createElement('div');
   tooltip.id = 'ddddocr-picker-tooltip';
   tooltip.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;padding:12px 24px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;z-index:999999;box-shadow:0 4px 20px rgba(0,0,0,0.5);display:flex;align-items:center;gap:16px;border:1px solid #6366f1;';
-  tooltip.innerHTML = `<span>${tooltipText}</span><span id="picker-info" style="color:#a1a1aa;font-size:12px;"></span><button id="picker-cancel" style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;">取消 (ESC)</button>`;
+  tooltip.innerHTML = `<span>${tooltipText}</span><span id="picker-info" style="color:#a1a1aa;font-size:12px;"></span><button id="picker-cancel" style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;">${t('picker.cancel')}</button>`;
   document.body.appendChild(tooltip);
   function cleanup(): void {
     isActive = false;

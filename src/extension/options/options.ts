@@ -1,5 +1,7 @@
 import { CONSTANTS, DEFAULT_EXTENSION_SETTINGS } from '@core/config';
 import { showConfirm } from '../ui/modal';
+import { initLocale, setLocale, t, translatePage } from '@core/i18n';
+import type { Locale } from '@core/i18n';
 
 interface CalculateRule {
   pattern: string;
@@ -45,37 +47,22 @@ function createDefaultRecognitionStats(): { sites: Record<string, any>; total: n
 }
 
 const CHIP_META: Record<ChipFieldKey, {
-  title: string;
-  placeholder: string;
-  hint: string;
   builtin: string[];
   disabledKey: DisabledChipKey;
 }> = {
   customIncludeKeywords: {
-    title: '触发关键词',
-    placeholder: '输入后回车添加关键词',
-    hint: '内置关键词可删除，删除后可通过“重置默认”恢复。',
     builtin: [...CONSTANTS.CAPTCHA_KEYWORDS],
     disabledKey: 'disabledCaptchaKeywords',
   },
   customExcludePatterns: {
-    title: '排除关键词',
-    placeholder: '输入后回车添加排除词',
-    hint: '用于排除头像、Logo、Banner、广告图等误识别图片。',
     builtin: [...CONSTANTS.EXCLUDE_PATTERNS],
     disabledKey: 'disabledExcludePatterns',
   },
   customAgreementKeywords: {
-    title: '协议检测关键词',
-    placeholder: '输入后回车添加协议词',
-    hint: '用于自动勾选协议、隐私、条款类复选框。',
     builtin: [...CONSTANTS.AGREEMENT_KEYWORDS],
     disabledKey: 'disabledAgreementKeywords',
   },
   customInputExcludeKeywords: {
-    title: '输入框排除关键词',
-    placeholder: '输入后回车添加输入框排除词',
-    hint: '用于防止邮箱、短信、动态码输入框被误识别成图形验证码输入框。',
     builtin: [...CONSTANTS.INPUT_EXCLUDE_KEYWORDS],
     disabledKey: 'disabledInputExcludeKeywords',
   },
@@ -87,9 +74,15 @@ let importMode = '';
 
 async function init(): Promise<void> {
   cacheElements();
+  // Set locale before rendering dynamic content so t() returns correct translations
+  {
+    const s = await getSettings();
+    initLocale((s.language || 'auto') as any);
+  }
   renderKeywordChipGroups();
   bindEvents();
   await loadSettings();
+  translatePage();
   await loadRules();
   await loadStats();
   displayVersion();
@@ -123,6 +116,7 @@ function cacheElements(): void {
   elements.toastMessage = document.getElementById('toast-message');
   elements.fileImport = document.getElementById('file-import');
   elements.siteBlacklist = document.getElementById('siteBlacklist');
+  elements.language = document.getElementById('language');
   elements.editRuleKey = document.getElementById('edit-rule-key');
   elements.editRuleOriginalKey = document.getElementById('edit-rule-original-key');
   elements.editRuleSelector = document.getElementById('edit-rule-selector');
@@ -141,6 +135,7 @@ function bindEvents(): void {
 
   document.getElementById('btn-save-general')?.addEventListener('click', () => { void saveGeneralSettings(); });
   document.getElementById('btn-save-advanced')?.addEventListener('click', () => { void saveAdvancedSettings(); });
+
   document.getElementById('btn-export-rules')?.addEventListener('click', () => { void exportRules(); });
   document.getElementById('btn-import-rules')?.addEventListener('click', () => triggerImport('rules'));
   document.getElementById('btn-add-bulk-rules')?.addEventListener('click', () => { void addBulkRules(); });
@@ -156,6 +151,7 @@ function bindEvents(): void {
   (elements.fileImport as HTMLInputElement | null)?.addEventListener('change', (event) => { void handleFileImport(event); });
 
   bindThemeSwitcher();
+  bindLanguageSwitcher();
   bindKeywordChipGroups();
 
   (elements.autoCalculate as HTMLInputElement | null)?.addEventListener('change', () => {
@@ -177,22 +173,29 @@ function renderKeywordChipGroups(): void {
   const container = document.getElementById('keyword-chip-groups');
   if (!container) return;
 
+  const i18nKeys: Record<ChipFieldKey, { titleKey: string; placeholderKey: string; hintKey: string }> = {
+    customIncludeKeywords: { titleKey: 'settings.keywords.triggerTitle', placeholderKey: 'settings.keywords.triggerPlaceholder', hintKey: 'settings.keywords.triggerHint' },
+    customExcludePatterns: { titleKey: 'settings.keywords.excludeTitle', placeholderKey: 'settings.keywords.excludePlaceholder', hintKey: 'settings.keywords.excludeHint' },
+    customAgreementKeywords: { titleKey: 'settings.keywords.agreementTitle', placeholderKey: 'settings.keywords.agreementPlaceholder', hintKey: 'settings.keywords.agreementHint' },
+    customInputExcludeKeywords: { titleKey: 'settings.keywords.inputExcludeTitle', placeholderKey: 'settings.keywords.inputExcludePlaceholder', hintKey: 'settings.keywords.inputExcludeHint' },
+  };
+
   container.innerHTML = (Object.keys(CHIP_META) as ChipFieldKey[]).map((field) => {
-    const meta = CHIP_META[field];
+    const keys = i18nKeys[field];
     return `
       <div class="form-group keyword-group" data-chip-field="${field}">
         <div class="keyword-header">
-          <label>${meta.title}</label>
+          <label>${t(keys.titleKey)}</label>
           <div class="keyword-actions">
-            <span class="keyword-subtitle">内置词可删除</span>
-            <button type="button" class="btn btn-secondary btn-sm chip-reset" data-chip-field="${field}">重置默认</button>
+            <span class="keyword-subtitle">${t('settings.keywords.builtinDeletable')}</span>
+            <button type="button" class="btn btn-secondary btn-sm chip-reset" data-chip-field="${field}">${t('settings.keywords.resetDefault')}</button>
           </div>
         </div>
         <div class="chip-list" id="${field}-list"></div>
         <div class="chip-input-row">
-          <input type="text" class="chip-input" id="${field}-input" placeholder="${meta.placeholder}">
+          <input type="text" class="chip-input" id="${field}-input" placeholder="${t(keys.placeholderKey)}">
         </div>
-        <span class="hint">${meta.hint}</span>
+        <span class="hint">${t(keys.hintKey)}</span>
       </div>
     `;
   }).join('');
@@ -229,6 +232,42 @@ function setThemeOption(theme: ThemeMode): void {
   (elements.theme as HTMLInputElement).value = theme;
   document.querySelectorAll<HTMLElement>('.theme-option').forEach((button) => {
     const active = button.dataset.themeValue === theme;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-checked', active ? 'true' : 'false');
+  });
+}
+
+function bindLanguageSwitcher(): void {
+  document.querySelectorAll<HTMLElement>('[data-lang-value]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const lang = (button.dataset.langValue || 'auto') as 'auto' | 'zh' | 'ja' | 'en';
+      const settings = await getSettings();
+      settings.language = lang;
+      await saveSettings(settings);
+      setLanguageOption(lang);
+      if (lang === 'auto') {
+        initLocale('auto');
+      } else {
+        setLocale(lang as Locale);
+      }
+      translatePage();
+      // Re-render all dynamically generated content
+      renderKeywordChipGroups();
+      bindKeywordChipGroups();
+      await refreshAllChipLists();
+      await loadRules();
+      await loadStats();
+      const s = await getSettings();
+      renderAgreementSelectors(s.agreementSelectors || []);
+      renderCalculateRules(s.calculateRules || []);
+    });
+  });
+}
+
+function setLanguageOption(lang: string): void {
+  (elements.language as HTMLInputElement).value = lang;
+  document.querySelectorAll<HTMLElement>('[data-lang-value]').forEach((button) => {
+    const active = button.dataset.langValue === lang;
     button.classList.toggle('active', active);
     button.setAttribute('aria-checked', active ? 'true' : 'false');
   });
@@ -291,14 +330,14 @@ function renderChipList(field: ChipFieldKey, settings: Record<string, any>): voi
   const items = [...builtinItems, ...customItems];
 
   if (items.length === 0) {
-    list.innerHTML = '<div class="empty-hint">暂无关键词</div>';
+    list.innerHTML = `<div class="empty-hint">${t('settings.keywords.empty')}</div>`;
     return;
   }
 
   list.innerHTML = items.map((item) => `
     <span class="chip-item ${item.kind}">
       <span class="chip-text">${escapeHtml(item.value)}</span>
-      <span class="chip-meta">${item.kind === 'builtin' ? '内置' : '自定义'}</span>
+      <span class="chip-meta">${item.kind === 'builtin' ? t('settings.keywords.builtin') : t('settings.keywords.custom')}</span>
       <button type="button" class="chip-remove" data-chip-field="${field}" data-chip-kind="${item.kind}" data-chip-value="${escapeHtml(item.value)}">×</button>
     </span>
   `).join('');
@@ -326,7 +365,7 @@ function bindKeywordChipGroups(): void {
       ]);
 
       if (existing.has(value.toLowerCase())) {
-        showToast('关键词已存在', 'error');
+        showToast(t('settings.keywords.exists'), 'error');
         return;
       }
 
@@ -371,7 +410,7 @@ async function handleKeywordGroupClick(event: Event): Promise<void> {
     settings[CHIP_META[field].disabledKey] = [];
     await saveSettings(settings);
     await refreshAllChipLists();
-    showToast('已恢复默认关键词', 'success');
+    showToast(t('settings.keywords.resetDone'), 'success');
   }
 }
 
@@ -401,6 +440,7 @@ async function loadSettings(): Promise<void> {
   const settings = await getSettings();
 
   setThemeOption((settings.theme || 'auto') as ThemeMode);
+  setLanguageOption(settings.language || 'auto');
   (elements.autoFill as HTMLInputElement).checked = settings.autoFill !== false;
   (elements.typewriterEffect as HTMLInputElement).checked = settings.typewriterEffect !== false;
   (elements.autoSolveOnRule as HTMLInputElement).checked = Boolean(settings.autoSolveOnRule);
@@ -435,14 +475,14 @@ function renderAgreementSelectors(selectors: string[]): void {
   if (!container) return;
 
   if (!selectors.length) {
-    container.innerHTML = '<div class="empty-hint">暂无协议选择器</div>';
+    container.innerHTML = `<div class="empty-hint">${t('settings.agreementSelector.empty')}</div>`;
     return;
   }
 
   container.innerHTML = selectors.map((selector, index) => `
     <div class="selector-item" data-index="${index}">
       <code>${escapeHtml(selector)}</code>
-      <button class="btn btn-danger btn-sm btn-delete-agreement" data-index="${index}">删除</button>
+      <button class="btn btn-danger btn-sm btn-delete-agreement" data-index="${index}">${t('common.delete')}</button>
     </div>
   `).join('');
 
@@ -458,14 +498,14 @@ async function addAgreementSelector(): Promise<void> {
   const input = elements.newAgreementSelector as HTMLInputElement;
   const selector = input.value.trim();
   if (!selector) {
-    showToast('请输入选择器', 'error');
+    showToast(t('settings.agreementSelector.enterSelector'), 'error');
     return;
   }
 
   const settings = await getSettings();
   const selectors = settings.agreementSelectors || [];
   if (selectors.includes(selector)) {
-    showToast('选择器已存在', 'error');
+    showToast(t('settings.agreementSelector.exists'), 'error');
     return;
   }
 
@@ -473,7 +513,7 @@ async function addAgreementSelector(): Promise<void> {
   await saveSettings(settings);
   renderAgreementSelectors(settings.agreementSelectors);
   input.value = '';
-  showToast('选择器已添加', 'success');
+  showToast(t('settings.agreementSelector.add'), 'success');
 }
 
 async function deleteAgreementSelector(index: number): Promise<void> {
@@ -483,7 +523,7 @@ async function deleteAgreementSelector(index: number): Promise<void> {
   settings.agreementSelectors = selectors;
   await saveSettings(settings);
   renderAgreementSelectors(selectors);
-  showToast('选择器已删除', 'success');
+  showToast(t('settings.agreementSelector.deleted'), 'success');
 }
 
 function renderCalculateRules(rules: CalculateRule[]): void {
@@ -491,7 +531,7 @@ function renderCalculateRules(rules: CalculateRule[]): void {
   if (!container) return;
 
   if (!rules.length) {
-    container.innerHTML = '<div class="empty-state"><p>暂无规则，将使用默认输出格式</p></div>';
+    container.innerHTML = `<div class="empty-state"><p>${t('calc.noRules')}</p></div>`;
     return;
   }
 
@@ -500,14 +540,14 @@ function renderCalculateRules(rules: CalculateRule[]): void {
       <div class="calc-rule-info">
         <div class="calc-rule-pattern">${escapeHtml(rule.pattern)}</div>
         <div class="calc-rule-meta">
-          <span class="calc-rule-badge">${rule.matchType === 'regex' ? '正则' : '通配符'}</span>
+          <span class="calc-rule-badge">${rule.matchType === 'regex' ? t('calc.regex') : t('calc.wildcard')}</span>
           <span class="calc-rule-badge ${rule.outputMode === 'result' ? 'output-result' : 'output-equation'}">
-            ${rule.outputMode === 'result' ? '仅结果' : '完整等式'}
+            ${rule.outputMode === 'result' ? t('calc.outputResult') : t('calc.outputEquation')}
           </span>
         </div>
       </div>
       <div class="calc-rule-actions">
-        <button class="btn btn-danger btn-sm btn-delete-calc-rule" data-index="${index}">删除</button>
+        <button class="btn btn-danger btn-sm btn-delete-calc-rule" data-index="${index}">${t('common.delete')}</button>
       </div>
     </div>
   `).join('');
@@ -527,7 +567,7 @@ async function addCalculateRule(): Promise<void> {
   const pattern = patternInput.value.trim();
 
   if (!pattern) {
-    showToast('请输入站点匹配规则', 'error');
+    showToast(t('calc.enterPattern'), 'error');
     return;
   }
 
@@ -544,7 +584,7 @@ async function addCalculateRule(): Promise<void> {
   await saveSettings(settings);
   renderCalculateRules(rules);
   patternInput.value = '';
-  showToast('规则已添加', 'success');
+  showToast(t('calc.ruleAdded'), 'success');
 }
 
 async function deleteCalculateRule(index: number): Promise<void> {
@@ -554,12 +594,13 @@ async function deleteCalculateRule(index: number): Promise<void> {
   settings.calculateRules = rules;
   await saveSettings(settings);
   renderCalculateRules(rules);
-  showToast('规则已删除', 'success');
+  showToast(t('calc.ruleDeleted'), 'success');
 }
 
 async function saveGeneralSettings(): Promise<void> {
   const settings = await getSettings();
   settings.theme = (elements.theme as HTMLInputElement).value || 'auto';
+  settings.language = (elements.language as HTMLInputElement).value as 'auto' | 'zh' | 'ja' | 'en';
   settings.autoFill = (elements.autoFill as HTMLInputElement).checked;
   settings.typewriterEffect = (elements.typewriterEffect as HTMLInputElement).checked;
   settings.autoSolveOnRule = (elements.autoSolveOnRule as HTMLInputElement).checked;
@@ -569,7 +610,7 @@ async function saveGeneralSettings(): Promise<void> {
   settings.inputSelector = (elements.inputSelector as HTMLInputElement).value.trim();
   settings.submitSelector = (elements.submitSelector as HTMLInputElement).value.trim();
   await saveSettings(settings);
-  showToast('设置已保存', 'success');
+  showToast(t('settings.saved'), 'success');
 }
 
 async function saveAdvancedSettings(): Promise<void> {
@@ -584,7 +625,7 @@ async function saveAdvancedSettings(): Promise<void> {
     .map((item: string) => item.trim())
     .filter(Boolean);
   await saveSettings(settings);
-  showToast('设置已保存', 'success');
+  showToast(t('settings.saved'), 'success');
 }
 
 async function loadRules(): Promise<void> {
@@ -593,7 +634,7 @@ async function loadRules(): Promise<void> {
   const rulesList = elements.rulesList as HTMLElement;
 
   if (Object.keys(rules).length === 0) {
-    rulesList.innerHTML = '<div class="empty-state"><p>暂无保存的规则</p><span>使用弹窗中的"选择元素"功能添加规则</span></div>';
+    rulesList.innerHTML = `<div class="empty-state"><p>${t('rules.empty')}</p><span>${t('rules.emptyHint')}</span></div>`;
     return;
   }
 
@@ -605,11 +646,11 @@ async function loadRules(): Promise<void> {
         <div class="rule-info">
           <div class="rule-hostname">${escapeHtml(displayKey)}</div>
           <div class="rule-selector">${escapeHtml(selectorDisplay)}</div>
-          ${rule.fullUrl ? '<div class="rule-badge">完整URL匹配</div>' : ''}
+          ${rule.fullUrl ? `<div class="rule-badge">${t('rules.fullUrlMatch')}</div>` : ''}
         </div>
         <div class="rule-actions">
-          <button class="btn btn-secondary btn-sm btn-edit-rule" data-key="${escapeHtml(key)}">编辑</button>
-          <button class="btn btn-danger btn-sm btn-delete-rule" data-key="${escapeHtml(key)}">删除</button>
+          <button class="btn btn-secondary btn-sm btn-edit-rule" data-key="${escapeHtml(key)}">${t('common.edit')}</button>
+          <button class="btn btn-danger btn-sm btn-delete-rule" data-key="${escapeHtml(key)}">${t('common.delete')}</button>
         </div>
       </div>
     `;
@@ -621,7 +662,7 @@ async function loadRules(): Promise<void> {
       if (!key) return;
       await chrome.runtime.sendMessage({ action: 'deleteSiteRule', ruleKey: key });
       await loadRules();
-      showToast('规则已删除', 'success');
+      showToast(t('rules.deleted'), 'success');
     });
   });
 
@@ -640,7 +681,7 @@ async function editRule(key: string): Promise<void> {
   const rule = rules[key];
 
   if (!rule) {
-    showToast('规则不存在', 'error');
+    showToast(t('rules.notFound'), 'error');
     return;
   }
 
@@ -654,7 +695,7 @@ async function editRule(key: string): Promise<void> {
   switchSection('rules');
   const editCard = (elements.editRuleKey as HTMLInputElement | null)?.closest('.card');
   editCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  showToast('已加载规则到编辑区', 'success');
+  showToast(t('rules.editLoaded'), 'success');
 }
 
 async function saveEditRule(): Promise<void> {
@@ -664,7 +705,7 @@ async function saveEditRule(): Promise<void> {
   const fullUrl = (elements.editRuleUrl as HTMLInputElement).value.trim();
 
   if (!selector) {
-    showToast('验证码选择器不能为空', 'error');
+    showToast(t('rules.selectorRequired'), 'error');
     return;
   }
 
@@ -689,7 +730,7 @@ async function saveEditRule(): Promise<void> {
 
   cancelEditRule();
   await loadRules();
-  showToast('规则已更新', 'success');
+  showToast(t('rules.updated'), 'success');
 }
 
 function cancelEditRule(): void {
@@ -704,13 +745,13 @@ function cancelEditRule(): void {
 async function addBulkRules(): Promise<void> {
   const text = (elements.bulkRules as HTMLTextAreaElement).value.trim();
   if (!text) {
-    showToast('请输入规则', 'error');
+    showToast(t('rules.bulkEmpty'), 'error');
     return;
   }
 
   try {
     const rules = JSON.parse(text);
-    if (!Array.isArray(rules)) throw new Error('格式错误');
+    if (!Array.isArray(rules)) throw new Error(t('rules.formatError'));
 
     let count = 0;
     for (const rule of rules) {
@@ -730,9 +771,9 @@ async function addBulkRules(): Promise<void> {
 
     (elements.bulkRules as HTMLTextAreaElement).value = '';
     await loadRules();
-    showToast(`已添加 ${count} 条规则`, 'success');
+    showToast(t('rules.bulkAdded', count), 'success');
   } catch {
-    showToast('JSON格式错误', 'error');
+    showToast(t('rules.jsonError'), 'error');
   }
 }
 
@@ -783,19 +824,19 @@ async function loadStats(): Promise<void> {
   if (statsGrid) {
     statsGrid.innerHTML = `
       <div class="stat-card">
-        <div class="stat-label">总识别次数</div>
-        <div class="stat-value">${stats.total}<span class="stat-unit">次</span></div>
+        <div class="stat-label">${t('stats.totalCount')}</div>
+        <div class="stat-value">${stats.total}<span class="stat-unit">${t('stats.unit.times')}</span></div>
       </div>
       <div class="stat-card accent">
-        <div class="stat-label">统计站点数</div>
-        <div class="stat-value">${sites.length}<span class="stat-unit">个</span></div>
+        <div class="stat-label">${t('stats.siteCount')}</div>
+        <div class="stat-value">${sites.length}<span class="stat-unit">${t('stats.unit.sites')}</span></div>
       </div>
       <div class="stat-card success">
-        <div class="stat-label">平均识别耗时</div>
+        <div class="stat-label">${t('stats.avgTime')}</div>
         <div class="stat-value">${avgTime}<span class="stat-unit">ms</span></div>
       </div>
       <div class="stat-card warning">
-        <div class="stat-label">最后更新</div>
+        <div class="stat-label">${t('stats.lastUpdate')}</div>
         <div class="stat-value" style="font-size: 16px;">${lastUpdate}</div>
       </div>
     `;
@@ -803,7 +844,7 @@ async function loadStats(): Promise<void> {
 
   const statsList = elements.statsList as HTMLElement;
   if (sites.length === 0) {
-    statsList.innerHTML = '<div class="empty-state"><p>暂无统计数据</p><span>开始使用后将自动记录</span></div>';
+    statsList.innerHTML = `<div class="empty-state"><p>${t('stats.empty')}</p><span>${t('stats.emptyHint')}</span></div>`;
     return;
   }
 
@@ -821,8 +862,8 @@ async function loadStats(): Promise<void> {
         <div class="rank-info">
           <div class="rank-host">${escapeHtml(hostname)}</div>
           <div class="rank-meta">
-            <span>平均 ${siteAvgTime}ms</span>
-            <span>最后: ${lastTime}</span>
+            <span>${t('stats.avg', siteAvgTime)}</span>
+            <span>${t('stats.last', lastTime)}</span>
           </div>
           <div class="progress-bar">
             <div class="progress-fill" style="width: ${progressWidth}%"></div>
@@ -836,16 +877,16 @@ async function loadStats(): Promise<void> {
 
 async function clearStats(): Promise<void> {
   const ok = await showConfirm({
-    title: '清除统计',
-    message: '确定要清除所有统计数据吗？',
-    confirmText: '确定清除',
-    cancelText: '取消',
+    title: t('stats.clear'),
+    message: t('stats.clearConfirm'),
+    confirmText: t('stats.clearConfirmBtn'),
+    cancelText: t('common.cancel'),
   });
   if (!ok) return;
 
   await chrome.runtime.sendMessage({ action: 'clearStats' });
   await loadStats();
-  showToast('统计数据已清除', 'success');
+  showToast(t('stats.cleared'), 'success');
 }
 
 async function handleFileImport(event: Event): Promise<void> {
@@ -857,7 +898,7 @@ async function handleFileImport(event: Event): Promise<void> {
     const data = JSON.parse(text);
 
     if (importMode === 'rules') {
-      if (!Array.isArray(data)) throw new Error('格式错误');
+      if (!Array.isArray(data)) throw new Error(t('rules.formatError'));
       for (const rule of data) {
         if (!rule.hostname || !rule.selector) continue;
         await chrome.runtime.sendMessage({
@@ -872,17 +913,17 @@ async function handleFileImport(event: Event): Promise<void> {
         });
       }
       await loadRules();
-      showToast('规则已导入', 'success');
+      showToast(t('rules.imported'), 'success');
     } else if (importMode === 'config') {
       await chrome.storage.local.clear();
       await chrome.storage.local.set(normalizeConfigData(data));
       await loadSettings();
       await loadRules();
       await loadStats();
-      showToast('配置已导入', 'success');
+      showToast(t('config.imported'), 'success');
     }
   } catch {
-    showToast('导入失败，请检查文件格式', 'error');
+    showToast(t('config.importFailed'), 'error');
   }
 
   (elements.fileImport as HTMLInputElement).value = '';
@@ -890,10 +931,10 @@ async function handleFileImport(event: Event): Promise<void> {
 
 async function resetAll(): Promise<void> {
   const ok = await showConfirm({
-    title: '重置所有设置',
-    message: '确定要重置所有设置吗？此操作不可恢复。',
-    confirmText: '确定重置',
-    cancelText: '取消',
+    title: t('config.resetAll'),
+    message: t('config.resetConfirm'),
+    confirmText: t('config.resetConfirmBtn'),
+    cancelText: t('common.cancel'),
   });
   if (!ok) return;
 
@@ -902,7 +943,7 @@ async function resetAll(): Promise<void> {
   await loadSettings();
   await loadRules();
   await loadStats();
-  showToast('已重置所有设置', 'success');
+  showToast(t('config.resetDone'), 'success');
 }
 
 function showToast(message: string, type: 'success' | 'error'): void {

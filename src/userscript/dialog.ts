@@ -1,3 +1,5 @@
+import { t } from '@core/i18n';
+
 export class Dialog {
   private static container: HTMLDivElement | null = null;
   private static stylesInjected = false;
@@ -200,7 +202,7 @@ export class Dialog {
         <div class="ddddocr-dialog-content">${options.content}</div>
       </div>
       <div class="ddddocr-dialog-footer">
-        <button class="ddddocr-dialog-button primary">${options.confirmText || '确定'}</button>
+        <button class="ddddocr-dialog-button primary">${options.confirmText || t('common.confirm')}</button>
       </div>
     `;
 
@@ -250,8 +252,8 @@ export class Dialog {
         <div class="ddddocr-dialog-content">${options.content}</div>
       </div>
       <div class="ddddocr-dialog-footer">
-        <button class="ddddocr-dialog-button secondary cancel-btn">${options.cancelText || '取消'}</button>
-        <button class="ddddocr-dialog-button primary confirm-btn">${options.confirmText || '确定'}</button>
+        <button class="ddddocr-dialog-button secondary cancel-btn">${options.cancelText || t('common.cancel')}</button>
+        <button class="ddddocr-dialog-button primary confirm-btn">${options.confirmText || t('common.confirm')}</button>
       </div>
     `;
 

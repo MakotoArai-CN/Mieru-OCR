@@ -108,6 +108,7 @@ export interface OCRConfig {
   useUploadedModel: boolean;
   useUploadedWasm: boolean;
   theme: 'light' | 'dark' | 'auto';
+  language: 'auto' | 'zh' | 'ja' | 'en';
   typewriterEffect: boolean;
   autoCalculate: boolean;
   calculateOutputMode: 'result' | 'equation';
@@ -126,15 +127,15 @@ export interface OCRConfig {
   enableSingleSliderAssist: boolean;
   enableClickSelectAssist: boolean;
   enableNotification: boolean;
+  autoSubmit: boolean;
+  autoSolveOnRule: boolean;
+  siteBlacklist: string[];
 }
 
 export interface ExtensionSettings extends OCRConfig {
   timeout: number;
   retryCount: number;
   autoFill: boolean;
-  autoSubmit: boolean;
-  autoSolveOnRule: boolean;
-  siteBlacklist: string[];
   historyRetention: number;
 }
 

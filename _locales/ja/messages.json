@@ -1,0 +1,10 @@
+{
+    "extension_name": {
+        "message": "DDDD OCR Extension",
+        "description": "完全オフラインのCAPTCHA認識ツール。自動検出と自動入力に対応。"
+    },
+    "extension_description": {
+        "message": "完全オフラインのCAPTCHA認識ツール",
+        "description": "完全オフラインのCAPTCHA認識ツール。自動検出と自動入力に対応。"
+    }
+}

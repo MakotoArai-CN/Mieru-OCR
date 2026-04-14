@@ -1,4 +1,5 @@
 import { showConfirm } from '../ui/modal';
+import { initLocale, t, translatePage } from '@core/i18n';
 
 declare const browser: any;
 
@@ -18,6 +19,10 @@ async function init(): Promise<void> {
 cacheElements();
 bindEvents();
 await applyTheme();
+const result = await browser.storage.local.get('settings');
+const lang = result?.settings?.language || 'auto';
+initLocale(lang);
+translatePage();
 await loadStatus();
 startStatusPolling();
 }
@@ -89,9 +94,9 @@ const currentIndex = themes.indexOf(settings.theme || 'auto');
 settings.theme = themes[(currentIndex + 1) % themes.length];
 await browser.storage.local.set({ settings });
 await applyTheme();
-showToast(`主题: ${settings.theme === 'auto' ? '自动' : settings.theme === 'dark' ? '深色' : '浅色'}`, 'success');
+showToast(t('settings.theme.changed', t(`settings.theme.${settings.theme}`)), 'success');
 } catch {
-showToast('主题切换失败', 'error');
+showToast(t('settings.theme.switchFailed'), 'error');
 }
 }
 
@@ -101,12 +106,12 @@ return url.startsWith('http://') || url.startsWith('https://');
 
 async function safeSendMessage(tabId: number, tabUrl: string, message: any): Promise<any> {
 if (!isInjectableUrl(tabUrl)) {
-throw new Error('当前页面不支持注入内容脚本');
+throw new Error(t('popup.cannotInject'));
 }
 try {
 await browser.tabs.sendMessage(tabId, { action: 'ping' });
 } catch {
-throw new Error('无法连接内容脚本，请刷新页面后重试');
+throw new Error(t('popup.cannotConnectRefresh'));
 }
 return await browser.tabs.sendMessage(tabId, message);
 }
@@ -150,6 +155,11 @@ currentSiteRule = null;
 elements.ruleSection?.classList.add('hidden');
 }
 
+if (!isInjectableUrl(tab.url)) {
+updateCaptchaInfo(null);
+return;
+}
+
 const statusResponse = await safeSendMessage(tab.id, tab.url, { action: 'getStatus' });
 if (statusResponse?.success) {
 hasCustomInput = !!statusResponse.hasCustomInput;
@@ -164,7 +174,7 @@ updateReadyStatus();
 
 const scanResponse = await safeSendMessage(tab.id, tab.url, { action: 'scan' });
 if (scanResponse?.success) {
-elements.captchaCount!.textContent = `${scanResponse.captchas.length} 个验证码`;
+elements.captchaCount!.textContent = t('popup.captchaCount', scanResponse.captchas.length);
 if (scanResponse.captchas.length > 0 || hasCustomCaptcha) {
 currentCaptcha = scanResponse.bestCaptcha;
 updateCaptchaInfo(scanResponse.bestCaptcha || { type: 'custom', confidence: 100 });
@@ -174,18 +184,18 @@ updateCaptchaInfo(null);
 }
 }
 } catch (error) {
-console.error('加载状态失败', error);
-showToast((error as Error).message || '加载状态失败', 'error');
+console.error(t('popup.loadFailed'), error);
+showToast((error as Error).message || t('popup.loadFailed'), 'error');
 }
 }
 
 function updateReadyStatus(): void {
 if (isReady) {
-setStatus('idle', '等待识别');
+setStatus('idle', t('popup.waitRecognize'));
 } else if (hasCustomCaptcha || hasCustomInput) {
-setStatus('idle', '请选择缺少的元素');
+setStatus('idle', t('popup.selectMissing'));
 } else {
-setStatus('idle', '自动检测中');
+setStatus('idle', t('popup.autoDetecting'));
 }
 }
 
@@ -193,7 +203,7 @@ function showRuleSection(rule: any): void {
 elements.ruleSection?.classList.remove('hidden');
 const selectorText = String(rule?.selector || '');
 const selector = selectorText.length > 25 ? selectorText.substring(0, 25) + '...' : selectorText;
-elements.ruleText!.textContent = `已记住: ${selector}`;
+elements.ruleText!.textContent = t('popup.ruleRemembered', selector);
 }
 
 function showInputSection(): void {
@@ -213,19 +223,19 @@ function updateOcrStatusView(status: string, message?: string): void {
 if (!elements.ocrStatus) return;
 
 if (status === 'ready') {
-elements.ocrStatus.textContent = '就绪';
+elements.ocrStatus.textContent = t('popup.status.ready');
 elements.ocrStatus.className = 'value status-ready';
 elements.ocrStatus.title = '';
 return;
 }
 if (status === 'fault') {
-elements.ocrStatus.textContent = '故障';
+elements.ocrStatus.textContent = t('popup.status.fault');
 elements.ocrStatus.className = 'value status-fault';
 elements.ocrStatus.title = message || '';
 return;
 }
 
-elements.ocrStatus.textContent = '初始化';
+elements.ocrStatus.textContent = t('popup.status.init');
 elements.ocrStatus.className = 'value status-initializing';
 elements.ocrStatus.title = message || '';
 }
@@ -246,48 +256,48 @@ statusTimer = window.setInterval(poll, 800);
 }
 
 async function selectCaptcha(): Promise<void> {
-setStatus('processing', '选择验证码...');
+setStatus('processing', t('popup.selecting'));
 (elements.btnCaptcha as HTMLButtonElement).disabled = true;
 
 try {
 const tabs = await browser.tabs.query({ active: true, currentWindow: true });
 const tab = tabs?.[0];
-if (!tab?.id || !tab.url) throw new Error('无法获取当前标签页');
+if (!tab?.id || !tab.url) throw new Error(t('popup.tabError'));
 
 const response = await safeSendMessage(tab.id, tab.url, { action: 'startPicker' });
 if (response?.success) {
 hasCustomCaptcha = true;
-showToast('已进入选择模式', 'success');
+showToast(t('popup.selectionMode'), 'success');
 updateReadyStatus();
 }
 window.close();
 } catch (error) {
-showToast((error as Error).message || '选择失败', 'error');
-setStatus('idle', '自动识别中');
+showToast((error as Error).message || t('popup.selectionFailed'), 'error');
+setStatus('idle', t('popup.autoRecognizing'));
 (elements.btnCaptcha as HTMLButtonElement).disabled = false;
 }
 }
 
 async function selectInput(): Promise<void> {
-setStatus('processing', '选择输入框...');
+setStatus('processing', t('popup.selectingInput'));
 (elements.btnInput as HTMLButtonElement).disabled = true;
 
 try {
 const tabs = await browser.tabs.query({ active: true, currentWindow: true });
 const tab = tabs?.[0];
-if (!tab?.id || !tab.url) throw new Error('无法获取当前标签页');
+if (!tab?.id || !tab.url) throw new Error(t('popup.tabError'));
 
 const response = await safeSendMessage(tab.id, tab.url, { action: 'startInputPicker' });
 if (response?.success) {
 hasCustomInput = true;
 showInputSection();
-showToast('已进入选择模式', 'success');
+showToast(t('popup.selectionMode'), 'success');
 updateReadyStatus();
 }
 window.close();
 } catch (error) {
-showToast((error as Error).message || '选择失败', 'error');
-setStatus('idle', '自动识别中');
+showToast((error as Error).message || t('popup.selectionFailed'), 'error');
+setStatus('idle', t('popup.autoRecognizing'));
 (elements.btnInput as HTMLButtonElement).disabled = false;
 }
 }
@@ -295,25 +305,25 @@ setStatus('idle', '自动识别中');
 async function clearCustomInput(): Promise<void> {
 try {
 const ok = await showConfirm({
-title: '清除选择',
-message: '确定要清除本页手动选择的输入框吗？',
-confirmText: '确定清除',
-cancelText: '取消',
+title: t('popup.clearInput'),
+message: t('popup.clearInputConfirm'),
+confirmText: t('stats.clearConfirmBtn'),
+cancelText: t('common.cancel'),
 });
 if (!ok) return;
 
 const tabs = await browser.tabs.query({ active: true, currentWindow: true });
 const tab = tabs?.[0];
-if (!tab?.id || !tab.url) throw new Error('无法获取当前标签页');
+if (!tab?.id || !tab.url) throw new Error(t('popup.tabError'));
 
 await safeSendMessage(tab.id, tab.url, { action: 'clearCustomInput' });
 
 elements.inputSection?.classList.add('hidden');
 hasCustomInput = false;
-showToast('已清除输入框选择', 'success');
+showToast(t('popup.inputCleared'), 'success');
 await loadStatus();
 } catch (error) {
-showToast((error as Error).message || '清除失败', 'error');
+showToast((error as Error).message || t('popup.clearFailed'), 'error');
 }
 }
 
@@ -321,9 +331,9 @@ async function copyResult(): Promise<void> {
 if (!recognizedText) return;
 try {
 await navigator.clipboard.writeText(recognizedText);
-showToast('已复制', 'success');
+showToast(t('popup.copied'), 'success');
 } catch {
-showToast('复制失败', 'error');
+showToast(t('popup.copyFailed'), 'error');
 }
 }
 
@@ -331,25 +341,25 @@ async function previewCaptcha(): Promise<void> {
 try {
 const tabs = await browser.tabs.query({ active: true, currentWindow: true });
 const tab = tabs?.[0];
-if (!tab?.id || !tab.url) throw new Error('无法获取当前标签页');
+if (!tab?.id || !tab.url) throw new Error(t('popup.tabError'));
 
 await safeSendMessage(tab.id, tab.url, { action: 'previewCaptcha', captchaId: currentCaptcha?.id });
-showToast('预览窗口已在页面中打开', 'success');
+showToast(t('popup.previewOpened'), 'success');
 } catch (error) {
-showToast((error as Error).message || '预览失败', 'error');
+showToast((error as Error).message || t('popup.previewFailed'), 'error');
 }
 }
 
 async function deleteSiteRule(): Promise<void> {
 if (!currentSiteRuleKey) {
-showToast('未找到可删除的规则', 'error');
+showToast(t('popup.noRuleFound'), 'error');
 return;
 }
 const ok = await showConfirm({
-title: '删除规则',
-message: '确定要删除当前网站规则吗？',
-confirmText: '确定删除',
-cancelText: '取消',
+title: t('popup.deleteRule'),
+message: t('rules.deleteRuleConfirmMsg'),
+confirmText: t('common.delete'),
+cancelText: t('common.cancel'),
 });
 if (!ok) return;
 
@@ -358,10 +368,10 @@ await browser.runtime.sendMessage({ action: 'deleteSiteRule', ruleKey: currentSi
 elements.ruleSection?.classList.add('hidden');
 currentSiteRuleKey = null;
 currentSiteRule = null;
-showToast('已删除网站规则', 'success');
+showToast(t('popup.ruleDeleted'), 'success');
 await loadStatus();
 } catch {
-showToast('删除失败', 'error');
+showToast(t('popup.deleteFailed'), 'error');
 }
 }
 

@@ -1,3 +1,5 @@
+import { t } from '@core/i18n';
+
 export interface AlertOptions {
     title?: string;
     message: string;
@@ -186,7 +188,7 @@ function createBaseModal(title: string): {
 
 export function showAlert(options: AlertOptions): Promise<void> {
     return new Promise((resolve) => {
-        const title = options.title || '提示';
+        const title = options.title || t('dialog.defaultTitle');
         const { overlay, body, actions, closeBtn } = createBaseModal(title);
 
         body.textContent = options.message;
@@ -194,7 +196,7 @@ export function showAlert(options: AlertOptions): Promise<void> {
         const okBtn = document.createElement('button');
         okBtn.className = 'ddddocr-ui-modal-btn primary';
         okBtn.type = 'button';
-        okBtn.textContent = options.confirmText || '确定';
+        okBtn.textContent = options.confirmText || t('common.confirm');
 
         const done = () => {
             cleanup(overlay);
@@ -221,7 +223,7 @@ export function showAlert(options: AlertOptions): Promise<void> {
 
 export function showConfirm(options: ConfirmOptions): Promise<boolean> {
     return new Promise((resolve) => {
-        const title = options.title || '确认';
+        const title = options.title || t('dialog.confirmTitle');
         const { overlay, body, actions, closeBtn } = createBaseModal(title);
 
         body.textContent = options.message;
@@ -229,12 +231,12 @@ export function showConfirm(options: ConfirmOptions): Promise<boolean> {
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'ddddocr-ui-modal-btn';
         cancelBtn.type = 'button';
-        cancelBtn.textContent = options.cancelText || '取消';
+        cancelBtn.textContent = options.cancelText || t('common.cancel');
 
         const okBtn = document.createElement('button');
         okBtn.className = 'ddddocr-ui-modal-btn primary';
         okBtn.type = 'button';
-        okBtn.textContent = options.confirmText || '确定';
+        okBtn.textContent = options.confirmText || t('common.confirm');
 
         const done = (value: boolean) => {
             cleanup(overlay);

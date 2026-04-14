@@ -1,4 +1,5 @@
 import { CONSTANTS } from '@core/config';
+import { t } from '@core/i18n';
 import type { CachedModel, OCRConfig } from '@core/types';
 
 const CACHE_KEY = 'ddddocr_model_cache';
@@ -166,7 +167,7 @@ function downloadFile(url: string, timeout = 30000): Promise<ArrayBuffer> {
                 }
             },
             onerror: (error) => reject(error),
-            ontimeout: () => reject(new Error('下载超时')),
+            ontimeout: () => reject(new Error(t('model.downloadTimeout'))),
         });
     });
 }
@@ -187,7 +188,7 @@ function downloadJSON<T>(url: string, timeout = 30000): Promise<T> {
                 }
             },
             onerror: (error) => reject(error),
-            ontimeout: () => reject(new Error('下载超时')),
+            ontimeout: () => reject(new Error(t('model.downloadTimeout'))),
         });
     });
 }
@@ -221,7 +222,7 @@ export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: strin
     }
 
     if (config.autoDownload === false) {
-        throw new Error('自动下载已禁用，请上传模型文件或启用自动下载');
+        throw new Error(t('model.downloadDisabled'));
     }
 
     const cached = await cache.get();
@@ -252,13 +253,13 @@ export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: strin
         } catch (error) {
             console.warn(`❌ 镜像 ${i + 1} 失败`, error);
             if (i === CONSTANTS.GITHUB_MIRRORS.length - 1) {
-                throw new Error('所有镜像均失败，请检查网络或上传模型文件');
+                throw new Error(t('model.allMirrorsFailed'));
             }
         }
     }
 
     if (!model || !charsets) {
-        throw new Error('模型下载失败');
+        throw new Error(t('model.downloadFailed'));
     }
 
     await cache.set(model, charsets);

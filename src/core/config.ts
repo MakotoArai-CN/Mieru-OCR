@@ -96,6 +96,7 @@ export const DEFAULT_CONFIG: OCRConfig = {
   useUploadedModel: false,
   useUploadedWasm: false,
   theme: 'auto',
+  language: 'auto',
   typewriterEffect: true,
   autoCalculate: false,
   calculateOutputMode: 'result',
@@ -114,6 +115,9 @@ export const DEFAULT_CONFIG: OCRConfig = {
   enableSingleSliderAssist: true,
   enableClickSelectAssist: false,
   enableNotification: true,
+  autoSubmit: false,
+  autoSolveOnRule: true,
+  siteBlacklist: [],
 };
 
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
@@ -121,9 +125,6 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   timeout: 30000,
   retryCount: 3,
   autoFill: true,
-  autoSubmit: false,
-  autoSolveOnRule: true,
-  siteBlacklist: [],
   historyRetention: 7,
 };
 

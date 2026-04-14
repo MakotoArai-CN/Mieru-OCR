@@ -1,3 +1,5 @@
+import { t } from '@core/i18n';
+
 export class LoadingIndicator {
   private container: HTMLDivElement | null = null;
 
@@ -54,7 +56,7 @@ export class LoadingIndicator {
     const textEl = document.createElement('div');
     textEl.className = 'ddddocr-loading-text';
     textEl.id = 'ddddocr-loading-text';
-    textEl.textContent = '正在初始化 DDDD OCR...';
+    textEl.textContent = t('us.loadingDefault');
     document.body.appendChild(textEl);
   }
 

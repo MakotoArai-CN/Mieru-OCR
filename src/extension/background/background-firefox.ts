@@ -435,6 +435,7 @@ function getDefaultSettings(): ExtensionSettings {
     useUploadedModel: false,
     useUploadedWasm: false,
     theme: 'auto',
+    language: 'auto',
     typewriterEffect: true,
     autoCalculate: false,
     calculateOutputMode: 'result',

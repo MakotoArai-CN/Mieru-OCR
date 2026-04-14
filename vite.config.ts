@@ -75,6 +75,7 @@ export default defineConfig({
         grant: [
           'GM_xmlhttpRequest',
           'GM_registerMenuCommand',
+          'GM_unregisterMenuCommand',
           'GM_notification',
           'GM_getValue',
           'GM_setValue',

@@ -985,7 +985,12 @@ body {
   border-radius: var(--radius-sm);
 }
 
-.theme-option {
+.lang-switcher {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.theme-option,
+.lang-option {
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
@@ -997,12 +1002,14 @@ body {
   transition: var(--transition);
 }
 
-.theme-option:hover {
+.theme-option:hover,
+.lang-option:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.theme-option.active {
+.theme-option.active,
+.lang-option.active {
   background: var(--primary-light);
   border-color: var(--primary);
   color: var(--primary);

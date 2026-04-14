@@ -18,7 +18,7 @@
                 <span>DDDD OCR</span>
             </div>
             <div class="header-actions">
-                <button id="btn-theme" class="icon-btn" title="切换主题">
+                <button id="btn-theme" class="icon-btn" title="切换主题" data-i18n-title="settings.theme.toggle">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="5" />
                         <line x1="12" y1="1" x2="12" y2="3" />
@@ -31,7 +31,7 @@
                         <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
                     </svg>
                 </button>
-                <button id="btn-settings" class="icon-btn" title="设置">
+                <button id="btn-settings" class="icon-btn" title="设置" data-i18n-title="popup.settings">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3" />
                         <path
@@ -44,7 +44,7 @@
         <section class="status-section">
             <div id="status-indicator" class="status-indicator status-idle">
                 <div class="status-dot"></div>
-                <span id="status-text">自动识别中</span>
+                <span id="status-text" data-i18n="popup.autoRecognizing">自动识别中</span>
             </div>
             <span class="status-badge" id="captcha-count">0 个验证码</span>
         </section>
@@ -56,18 +56,18 @@
                     <circle cx="8.5" cy="8.5" r="1.5" />
                     <polyline points="21 15 16 10 5 21" />
                 </svg>
-                <span>检测到验证码</span>
+                <span data-i18n="popup.detected">检测到验证码</span>
             </div>
             <div class="captcha-info">
                 <div class="captcha-item">
-                    <span class="label">类型:</span>
+                    <span class="label" data-i18n="popup.type">类型:</span>
                     <span id="captcha-type" class="value">-</span>
                 </div>
                 <div class="captcha-item">
-                    <span class="label">状态:</span>
-                    <span id="ocr-status" class="value status-initializing">初始化</span>
+                    <span class="label" data-i18n="popup.status">状态:</span>
+                    <span id="ocr-status" class="value status-initializing" data-i18n="popup.status.init">初始化</span>
                 </div>
-                <button id="btn-preview" class="icon-btn small" title="预览">
+                <button id="btn-preview" class="icon-btn small" title="预览" data-i18n-title="popup.preview">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                         <circle cx="12" cy="12" r="3" />
@@ -81,11 +81,11 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="20 6 9 17 4 12" />
                 </svg>
-                <span>识别结果</span>
+                <span data-i18n="popup.result">识别结果</span>
             </div>
             <div class="result-content">
                 <span id="result-text" class="result-text">-</span>
-                <button id="btn-copy" class="icon-btn small" title="复制">
+                <button id="btn-copy" class="icon-btn small" title="复制" data-i18n-title="popup.copy">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -93,7 +93,7 @@
                 </button>
             </div>
             <div class="result-meta">
-                <span id="result-time">耗时: -</span>
+                <span id="result-time" data-i18n="popup.elapsedEmpty">耗时: -</span>
             </div>
         </section>
 
@@ -102,8 +102,8 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                 </svg>
-                <span id="rule-text">已保存此网站规则</span>
-                <button id="btn-delete-rule" class="icon-btn small" title="删除规则">
+                <span id="rule-text" data-i18n="popup.ruleSaved">已保存此网站规则</span>
+                <button id="btn-delete-rule" class="icon-btn small" title="删除规则" data-i18n-title="popup.deleteRule">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
@@ -119,8 +119,8 @@
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
-                <span id="input-text">已手动选择输入框</span>
-                <button id="btn-clear-input" class="icon-btn small" title="清除选择">
+                <span id="input-text" data-i18n="popup.inputSelected">已手动选择输入框</span>
+                <button id="btn-clear-input" class="icon-btn small" title="清除选择" data-i18n-title="popup.clearInput">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
@@ -136,14 +136,14 @@
                     <circle cx="8.5" cy="8.5" r="1.5" />
                     <polyline points="21 15 16 10 5 21" />
                 </svg>
-                <span>选择验证码</span>
+                <span data-i18n="popup.selectCaptcha">选择验证码</span>
             </button>
             <button id="btn-input" class="btn btn-primary">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
-                <span>选择输入框</span>
+                <span data-i18n="popup.selectInput">选择输入框</span>
             </button>
         </section>
 
