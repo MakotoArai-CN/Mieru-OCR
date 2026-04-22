@@ -48,7 +48,7 @@ Chrome系的浏览器直接使用扩展。
 
 #### Userscript
 
-1. 安装 [Tampermonkey](https://www.tampermonkey.net/)、[Violentmonkey](https://violentmonkey.github.io/)或者[ScriptCat](https://www.scriptcat.org/) 等油猴插件
+1. 安装 [Tampermonkey](https://www.tampermonkey.net/)、[Violentmonkey](https://violentmonkey.github.io/)或者[ScriptCat](https://scriptcat.org/) 等油猴插件
 2. 安装脚本: 在[Greasy Fork](https://greasyfork.org/)脚本市场、[ScriptCat](https://www.scriptcat.org/)脚本市场中搜索 "DDDD OCR WEBJS" 安装
 3. 等待脚本加载完毕，打开设置页设置白名单（必须）
 4. 浏览器扩展版本目前还没有上架，请等待后续更新
