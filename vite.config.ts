@@ -24,7 +24,7 @@ const APP_VERSION = readVersion();
 const WASM_VERSION = '1.17.0';
 const BUILDATE = new Date().toLocaleString();
 
-const iconData = readFileSync(resolve(__dirname, 'icons/icon48.png')).toString('base64');
+const iconData = readFileSync(resolve(__dirname, 'icons/icon-48.png')).toString('base64');
 
 export default defineConfig({
   resolve: {
