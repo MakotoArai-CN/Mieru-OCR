@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./icons/icon128.png" width="100" height="100" alt="logo">
+<img src="./icons/icon-128.png" width="100" height="100" alt="logo">
 
 <h1>Mieru-OCR</h1>
 

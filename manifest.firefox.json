@@ -7,9 +7,11 @@
   "author": "MakotoArai",
   "homepage_url": "https://github.com/MakotoArai-CN/Mieru-OCR",
   "icons": {
-    "16": "icons/icon48.png",
-    "48": "icons/icon64.png",
-    "128": "icons/icon128.png"
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "64": "icons/icon-64.png",
+    "128": "icons/icon-128.png"
   },
   "permissions": [
     "activeTab",
@@ -25,9 +27,11 @@
   "browser_action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/icon48.png",
-      "48": "icons/icon64.png",
-      "128": "icons/icon128.png"
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "64": "icons/icon-64.png",
+      "128": "icons/icon-128.png"
     },
     "default_title": "Mieru-OCR"
   },
@@ -69,7 +73,9 @@
       "id": "Mieru-OCR@makotoarai",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   }
