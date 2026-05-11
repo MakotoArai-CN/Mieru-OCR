@@ -21,6 +21,7 @@ import {
   isWhitelisted,
   shouldExecuteScript
 } from './storage';
+import { autoUpdateSubscriptions } from './subscription-manager';
 
 function isMobileDevice(): boolean {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -504,6 +505,7 @@ class AutoDetector {
       simulate: true,
       autoSubmit: config.autoSubmit ?? false,
       typewriterEffect: config.typewriterEffect,
+      preserveFocus: config.preserveFocus ?? false,
     });
     if (config.enableNotification && typeof GM_notification !== 'undefined') {
       GM_notification({
@@ -647,7 +649,7 @@ class OCRApp {
     if (this.initialized) return;
     this.initialized = true;
     this.loadingIndicator = new LoadingIndicator();
-    Logger.info('DDDD OCR 启动');
+    Logger.info('Mieru-OCR 启动');
     try {
       this.loadingIndicator.show(t('us.loading'));
       this.loadingIndicator.updateText(t('us.loadingModel'));
@@ -661,6 +663,9 @@ class OCRApp {
       }
       setTimeout(() => this.loadingIndicator?.hide(), 2000);
       this.showNotification(t('us.ready'), config.autoDetect ? t('us.readyAutoDetect') : t('us.readyManual'));
+
+      // 后台自动更新订阅
+      autoUpdateSubscriptions().catch((e) => Logger.warn('订阅自动更新失败:', e));
     } catch (error) {
       Logger.error('初始化失败:', error);
       this.loadingIndicator?.updateText(t('us.initFailedMsg', String(error)));
@@ -762,7 +767,7 @@ class OCRApp {
 function bootstrap(): void {
   const app = new OCRApp();
   if (!shouldExecuteScript()) {
-    Logger.debug('DDDD OCR 不满足执行条件，仅注册菜单命令');
+    Logger.debug('Mieru-OCR 不满足执行条件，仅注册菜单命令');
     return;
   }
   setTimeout(() => app.init(), 500);

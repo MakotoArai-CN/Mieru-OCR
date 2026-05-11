@@ -17,11 +17,10 @@ function readVersion(): string {
       writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
   }
-  return '1.1.0';
+  return '1.2.0';
 }
 
 const APP_VERSION = readVersion();
-const MODEL_VERSION = '1.6.0';
 const WASM_VERSION = '1.17.0';
 const BUILDATE = new Date().toLocaleString();
 
@@ -65,8 +64,8 @@ export default defineConfig({
       entry: 'src/userscript/main.ts',
       userscript: {
         author: 'MakotoArai-CN',
-        name: 'DDDD OCR WEB - 验证码自动识别',
-        namespace: 'https://github.com/MakotoArai-CN/ddddocr-webjs',
+        name: 'Mieru-OCR - 验证码自动识别',
+        namespace: 'https://github.com/MakotoArai-CN/Mieru-OCR',
         version: APP_VERSION + '-' + BUILDATE,
         description: '自动检测并识别页面验证码，自动填充到输入框。首次使用需设置白名单，会自动下载约50MB模型文件以及20MB左右的ONNX推理运行时文件。',
         license: 'MIT',
@@ -101,7 +100,7 @@ export default defineConfig({
         ],
       },
       build: {
-        fileName: 'ddddocr-web.user.js',
+        fileName: 'Mieru-OCR.user.js',
         metaFileName: true,
       },
     }),

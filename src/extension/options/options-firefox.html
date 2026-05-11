@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title data-i18n="settings.pageTitle">DDDD OCR - 设置</title>
+  <title data-i18n="settings.pageTitle">Mieru-OCR - 设置</title>
   <link rel="stylesheet" href="options.css">
 </head>
 
@@ -17,7 +17,7 @@
           <path d="M2 17L12 22L22 17" />
           <path d="M2 12L12 17L22 12" />
         </svg>
-        <h1>DDDD OCR</h1>
+        <h1>Mieru-OCR</h1>
       </div>
       <nav class="sidebar-nav">
         <a href="#general" class="nav-item active" data-section="general">
@@ -33,6 +33,22 @@
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
           <span data-i18n="settings.tab.rules">网站规则</span>
+        </a>
+        <a href="#subscription" class="nav-item" data-section="subscription">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 11a9 9 0 0 1 9 9" />
+            <path d="M4 4a16 16 0 0 1 16 16" />
+            <circle cx="5" cy="19" r="1" />
+          </svg>
+          <span data-i18n="settings.tab.subscription">订阅规则</span>
+        </a>
+        <a href="#models" class="nav-item" data-section="models">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
+          </svg>
+          <span data-i18n="settings.tab.model">模型管理</span>
         </a>
         <a href="#stats" class="nav-item" data-section="stats">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -128,6 +144,39 @@
             </div>
             <label class="switch">
               <input type="checkbox" id="autoSolveOnRule">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label data-i18n="settings.imageContextMenuEnabled">图片右键菜单</label>
+              <span class="hint" data-i18n="settings.imageContextMenuEnabled.hint">在浏览器原生右键菜单上添加"用 Mieru-OCR 识别此图片"，仅在图片上显示</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="imageContextMenuEnabled">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label data-i18n="settings.imageContextMenuAutoFill">右键识别后自动填充</label>
+              <span class="hint" data-i18n="settings.imageContextMenuAutoFill.hint">识别结果总会复制到剪贴板；开启后再尝试填入附近的输入框</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="imageContextMenuAutoFill" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label data-i18n="settings.preserveFocus">填充时保持当前焦点</label>
+              <span class="hint" data-i18n="settings.preserveFocus.hint">关闭则填充时抢占焦点（更直观，但可能触发部分站点的反爬指纹）；开启则在背后填入并把焦点还原到用户原本所在的输入框</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="preserveFocus">
               <span class="slider"></span>
             </label>
           </div>
@@ -247,6 +296,90 @@
               placeholder='[{"hostname": "example.com", "selector": "img.captcha", "inputSelector": "#code"}]'></textarea>
           </div>
           <button id="btn-add-bulk-rules" class="btn btn-primary" data-i18n="rules.bulkAdd">添加规则</button>
+        </div>
+      </section>
+
+      <!-- 订阅规则 -->
+      <section id="subscription" class="section">
+        <div class="section-header">
+          <h2 data-i18n="settings.tab.subscription">订阅规则</h2>
+          <p data-i18n="sub.hint">订阅 URL 必须返回 JSON 格式的规则包。可定时自动更新。</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 data-i18n="sub.title">订阅规则</h3>
+            <button id="btn-refresh-all-subs" class="btn btn-secondary btn-sm" data-i18n="sub.refreshAll">全部更新</button>
+          </div>
+          <div id="subscriptions-list"></div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="sub.add">添加订阅</h3>
+          <div class="form-group">
+            <label data-i18n="sub.url">订阅 URL</label>
+            <input type="text" id="new-sub-url" data-i18n-placeholder="sub.urlPlaceholder" placeholder="https://example.com/rules.json">
+          </div>
+          <div class="form-group">
+            <label data-i18n="sub.name">名称（可选）</label>
+            <input type="text" id="new-sub-name" data-i18n-placeholder="sub.namePlaceholder" placeholder="订阅名称">
+          </div>
+          <div class="form-group">
+            <label data-i18n="sub.updateInterval">自动更新（小时）</label>
+            <select id="new-sub-interval">
+              <option value="0" data-i18n="sub.intervalNever">不自动更新</option>
+              <option value="1">1</option>
+              <option value="6">6</option>
+              <option value="12">12</option>
+              <option value="24" selected>24</option>
+              <option value="72">72</option>
+              <option value="168">168</option>
+            </select>
+          </div>
+          <button id="btn-add-sub" class="btn btn-primary" data-i18n="sub.add">添加订阅</button>
+        </div>
+      </section>
+
+      <!-- 模型管理 -->
+      <section id="models" class="section">
+        <div class="section-header">
+          <h2 data-i18n="settings.tab.model">模型管理</h2>
+          <p data-i18n="model.customTitle">自定义模型</p>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="model.customTitle">自定义模型</h3>
+          <div id="models-list"></div>
+          <div id="storage-usage" style="margin-top: 12px; font-size: 12px; color: var(--text-muted);"></div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="model.uploadTitle">上传新模型</h3>
+          <div class="form-group">
+            <label data-i18n="model.modelName">模型名称</label>
+            <input type="text" id="new-model-name" data-i18n-placeholder="model.modelNamePlaceholder" placeholder="my-captcha-v2" maxlength="60">
+          </div>
+          <div class="form-group">
+            <label data-i18n="model.modelDescription">描述（可选）</label>
+            <input type="text" id="new-model-description" maxlength="200">
+          </div>
+          <div class="form-group">
+            <label data-i18n="model.modelFile">模型文件 (.onnx)</label>
+            <div class="file-picker">
+              <input type="file" id="new-model-file" accept=".onnx,application/octet-stream" class="file-picker-input">
+              <label for="new-model-file" class="btn btn-secondary file-picker-btn" data-i18n="common.chooseFile">选择文件</label>
+              <span class="file-picker-name" id="new-model-file-name" data-i18n="common.noFileChosen">未选择文件</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label data-i18n="model.charsetsFile">字符表文件 (charsets.json)</label>
+            <div class="file-picker">
+              <input type="file" id="new-charsets-file" accept=".json,.txt,application/json,text/plain" class="file-picker-input">
+              <label for="new-charsets-file" class="btn btn-secondary file-picker-btn" data-i18n="common.chooseFile">选择文件</label>
+              <span class="file-picker-name" id="new-charsets-file-name" data-i18n="common.noFileChosen">未选择文件</span>
+            </div>
+          </div>
+          <button id="btn-upload-model" class="btn btn-primary" data-i18n="model.uploadBtn">上传</button>
         </div>
       </section>
 
@@ -376,6 +509,40 @@
               <span class="slider"></span>
             </label>
           </div>
+
+          <div class="form-group" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+            <div style="margin-bottom: 8px;">
+              <label data-i18n="diag.title" style="font-weight: 500;">诊断报告</label>
+              <div class="hint" data-i18n="diag.hint" style="margin-top: 4px;">仅在调试模式下采集。所有内容仅本地保存，导出后请你自行检查内容再附加到 Issue。</div>
+            </div>
+            <div class="check-pill-group">
+              <label class="check-pill">
+                <input type="checkbox" id="diag-include-logs" checked>
+                <span class="check-pill-box"></span>
+                <span data-i18n="diag.includeLogs">运行日志</span>
+              </label>
+              <label class="check-pill">
+                <input type="checkbox" id="diag-include-env" checked>
+                <span class="check-pill-box"></span>
+                <span data-i18n="diag.includeEnv">环境信息</span>
+              </label>
+              <label class="check-pill">
+                <input type="checkbox" id="diag-include-settings" checked>
+                <span class="check-pill-box"></span>
+                <span data-i18n="diag.includeSettings">设置 + 模型</span>
+              </label>
+              <label class="check-pill">
+                <input type="checkbox" id="diag-include-stats" checked>
+                <span class="check-pill-box"></span>
+                <span data-i18n="diag.includeStats">识别统计</span>
+              </label>
+            </div>
+            <div class="button-group">
+              <button id="btn-diag-export" class="btn btn-primary" data-i18n="diag.export">导出诊断报告 (.json)</button>
+              <button id="btn-diag-clear" class="btn btn-secondary" data-i18n="diag.clear">清空已采集日志</button>
+            </div>
+            <div id="diag-status" class="hint" style="margin-top: 8px; min-height: 1em;"></div>
+          </div>
         </div>
 
         <div class="card">
@@ -395,7 +562,7 @@
       <section id="about" class="section">
         <div class="section-header">
           <h2 data-i18n="about.title">关于</h2>
-          <p data-i18n="about.description">DDDD OCR 离线验证码识别扩展</p>
+          <p data-i18n="about.description">Mieru-OCR 离线验证码识别扩展</p>
         </div>
         <div class="card">
           <h3 data-i18n="about.version">版本信息</h3>
@@ -431,8 +598,8 @@
           </p>
           <br>
           <p style="color: var(--text-secondary); font-size: 14px;" data-i18n-html="about.openSource.repoInfo">
-            🏠 仓库地址：<a href="https://github.com/MakotoArai-CN/ddddocr-webjs" target="_blank"
-              style="color: var(--primary); text-decoration-line: none;">ddddocr-webjs</a>
+            🏠 仓库地址：<a href="https://github.com/MakotoArai-CN/Mieru-OCR" target="_blank"
+              style="color: var(--primary); text-decoration-line: none;">Mieru-OCR</a>
             开源不易，基于本项目修改请注明出处，感谢你的支持和肯定。
           </p>
         </div>

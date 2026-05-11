@@ -4,22 +4,39 @@ export class AutoFill {
   async fill(
     inputElement: HTMLInputElement,
     text: string,
-    options: { simulate?: boolean; autoSubmit?: boolean; typewriterEffect?: boolean } = {}
+    options: { simulate?: boolean; autoSubmit?: boolean; typewriterEffect?: boolean; preserveFocus?: boolean } = {}
   ): Promise<boolean> {
-    const { simulate = true, autoSubmit = false, typewriterEffect = true } = options;
+    const { simulate = true, autoSubmit = false, typewriterEffect = true, preserveFocus = true } = options;
     try {
       if (!inputElement) throw new Error('未找到输入框');
-      inputElement.focus();
+
+      // Capture whatever the user is currently doing so we can restore it
+      // after filling — keeps the cursor in the username field even if
+      // the OCR finishes mid-typing.
+      const previouslyActive = preserveFocus
+        ? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+        : null;
+
+      if (!preserveFocus) {
+        inputElement.focus();
+      }
       this.clearInputValue(inputElement);
 
       if (simulate && typewriterEffect) {
-        await this.simulateTyping(inputElement, text);
+        await this.simulateTyping(inputElement, text, preserveFocus);
       } else {
         this.setInputValue(inputElement, text);
       }
 
       this.lastFilledInput = inputElement;
       this.highlightInput(inputElement);
+
+      if (preserveFocus
+        && previouslyActive
+        && previouslyActive !== inputElement
+        && document.activeElement !== previouslyActive) {
+        try { previouslyActive.focus({ preventScroll: true }); } catch { /* element gone */ }
+      }
 
       if (autoSubmit) {
         await this.submitForm(inputElement);
@@ -88,7 +105,7 @@ export class AutoFill {
     }
   }
 
-  private async simulateTyping(input: HTMLInputElement, text: string): Promise<void> {
+  private async simulateTyping(input: HTMLInputElement, text: string, preserveFocus = false): Promise<void> {
     for (const char of text) {
       this.dispatchKeyEvent(input, 'keydown', char);
 
@@ -114,7 +131,12 @@ export class AutoFill {
       await this.delay(50 + Math.random() * 100);
     }
     this.dispatchEvent(input, 'change');
-    this.dispatchEvent(input, 'blur');
+    // Only fire blur when we actually focused the input — otherwise we'd
+    // be telling listeners "input lost focus" when it never had it, and
+    // some forms treat that as a validation trigger.
+    if (!preserveFocus) {
+      this.dispatchEvent(input, 'blur');
+    }
   }
 
   private dispatchEvent(element: HTMLElement, eventType: string): void {

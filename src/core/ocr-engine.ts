@@ -8,6 +8,19 @@ export interface OCREngineOptions {
   getModel: () => Promise<{ model: ArrayBuffer; charsets: string[] }>;
   getOrt?: () => Promise<any>;
   wasmPaths?: string;
+  /**
+   * If set, input is pad/crop'd to this width. Required for our
+   * custom-trained small model (192). Leave undefined for the original
+   * dynamic-width ddddocr common model.
+   */
+  fixedWidth?: number;
+  /**
+   * Image preprocess style. 'simple' divides by 255 (matches ddddocr common).
+   * 'standardize' applies (x/255 - mean) / std (matches our custom model).
+   */
+  preprocess?: 'simple' | 'standardize';
+  preprocessMean?: number;
+  preprocessStd?: number;
 }
 
 export class OCREngine {
@@ -93,16 +106,46 @@ export class OCREngine {
     const startTime = Date.now();
     const { data, width, height } = await ImageProcessor.loadImage(input);
     const targetHeight = 64;
-    const targetWidth = Math.floor(width * (targetHeight / height));
+    let targetWidth = Math.floor(width * (targetHeight / height));
+    if (targetWidth < 1) targetWidth = 1;
     const resized = ImageProcessor.resize(data, width, height, targetWidth, targetHeight);
-    const normalized = ImageProcessor.normalize(resized);
-    const tensor = new this.ort.Tensor('float32', normalized, [1, 1, targetHeight, targetWidth]);
+
+    const style = this.options.preprocess ?? 'simple';
+    let normalized: Float32Array;
+    let fillValue = 1.0;
+    if (style === 'standardize') {
+      const mean = this.options.preprocessMean ?? 0.456;
+      const std = this.options.preprocessStd ?? 0.224;
+      normalized = ImageProcessor.normalizeStd(resized, mean, std);
+      fillValue = (1.0 - mean) / std;
+    } else {
+      normalized = ImageProcessor.normalize(resized);
+      fillValue = 1.0;
+    }
+
+    let finalWidth = targetWidth;
+    if (this.options.fixedWidth) {
+      normalized = ImageProcessor.padOrCropWidth(
+        normalized,
+        targetWidth,
+        targetHeight,
+        this.options.fixedWidth,
+        fillValue,
+      );
+      finalWidth = this.options.fixedWidth;
+    }
+
+    const tensor = new this.ort.Tensor('float32', normalized, [1, 1, targetHeight, finalWidth]);
     const feeds = { input1: tensor };
     const results = await this.session.run(feeds);
     const output = results.output;
     const text = this.decodeOutput(output);
     console.log(`识别完成: ${text} (耗时: ${Date.now() - startTime}ms)`);
     return { text };
+  }
+
+  getCharsets(): string[] {
+    return this.charsets;
   }
 
   private decodeOutput(output: any): string {
@@ -153,5 +196,79 @@ export class OCREngine {
       this.session = null;
     }
     this.initialized = false;
+  }
+}
+
+/**
+ * Dual-engine router: try the fast/small model first, fall back to the
+ * slower/larger model if the result looks suspicious.
+ *
+ * Heuristic for "suspicious":
+ * - empty result
+ * - length way off from the expected 4-6 chars typical for captchas
+ * - contains characters that the small model's charset cannot represent
+ *   (small charset = ASCII subset; if the truth is Chinese, primary will
+ *   typically emit a short noisy string and fallback fixes it)
+ *
+ * Both engines must be initialized via init() (the router exposes a single
+ * init() that warms both, lazily).
+ */
+export interface DualOCREngineOptions {
+  primary: OCREngineOptions;
+  fallback: OCREngineOptions;
+  /** Min plausible result length for primary; below this triggers fallback. Default 3. */
+  minLength?: number;
+  /** Max plausible result length for primary; above this triggers fallback. Default 8. */
+  maxLength?: number;
+  /** If true, always run fallback and return whichever produces a longer/non-empty answer. */
+  alwaysCompare?: boolean;
+}
+
+export class DualOCREngine {
+  private primary: OCREngine;
+  private fallback: OCREngine;
+  private opts: DualOCREngineOptions;
+
+  constructor(opts: DualOCREngineOptions) {
+    this.primary = new OCREngine(opts.primary);
+    this.fallback = new OCREngine(opts.fallback);
+    this.opts = opts;
+  }
+
+  async init(): Promise<void> {
+    // Initialize primary eagerly; fallback lazily on first miss.
+    await this.primary.init();
+  }
+
+  async recognize(input: string | Blob | HTMLImageElement): Promise<OCRResult> {
+    const minLen = this.opts.minLength ?? 3;
+    const maxLen = this.opts.maxLength ?? 8;
+
+    const primaryRes = await this.primary.recognize(input);
+    const txt = primaryRes.text || '';
+    const suspicious = txt.length < minLen || txt.length > maxLen;
+
+    if (!suspicious && !this.opts.alwaysCompare) {
+      return primaryRes;
+    }
+
+    // Fall back
+    try {
+      const fbRes = await this.fallback.recognize(input);
+      // Pick the longer non-empty one as a simple heuristic
+      if (this.opts.alwaysCompare) {
+        if ((fbRes.text || '').length > txt.length) return fbRes;
+        return primaryRes;
+      }
+      return fbRes.text ? fbRes : primaryRes;
+    } catch (e) {
+      console.warn('fallback engine failed:', e);
+      return primaryRes;
+    }
+  }
+
+  async destroy(): Promise<void> {
+    await this.primary.destroy();
+    await this.fallback.destroy();
   }
 }

@@ -1,0 +1,70 @@
+{
+  "name": "Mieru-OCR 订阅测试包",
+  "description": "用于回归测试订阅功能的示例规则包。涵盖 8 类规则：触发关键词 / 排除模式 / 协议关键词 / 输入排除 / 协议选择器 / 站点黑名单 / 站点规则 / 计算规则。配合 index.html 测试页一起使用。",
+  "version": "1.0.0",
+  "author": "Mieru-OCR Test Suite",
+  "updatedAt": 1762819200000,
+
+  "includeKeywords": [
+    "subtestcap",
+    "订阅测试码",
+    "myownverify"
+  ],
+
+  "excludePatterns": [
+    "subtest-ignore",
+    "订阅测试-排除"
+  ],
+
+  "agreementKeywords": [
+    "subtest-agree",
+    "订阅测试协议"
+  ],
+
+  "inputExcludeKeywords": [
+    "subtest-special-code",
+    "订阅测试-不要回填"
+  ],
+
+  "agreementSelectors": [
+    "#sub-test-agreement",
+    ".sub-test-agreement-by-class"
+  ],
+
+  "siteBlacklist": [
+    "subtest-blacklist.example.com",
+    "*.subtest-banned.example"
+  ],
+
+  "siteRules": {
+    "subtest-localhost-rule": {
+      "hostname": "localhost",
+      "urlPattern": "http://localhost",
+      "selector": "#sub-test-site-rule-captcha",
+      "inputSelector": "#sub-test-site-rule-input",
+      "submitSelector": "#sub-test-site-rule-submit"
+    },
+    "subtest-127-rule": {
+      "hostname": "127.0.0.1",
+      "urlPattern": "http://127.0.0.1",
+      "selector": "#sub-test-site-rule-captcha",
+      "inputSelector": "#sub-test-site-rule-input",
+      "submitSelector": "#sub-test-site-rule-submit"
+    }
+  },
+
+  "calculateRules": [
+    {
+      "pattern": "subtest-math.example",
+      "matchType": "wildcard",
+      "outputMode": "result",
+      "enabled": true
+    },
+    {
+      "pattern": "^subtest-regex-math\\.test$",
+      "matchType": "regex",
+      "outputMode": "equation",
+      "enabled": true
+    }
+  ]
+}

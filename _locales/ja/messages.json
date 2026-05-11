@@ -1,6 +1,6 @@
 {
     "extension_name": {
-        "message": "DDDD OCR Extension",
+        "message": "Mieru-OCR Extension",
         "description": "完全オフラインのCAPTCHA認識ツール。自動検出と自動入力に対応。"
     },
     "extension_description": {

@@ -20,12 +20,14 @@ const processingElements = new Set<string>();
 let autoDetectEnabled = true;
 let autoFillEnabled = true;
 let autoSubmitEnabled = false;
+let imageContextMenuAutoFill = true;
 let autoSolveOnRuleEnabled = true;
 let autoDetectorStarted = false;
 
 let typewriterEffect = true;
 let autoCalculate = false;
 let autoCheckAgreement = true;
+let preserveFocus = false;
 let calculateRules: any[] = [];
 let agreementSelectors: string[] = [];
 
@@ -105,6 +107,7 @@ async function fillInputAndMaybeSubmit(inputEl: HTMLInputElement, text: string):
     simulate: true,
     autoSubmit: false,
     typewriterEffect: typewriterEffect,
+    preserveFocus,
   });
   if (autoSubmitEnabled) {
     await submitWithSelectorOrDefault(inputEl);
@@ -202,10 +205,12 @@ async function initSettings(): Promise<void> {
       autoDetectEnabled = response.settings.autoDetect !== false;
       autoFillEnabled = response.settings.autoFill !== false;
       autoSubmitEnabled = !!response.settings.autoSubmit;
+      imageContextMenuAutoFill = response.settings.imageContextMenuAutoFill !== false;
       autoSolveOnRuleEnabled = response.settings.autoSolveOnRule !== false;
       typewriterEffect = response.settings.typewriterEffect !== false;
       autoCalculate = !!response.settings.autoCalculate;
       autoCheckAgreement = response.settings.autoCheckAgreement !== false;
+      preserveFocus = !!response.settings.preserveFocus;
       calculateRules = response.settings.calculateRules || [];
       agreementSelectors = response.settings.agreementSelectors || [];
       captchaSelector = response.settings.captchaSelector || '';
@@ -276,10 +281,229 @@ function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendR
     case 'updateSettings':
       initSettings().then(() => sendResponse({ success: true }));
       return true;
+    case 'recognizeImageBySrc':
+      handleRecognizeImageBySrc(message.srcUrl, sendResponse);
+      return true;
     default:
       sendResponse({ success: false, error: t('content.unknownAction') });
   }
   return false;
+}
+
+/**
+ * Recognize an image picked from the browser's right-click menu.
+ * Behavior (Option C): always copy the result to the clipboard, additionally
+ * try to fill a related input when imageContextMenuAutoFill is on, and surface
+ * a toast so the user sees what happened. Clipboard is the never-fail path —
+ * even if filling lands on the wrong field the user can paste manually.
+ */
+async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) => void): Promise<void> {
+  if (!srcUrl) {
+    sendResponse({ success: false, error: 'missing srcUrl' });
+    return;
+  }
+  try {
+    Logger.info('右键识别请求:', srcUrl);
+    let imgEl: HTMLImageElement | null = null;
+    for (const img of Array.from(document.querySelectorAll('img'))) {
+      if (img instanceof HTMLImageElement && (img.src === srcUrl || img.currentSrc === srcUrl)) {
+        imgEl = img;
+        break;
+      }
+    }
+    let imageData: string;
+    if (imgEl) {
+      imageData = await detector.captureImage({
+        id: 'ctx-' + Date.now(),
+        element: imgEl,
+        type: 'image',
+      } as unknown as DetectedCaptcha);
+    } else {
+      const resp = await fetch(srcUrl);
+      const blob = await resp.blob();
+      imageData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    }
+    const response = await chrome.runtime.sendMessage({
+      action: 'recognizeCaptcha',
+      imageData,
+    });
+    if (!response?.success) {
+      Logger.warn('右键识别失败:', response?.error);
+      showContextMenuToast({ kind: 'error', errorMessage: response?.error || t('content.unknownError') });
+      sendResponse({ success: false, error: response?.error });
+      return;
+    }
+    let resultText: string = response.text;
+    if (autoCalculate) {
+      resultText = Calculator.processResult(
+        response.text,
+        { autoCalculate: true, outputMode: 'result', rules: calculateRules },
+        location.hostname,
+      );
+    }
+    Logger.info('右键识别结果:', resultText);
+
+    // Always copy to clipboard — never-fail recovery path.
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(resultText);
+      copied = true;
+    } catch (e) {
+      Logger.warn('剪贴板写入失败:', e);
+    }
+
+    // Optionally also fill nearest input.
+    // 注意：这里直接用 autoFill.fill()，不走 fillInputAndMaybeSubmit —— 后者会被全局
+    // autoFillEnabled 总闸卡掉。但右键是用户主动操作，应只听 imageContextMenuAutoFill
+    // 这一开关，否则会出现「我开了右键填充却没反应」的疑惑。
+    let filled = false;
+    let fillSkipReason: 'no-input' | 'fill-error' | null = null;
+    if (imageContextMenuAutoFill) {
+      let inputEl: HTMLInputElement | null = null;
+      if (imgEl) inputEl = detector.findRelatedInput(imgEl);
+      if (!inputEl) inputEl = queryInputElementBySelector(inputSelector);
+      if (!inputEl) {
+        fillSkipReason = 'no-input';
+        Logger.info('右键识别：未找到可填入的输入框（已复制到剪贴板，用户可手动粘贴）');
+      } else {
+        try {
+          await autoFill.fill(inputEl, resultText, {
+            simulate: true,
+            autoSubmit: false,
+            typewriterEffect,
+            preserveFocus,
+          });
+          filled = true;
+          if (autoSubmitEnabled) {
+            await submitWithSelectorOrDefault(inputEl);
+          }
+        } catch (e) {
+          fillSkipReason = 'fill-error';
+          Logger.warn('右键识别填充失败:', e);
+        }
+      }
+    }
+
+    showContextMenuToast({
+      result: resultText,
+      filled,
+      copied,
+      fillSkipReason,
+      autoFillEnabled: imageContextMenuAutoFill,
+    });
+    sendResponse({ success: true, text: resultText, filled, copied });
+  } catch (e) {
+    Logger.error('右键识别出错:', e);
+    showContextMenuToast({ kind: 'error', errorMessage: (e as Error).message });
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
+/** Lightweight non-blocking toast for right-click results.
+ *  Two-line layout: prominent result text on top, subtle status row below.
+ *  Built with explicit DOM nodes (not innerHTML) to be CSP-safe and avoid
+ *  injecting user-influenced text into HTML.
+ */
+type ContextToastInput =
+  | { kind: 'error'; errorMessage: string }
+  | {
+    kind?: undefined;
+    result: string;
+    filled: boolean;
+    copied: boolean;
+    fillSkipReason: 'no-input' | 'fill-error' | null;
+    autoFillEnabled: boolean;
+  };
+
+function showContextMenuToast(input: ContextToastInput): void {
+  try {
+    const id = 'ddddocr-ctx-toast';
+    const old = document.getElementById(id);
+    if (old) old.remove();
+
+    const isError = input.kind === 'error';
+    const wrapper = document.createElement('div');
+    wrapper.id = id;
+    const bg = isError
+      ? 'linear-gradient(135deg,#ef4444,#dc2626)'
+      : 'linear-gradient(135deg,#10b981,#059669)';
+    wrapper.style.cssText = [
+      'position:fixed', 'bottom:24px', 'right:24px',
+      'min-width:220px', 'max-width:380px',
+      'padding:14px 18px',
+      `background:${bg}`,
+      'color:#fff',
+      'border-radius:12px',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif',
+      'z-index:2147483647',
+      'box-shadow:0 12px 32px rgba(0,0,0,.28)',
+      'opacity:0', 'transform:translateY(8px)',
+      'transition:opacity .25s ease,transform .25s ease',
+    ].join(';');
+
+    if (isError) {
+      const label = document.createElement('div');
+      label.textContent = t('ctxToast.errorLabel');
+      label.style.cssText = 'font-size:11px;opacity:.85;letter-spacing:.5px;margin-bottom:4px;';
+      wrapper.appendChild(label);
+      const msg = document.createElement('div');
+      msg.textContent = input.errorMessage;
+      msg.style.cssText = 'font-size:14px;font-weight:500;line-height:1.4;word-break:break-all;';
+      wrapper.appendChild(msg);
+    } else {
+      const { result, filled, copied, fillSkipReason, autoFillEnabled } = input;
+      const label = document.createElement('div');
+      label.textContent = t('ctxToast.resultLabel');
+      label.style.cssText = 'font-size:11px;opacity:.85;letter-spacing:.5px;margin-bottom:4px;';
+      wrapper.appendChild(label);
+
+      const text = document.createElement('div');
+      text.textContent = result;
+      text.style.cssText = 'font-size:18px;font-weight:600;letter-spacing:1px;line-height:1.3;word-break:break-all;font-family:"SF Mono",Menlo,Monaco,Consolas,monospace;';
+      wrapper.appendChild(text);
+
+      const status = document.createElement('div');
+      status.style.cssText = 'margin-top:8px;font-size:12px;opacity:.92;display:flex;flex-wrap:wrap;gap:10px;';
+      const items: { ok: boolean; label: string }[] = [];
+      if (autoFillEnabled) {
+        if (filled) items.push({ ok: true, label: t('ctxToast.filled') });
+        else if (fillSkipReason === 'no-input') items.push({ ok: false, label: t('ctxToast.noInput') });
+        else if (fillSkipReason === 'fill-error') items.push({ ok: false, label: t('ctxToast.fillFailed') });
+      }
+      items.push(copied
+        ? { ok: true, label: t('ctxToast.copied') }
+        : { ok: false, label: t('ctxToast.copyFailed') });
+      for (const it of items) {
+        const chip = document.createElement('span');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;';
+        const icon = document.createElement('span');
+        icon.textContent = it.ok ? '✓' : '!';
+        icon.style.cssText = `display:inline-flex;justify-content:center;align-items:center;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,${it.ok ? '.22' : '.32'});font-size:10px;font-weight:700;`;
+        chip.appendChild(icon);
+        const txt = document.createElement('span');
+        txt.textContent = it.label;
+        chip.appendChild(txt);
+        status.appendChild(chip);
+      }
+      wrapper.appendChild(status);
+    }
+
+    document.body.appendChild(wrapper);
+    requestAnimationFrame(() => {
+      wrapper.style.opacity = '1';
+      wrapper.style.transform = 'translateY(0)';
+    });
+    setTimeout(() => {
+      wrapper.style.opacity = '0';
+      wrapper.style.transform = 'translateY(8px)';
+    }, 3200);
+    setTimeout(() => wrapper.remove(), 3600);
+  } catch { /* DOM not ready / shadow root — silent */ }
 }
 
 async function checkAndApplySiteRule(): Promise<void> {
@@ -511,7 +735,7 @@ async function handleFill(text: string, options: any, sendResponse: (response: a
     if (!inputEl) {
       throw new Error(t('content.inputNotFound'));
     }
-    const success = await autoFill.fill(inputEl, text, { ...options, typewriterEffect });
+    const success = await autoFill.fill(inputEl, text, { ...options, typewriterEffect, preserveFocus });
     Logger.info('填充结果:', success ? '成功' : '失败');
     if (options?.autoSubmit) {
       await submitWithSelectorOrDefault(inputEl);
@@ -828,6 +1052,51 @@ function guardContext(): boolean {
   return true;
 }
 
+/**
+ * Heuristic: is this element inside a scrollable/virtualized container?
+ * Virtual scroll libraries (react-virtualized, vue-virtual-scroller, ant-table-body, etc.)
+ * append items dynamically. Reacting to those mutations causes a feedback loop:
+ * scan -> getBoundingClientRect (forced layout) -> IntersectionObserver fires
+ * inside the virtual list -> list loads more items -> mutation -> scan ...
+ * Skip mutations from inside such containers — captchas are virtually never
+ * placed inside a virtual list.
+ */
+function isInsideScrollableContainer(node: Node | null): boolean {
+  let el: Element | null = node instanceof Element ? node : (node?.parentElement ?? null);
+  let depth = 0;
+  while (el && depth < 8) {
+    if (el === document.body || el === document.documentElement) return false;
+    const cls = ((el as HTMLElement).className?.toString?.() || '').toLowerCase();
+    const role = el.getAttribute?.('role') || '';
+    if (
+      cls.includes('virtual') ||
+      cls.includes('vue-recycle-scroller') ||
+      cls.includes('rv-') ||
+      cls.includes('-table-body') ||
+      cls.includes('-table-tbody') ||
+      cls.includes('infinite-scroll') ||
+      role === 'grid' ||
+      role === 'listbox' ||
+      role === 'feed' ||
+      role === 'rowgroup'
+    ) return true;
+    const style = (el as HTMLElement).style;
+    if (style && (style.overflow === 'auto' || style.overflow === 'scroll' ||
+        style.overflowY === 'auto' || style.overflowY === 'scroll')) {
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      if (rect.height > 200 && (el as HTMLElement).scrollHeight > rect.height + 50) return true;
+    }
+    el = el.parentElement;
+    depth++;
+  }
+  return false;
+}
+
+/** Hard throttle for scan triggers — even debounced calls can pile up if mutations
+ *  are continuous. We refuse to scan more often than this regardless of triggers. */
+const MIN_SCAN_INTERVAL_MS = 1500;
+let lastScanTriggerTime = 0;
+
 function startAutoDetector(): void {
   if (autoDetectorStarted) return;
   autoDetectorStarted = true;
@@ -836,13 +1105,17 @@ function startAutoDetector(): void {
   observer = new MutationObserver((mutations) => {
     if (!guardContext()) return;
     let shouldCheckAgreements = false;
+    let triggerScan = false;
     for (const mutation of mutations) {
+      // Skip mutations originating from scrollable/virtualized containers
+      if (isInsideScrollableContainer(mutation.target)) continue;
+
       if (mutation.type === 'childList') {
         mutation.addedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            if (node.matches('img, canvas, svg')) scheduleAutoSolve();
-            if (node.querySelector('img, canvas, svg')) scheduleAutoSolve();
-            if (node.style && node.style.backgroundImage) scheduleAutoSolve();
+            if (node.matches('img, canvas, svg')) triggerScan = true;
+            else if (node.querySelector('img, canvas, svg')) triggerScan = true;
+            else if (node.style && node.style.backgroundImage) triggerScan = true;
             if (node.matches('input[type="checkbox"]') || node.querySelector('input[type="checkbox"]')) {
               shouldCheckAgreements = true;
             }
@@ -855,25 +1128,26 @@ function startAutoDetector(): void {
           }
         });
         if (mutation.target instanceof SVGElement) {
-          scheduleAutoSolve();
+          triggerScan = true;
         }
       } else if (mutation.type === 'attributes') {
         const target = mutation.target;
         if (target instanceof HTMLElement) {
           if (target instanceof HTMLImageElement) {
             if (mutation.attributeName === 'src' || mutation.attributeName === 'data-src' || mutation.attributeName === 'srcset') {
-              scheduleAutoSolve();
+              triggerScan = true;
             }
           } else if (target instanceof HTMLCanvasElement) {
-            scheduleAutoSolve();
+            triggerScan = true;
           } else if (target instanceof SVGElement) {
-            scheduleAutoSolve();
+            triggerScan = true;
           } else if (mutation.attributeName === 'style' && target.style.backgroundImage) {
-            scheduleAutoSolve();
+            triggerScan = true;
           }
         }
       }
     }
+    if (triggerScan) scheduleAutoSolve();
     if (shouldCheckAgreements) {
       scheduleAgreementCheck();
     }
@@ -922,10 +1196,18 @@ function scheduleInitialAuto(): void {
 
 function scheduleAutoSolve(): void {
   if (!autoDetectEnabled || !guardContext()) return;
+  // Hard throttle: even if mutations are continuous (e.g. a virtual list still
+  // settling), we refuse to fire scans more often than MIN_SCAN_INTERVAL_MS.
+  const now = Date.now();
+  const sinceLast = now - lastScanTriggerTime;
   if (pendingTimer) clearTimeout(pendingTimer);
+  const delay = sinceLast >= MIN_SCAN_INTERVAL_MS
+    ? 300
+    : Math.max(300, MIN_SCAN_INTERVAL_MS - sinceLast);
   pendingTimer = window.setTimeout(() => {
+    lastScanTriggerTime = Date.now();
     tryAutoSolveOnce();
-  }, 300);
+  }, delay);
 }
 
 function tryAutoSolveOnce(): void {

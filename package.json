@@ -1,6 +1,6 @@
 {
-  "name": "ddddocr-webjs",
-  "version": "1.1.6-pre",
+  "name": "Mieru-OCR",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
@@ -12,15 +12,14 @@
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
-    "@crxjs/vite-plugin": "^2.0.0-beta.25",
     "@types/chrome": "^0.0.268",
     "@types/node": "^20.11.0",
     "@types/tampermonkey": "^5.0.3",
     "sass": "^1.69.7",
     "terser": "^5.44.0",
     "typescript": "^5.3.3",
-    "vite": "^5.0.11",
-    "vite-plugin-monkey": "^7.1.4"
+    "vite": "^8.0.10",
+    "vite-plugin-monkey": "^8.0.1"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.96",

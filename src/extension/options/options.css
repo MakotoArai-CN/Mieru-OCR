@@ -467,6 +467,44 @@ body {
   background: var(--bg-hover);
 }
 
+.file-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.file-picker-input {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.file-picker-btn {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.file-picker-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-picker-name.has-file {
+  color: var(--text-primary);
+}
+
 .btn-danger {
   background: var(--error);
   color: white;
@@ -1111,6 +1149,97 @@ body {
 
 .chip-input {
   width: 100%;
+}
+
+/* 胶囊式复选框：用于诊断报告等多选场景，与品牌主色保持一致 */
+.check-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.check-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.check-pill:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.check-pill input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.check-pill-box {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--text-muted);
+  background: transparent;
+  transition: var(--transition);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.check-pill-box::after {
+  content: '';
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translate(1px, -1px);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.check-pill input[type="checkbox"]:checked ~ .check-pill-box {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.check-pill input[type="checkbox"]:checked ~ .check-pill-box::after {
+  opacity: 1;
+}
+
+.check-pill:has(input[type="checkbox"]:checked) {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.check-pill input[type="checkbox"]:focus-visible ~ .check-pill-box {
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+@media screen and (max-width: 768px) {
+  .check-pill {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
 }
 
 @media screen and (max-width: 768px) {

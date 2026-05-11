@@ -144,4 +144,43 @@ export class ImageProcessor {
     }
     return normalized;
   }
+
+  static normalizeStd(data: Uint8ClampedArray, mean: number, std: number): Float32Array {
+    const out = new Float32Array(data.length);
+    const inv = 1 / std;
+    for (let i = 0; i < data.length; i++) {
+      out[i] = (data[i] / 255.0 - mean) * inv;
+    }
+    return out;
+  }
+
+  static padOrCropWidth(
+    data: Float32Array,
+    width: number,
+    height: number,
+    targetWidth: number,
+    fillValue: number,
+  ): Float32Array {
+    if (width === targetWidth) return data;
+    const out = new Float32Array(targetWidth * height);
+    if (width < targetWidth) {
+      out.fill(fillValue);
+      for (let y = 0; y < height; y++) {
+        const srcOff = y * width;
+        const dstOff = y * targetWidth;
+        for (let x = 0; x < width; x++) {
+          out[dstOff + x] = data[srcOff + x];
+        }
+      }
+    } else {
+      for (let y = 0; y < height; y++) {
+        const srcOff = y * width;
+        const dstOff = y * targetWidth;
+        for (let x = 0; x < targetWidth; x++) {
+          out[dstOff + x] = data[srcOff + x];
+        }
+      }
+    }
+    return out;
+  }
 }

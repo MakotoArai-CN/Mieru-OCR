@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DDDDOCR-WEBJS is a browser-based offline CAPTCHA recognition tool using the DDDDOCR model via ONNX Runtime Web. It ships as three variants: a userscript (Tampermonkey/Violentmonkey), a Chrome/Edge extension (Manifest V3), and a Firefox extension (Manifest V2). All OCR inference runs client-side with no backend.
+Mieru-OCR is a browser-based offline CAPTCHA recognition tool using the DDDDOCR model via ONNX Runtime Web. It ships as three variants: a userscript (Tampermonkey/Violentmonkey), a Chrome/Edge extension (Manifest V3), and a Firefox extension (Manifest V2). All OCR inference runs client-side with no backend.
 
 Primary language is Chinese (comments, UI strings, commit messages).
 

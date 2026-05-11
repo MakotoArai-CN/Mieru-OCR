@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>订阅功能回归测试 - Mieru-OCR</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg-primary: linear-gradient(135deg, #e8f4fc 0%, #f8e8f0 50%, #e8f0fc 100%);
+      --bg-card: #ffffff;
+      --bg-input: #f8fafc;
+      --bg-code: #f1f5f9;
+      --bg-captcha: #f0f7ff;
+      --text-primary: #1e3a5f;
+      --text-secondary: #5a7a9a;
+      --text-muted: #94a3b8;
+      --accent-blue: #4a90e2;
+      --accent-blue-hover: #3a7bc8;
+      --accent-pink: #e8a0b4;
+      --accent-pink-light: #fce8ef;
+      --accent-green: #52c48c;
+      --accent-green-hover: #42a878;
+      --accent-orange: #f59e0b;
+      --border-color: #d8e4f0;
+      --border-focus: #4a90e2;
+      --shadow-card: 0 8px 32px rgba(74, 144, 226, 0.12);
+      --shadow-input: 0 2px 8px rgba(74, 144, 226, 0.08);
+      --success-bg: #ecfdf5;
+      --success-color: #10b981;
+      --warning-bg: #fef3c7;
+      --warning-color: #d97706;
+      --error-bg: #fef2f2;
+      --error-color: #ef4444;
+    }
+
+    [data-theme="dark"] {
+      --bg-primary: linear-gradient(135deg, #0f1729 0%, #1a1025 50%, #0f1729 100%);
+      --bg-card: #1e293b;
+      --bg-input: #334155;
+      --bg-code: #0f172a;
+      --bg-captcha: #1e3a5f;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-blue: #60a5fa;
+      --accent-blue-hover: #93c5fd;
+      --accent-pink: #f472b6;
+      --accent-pink-light: #4a1942;
+      --accent-green: #4ade80;
+      --accent-green-hover: #86efac;
+      --accent-orange: #fbbf24;
+      --border-color: #475569;
+      --border-focus: #60a5fa;
+      --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
+      --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.2);
+      --success-bg: #064e3b;
+      --success-color: #34d399;
+      --warning-bg: #451a03;
+      --warning-color: #fbbf24;
+      --error-bg: #450a0a;
+      --error-color: #f87171;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg-primary: linear-gradient(135deg, #0f1729 0%, #1a1025 50%, #0f1729 100%);
+        --bg-card: #1e293b;
+        --bg-input: #334155;
+        --bg-code: #0f172a;
+        --bg-captcha: #1e3a5f;
+        --text-primary: #e2e8f0;
+        --text-secondary: #94a3b8;
+        --text-muted: #64748b;
+        --accent-blue: #60a5fa;
+        --accent-blue-hover: #93c5fd;
+        --accent-pink: #f472b6;
+        --accent-pink-light: #4a1942;
+        --accent-green: #4ade80;
+        --accent-green-hover: #86efac;
+        --accent-orange: #fbbf24;
+        --border-color: #475569;
+        --border-focus: #60a5fa;
+        --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.3);
+        --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.2);
+        --success-bg: #064e3b;
+        --success-color: #34d399;
+        --warning-bg: #451a03;
+        --warning-color: #fbbf24;
+        --error-bg: #450a0a;
+        --error-color: #f87171;
+      }
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      min-height: 100vh;
+      padding: 16px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      transition: all 0.3s ease;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 1280px; margin: 0 auto; }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-tag {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--accent-pink-light);
+      color: var(--accent-pink);
+      font-weight: 500;
+    }
+
+    .theme-toggle {
+      display: flex;
+      gap: 4px;
+      background: var(--bg-card);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-input);
+    }
+
+    .theme-btn {
+      width: 32px; height: 32px;
+      border: none; background: transparent;
+      border-radius: 6px; cursor: pointer;
+      font-size: 14px; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .theme-btn:hover { background: var(--accent-pink-light); }
+    .theme-btn.active { background: var(--accent-blue); color: white; }
+
+    .subscription-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 20px;
+    }
+
+    .subscription-card h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .subscription-card h2::before {
+      content: '';
+      width: 3px; height: 18px;
+      background: linear-gradient(180deg, var(--accent-blue), var(--accent-pink));
+      border-radius: 2px;
+    }
+
+    .url-row {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .url-row .url-label {
+      flex: 0 0 90px;
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex; align-items: center;
+      padding-left: 2px;
+    }
+
+    .url-input {
+      flex: 1;
+      min-width: 240px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-code);
+      color: var(--text-primary);
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      outline: none;
+      user-select: all;
+    }
+
+    .url-input:focus { border-color: var(--border-focus); }
+
+    .copy-btn, .action-btn {
+      padding: 10px 14px;
+      background: var(--accent-blue);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+      display: inline-flex; align-items: center; gap: 6px;
+      white-space: nowrap;
+    }
+
+    .copy-btn:hover, .action-btn:hover {
+      background: var(--accent-blue-hover);
+      transform: translateY(-1px);
+    }
+
+    .action-btn.success { background: var(--accent-green); }
+    .action-btn.success:hover { background: var(--accent-green-hover); }
+    .action-btn.warning { background: var(--accent-orange); }
+
+    .instructions {
+      background: var(--bg-code);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 12px;
+      line-height: 1.7;
+    }
+
+    .instructions ol { margin-left: 18px; }
+    .instructions code {
+      background: var(--bg-card);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--accent-blue);
+      border: 1px solid var(--border-color);
+    }
+
+    .checklist {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 20px;
+    }
+
+    .checklist h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .checklist h2::before {
+      content: '';
+      width: 3px; height: 18px;
+      background: linear-gradient(180deg, var(--accent-green), var(--accent-blue));
+      border-radius: 2px;
+    }
+
+    .checklist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+
+    .checklist-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .checklist-item .indicator {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      background: var(--bg-card);
+      color: var(--text-muted);
+      border: 1.5px solid var(--text-muted);
+      transition: all 0.2s;
+    }
+
+    .checklist-item.pass .indicator {
+      background: var(--success-color);
+      border-color: var(--success-color);
+      color: white;
+    }
+    .checklist-item.fail .indicator {
+      background: var(--error-color);
+      border-color: var(--error-color);
+      color: white;
+    }
+    .checklist-item.pending .indicator {
+      background: var(--warning-bg);
+      border-color: var(--warning-color);
+      color: var(--warning-color);
+    }
+
+    .checklist-item .check-name { flex: 1; }
+    .checklist-item .check-status { font-size: 11px; color: var(--text-muted); }
+    .checklist-item.pass .check-status { color: var(--success-color); }
+    .checklist-item.fail .check-status { color: var(--error-color); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 16px;
+    }
+
+    .test-section {
+      background: var(--bg-card);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: var(--shadow-card);
+      border: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .test-section:hover {
+      box-shadow: 0 12px 40px rgba(74, 144, 226, 0.18);
+      transform: translateY(-2px);
+    }
+
+    .test-section h3 {
+      color: var(--text-primary);
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--accent-pink);
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .test-section h3 .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-pink-light);
+      color: var(--accent-pink);
+      font-weight: 500;
+    }
+
+    .test-section h3 .badge.k-include { background: rgba(74,144,226,0.18); color: var(--accent-blue); }
+    .test-section h3 .badge.k-exclude { background: rgba(239,68,68,0.16); color: var(--error-color); }
+    .test-section h3 .badge.k-agreement { background: rgba(82,196,140,0.18); color: var(--success-color); }
+    .test-section h3 .badge.k-input { background: rgba(245,158,11,0.18); color: var(--accent-orange); }
+    .test-section h3 .badge.k-selector { background: rgba(155,89,182,0.18); color: #9b59b6; }
+    .test-section h3 .badge.k-site { background: rgba(74,144,226,0.18); color: var(--accent-blue); }
+    .test-section h3 .badge.k-blacklist { background: rgba(239,68,68,0.16); color: var(--error-color); }
+    .test-section h3 .badge.k-calc { background: rgba(245,158,11,0.18); color: var(--accent-orange); }
+
+    .test-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
+
+    .test-meta code {
+      background: var(--bg-code);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--accent-blue);
+      border: 1px solid var(--border-color);
+    }
+
+    .expect-row {
+      display: flex;
+      gap: 8px;
+      margin: 8px 0;
+      flex-wrap: wrap;
+    }
+
+    .expect-pill {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--bg-input);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .expect-pill.before { border-color: var(--text-muted); }
+    .expect-pill.after { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+    .captcha-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .captcha-box {
+      border: 2px solid var(--border-color);
+      padding: 3px;
+      background: white;
+      border-radius: 8px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .captcha-box img { display: block; border-radius: 4px; }
+
+    input[type="text"] {
+      padding: 10px 12px;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 14px;
+      flex: 1;
+      min-width: 100px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+      transition: all 0.2s;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15);
+    }
+
+    button.refresh-btn {
+      padding: 8px 12px;
+      background: var(--accent-green);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    button.refresh-btn:hover {
+      background: var(--accent-green-hover);
+      transform: translateY(-1px);
+    }
+
+    .agreement-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-top: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .agreement-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--accent-blue);
+    }
+
+    .agreement-row .agreement-label {
+      font-size: 13px;
+      color: var(--text-primary);
+      flex: 1;
+    }
+
+    .live-status {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      background: var(--bg-code);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      word-break: break-all;
+      min-height: 30px;
+    }
+
+    .live-status.pass { background: var(--success-bg); color: var(--success-color); border-color: var(--success-color); }
+    .live-status.fail { background: var(--error-bg); color: var(--error-color); border-color: var(--error-color); }
+    .live-status.pending { background: var(--warning-bg); color: var(--warning-color); border-color: var(--warning-color); }
+
+    .info-only {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 10px;
+      line-height: 1.7;
+    }
+
+    .info-only code {
+      background: var(--bg-card);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--accent-blue);
+      border: 1px solid var(--border-color);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 20px;
+      background: var(--accent-blue);
+      color: white;
+      border-radius: 8px;
+      font-size: 14px;
+      box-shadow: 0 8px 24px rgba(74,144,226,0.4);
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-8px);
+    }
+
+    @media screen and (max-width: 600px) {
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 18px; }
+      .url-row { flex-direction: column; align-items: stretch; }
+      .url-row .url-label { flex: 0 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-left">
+        <h1>🔔 订阅功能回归测试</h1>
+        <span class="header-tag">Standalone Service</span>
+      </div>
+      <div class="theme-toggle">
+        <button class="theme-btn" data-theme="light" title="浅色">☀️</button>
+        <button class="theme-btn" data-theme="auto" title="自动">🌗</button>
+        <button class="theme-btn" data-theme="dark" title="深色">🌙</button>
+      </div>
+    </div>
+
+    <!-- 订阅信息 -->
+    <div class="subscription-card">
+      <h2>订阅 URL（在扩展设置 → 订阅规则 中添加）</h2>
+      <div class="url-row">
+        <div class="url-label">当前 Host</div>
+        <input type="text" class="url-input" id="urlCurrent" readonly>
+        <button class="copy-btn" onclick="copyUrl('urlCurrent')">📋 复制</button>
+      </div>
+      <div class="url-row">
+        <div class="url-label">本机 IP</div>
+        <input type="text" class="url-input" id="urlLoopback" readonly>
+        <button class="copy-btn" onclick="copyUrl('urlLoopback')">📋 复制</button>
+      </div>
+      <div class="url-row">
+        <div class="url-label">原始 JSON</div>
+        <input type="text" class="url-input" id="urlRelative" readonly value="./subscription.json">
+        <button class="copy-btn" onclick="copyAbsoluteRelative()">📋 复制绝对路径</button>
+        <button class="action-btn warning" onclick="downloadJson()">⬇️ 下载</button>
+      </div>
+
+      <div class="instructions">
+        <strong>📝 测试步骤：</strong>
+        <ol>
+          <li>用 <code>bun test-subscription-service/server.ts</code> 启动本服务，默认端口 <code>8765</code>。</li>
+          <li>复制上方任一 URL（推荐 <code>当前 Host</code>），打开扩展弹窗 → 设置 → 订阅规则 → 添加订阅，粘贴。</li>
+          <li>扩展拉取规则后回到本页面 / 自动扫描，下方各测试卡片实时显示订阅前后差异。</li>
+          <li>测试完成后请在订阅列表里删除本订阅——扩展会自动回滚所有由本订阅引入的规则。</li>
+        </ol>
+      </div>
+
+      <div class="url-row" style="margin-top: 12px;">
+        <button class="action-btn success" onclick="verifyJson()">🔍 检查 JSON 是否可访问</button>
+        <span id="verifyStatus" class="live-status" style="flex:1;">未检查</span>
+      </div>
+    </div>
+
+    <!-- 回归测试清单 -->
+    <div class="checklist">
+      <h2>实时回归清单（每秒刷新）</h2>
+      <div class="checklist-grid" id="checklistGrid"></div>
+    </div>
+
+    <!-- 测试用例 -->
+    <div class="grid">
+
+      <!-- 1. includeKeywords -->
+      <div class="test-section">
+        <h3>① 自定义触发关键词<span class="badge k-include">includeKeywords</span></h3>
+        <div class="test-meta">
+          订阅包注入关键词 <code>subtestcap / 订阅测试码 / myownverify</code>。下方图片 class 为 <code>subtestcap-image</code>，<strong>本身不在内置关键词内</strong>，订阅前不会被自动识别；订阅生效后会被识别并回填到验证码输入框。
+        </div>
+        <div class="expect-row">
+          <span class="expect-pill before">订阅前: 不识别</span>
+          <span class="expect-pill after">订阅后: 自动识别 → 回填</span>
+        </div>
+        <div class="captcha-row">
+          <div class="captcha-box">
+            <img id="includeKeywordImg" class="subtestcap-image" width="120" height="40" alt="captcha image">
+          </div>
+          <input type="text" id="includeKeywordInput" placeholder="验证码 / 由扩展回填" maxlength="4">
+          <button class="refresh-btn" onclick="refreshIncludeKeyword()">🔄 刷新</button>
+        </div>
+        <div class="live-status" id="includeKeywordStatus">等待自动回填……</div>
+      </div>
+
+      <!-- 2. excludePatterns -->
+      <div class="test-section">
+        <h3>② 自定义排除模式<span class="badge k-exclude">excludePatterns</span></h3>
+        <div class="test-meta">
+          订阅包注入排除词 <code>subtest-ignore</code>。下方图片同时带有内置触发词 <code>captcha</code> 和订阅排除词 <code>subtest-ignore</code>，订阅前会被识别，订阅后会被屏蔽（不应再触发自动识别）。
+        </div>
+        <div class="expect-row">
+          <span class="expect-pill before">订阅前: 会被识别</span>
+          <span class="expect-pill after">订阅后: 被排除</span>
+        </div>
+        <div class="captcha-row">
+          <div class="captcha-box">
+            <img id="excludePatternImg" class="captcha-image subtest-ignore" width="120" height="40" alt="captcha image to ignore">
+          </div>
+          <input type="text" id="excludePatternInput" placeholder="此处不应被回填" maxlength="4">
+          <button class="refresh-btn" onclick="refreshExcludePattern()">🔄 刷新</button>
+        </div>
+        <div class="live-status" id="excludePatternStatus">等待校验……</div>
+      </div>
+
+      <!-- 3. agreementKeywords -->
+      <div class="test-section">
+        <h3>③ 协议关键词<span class="badge k-agreement">agreementKeywords</span></h3>
+        <div class="test-meta">
+          订阅包注入协议关键词 <code>subtest-agree / 订阅测试协议</code>。下方复选框上下文文本含「订阅测试协议」，订阅 + 开启自动勾选协议后应被自动选中。
+        </div>
+        <div class="expect-row">
+          <span class="expect-pill before">订阅前: 不识别为协议</span>
+          <span class="expect-pill after">订阅后: 自动勾选</span>
+        </div>
+        <label class="agreement-row">
+          <input type="checkbox" id="subTestAgreeKwCheckbox">
+          <span class="agreement-label">我已阅读并同意 <strong>订阅测试协议</strong> 与用户服务条款</span>
+        </label>
+        <div class="live-status" id="agreementKwStatus">等待自动勾选……</div>
+      </div>
+
+      <!-- 4. inputExcludeKeywords -->
+      <div class="test-section">
+        <h3>④ 输入框排除关键词<span class="badge k-input">inputExcludeKeywords</span></h3>
+        <div class="test-meta">
+          订阅包注入输入排除词 <code>subtest-special-code</code>。下方上方输入框 placeholder 带此关键词，订阅后扩展应避免将 OCR 结果回填到该输入框（即便它在验证码图片附近），只回填到真正的验证码输入框。
+        </div>
+        <div class="expect-row">
+          <span class="expect-pill before">订阅前: 上方输入框可能被填</span>
+          <span class="expect-pill after">订阅后: 只有下方正确输入框被填</span>
+        </div>
+        <div class="captcha-row">
+          <div class="captcha-box">
+            <img id="inputExcludeCaptchaImg" class="captcha" width="120" height="40" alt="captcha">
+          </div>
+          <input type="text" id="inputExcludeWrong" placeholder="subtest-special-code 不要回填这里" maxlength="6">
+          <button class="refresh-btn" onclick="refreshInputExclude()">🔄 刷新</button>
+        </div>
+        <div class="captcha-row">
+          <input type="text" id="inputExcludeRight" placeholder="真正的验证码输入框" maxlength="6">
+        </div>
+        <div class="live-status" id="inputExcludeStatus">等待校验……</div>
+      </div>
+
+      <!-- 5. agreementSelectors -->
+      <div class="test-section">
+        <h3>⑤ 协议选择器<span class="badge k-selector">agreementSelectors</span></h3>
+        <div class="test-meta">
+          订阅包注入选择器 <code>#sub-test-agreement</code> 与 <code>.sub-test-agreement-by-class input</code>。订阅 + 开启自动勾选协议后两个复选框应同时被勾选。
+        </div>
+        <div class="expect-row">
+          <span class="expect-pill before">订阅前: 不勾选</span>
+          <span class="expect-pill after">订阅后: 全部自动勾选</span>
+        </div>
+        <label class="agreement-row">
+          <input type="checkbox" id="sub-test-agreement">
+          <span class="agreement-label">通过 ID 选择器 <code>#sub-test-agreement</code> 命中</span>
+        </label>
+        <label class="agreement-row sub-test-agreement-by-class">
+          <input type="checkbox">
+          <span class="agreement-label">通过 class 选择器 <code>.sub-test-agreement-by-class input</code> 命中</span>
+        </label>
+        <div class="live-status" id="agreementSelectorStatus">等待自动勾选……</div>
+      </div>
+
+      <!-- 6. siteRules -->
+      <div class="test-section">
+        <h3>⑥ 站点规则<span class="badge k-site">siteRules</span></h3>
+        <div class="test-meta">
+          订阅包对 <code>localhost</code> 与 <code>127.0.0.1</code> 注入了站点规则：捕获 <code>#sub-test-site-rule-captcha</code>、回填到 <code>#sub-test-site-rule-input</code>。本服务默认运行于这两个域，可直接测试。
+        </div>
+        <div class="expect-row">
+          <span class="expect-pill before">订阅前: 不识别这张图</span>
+          <span class="expect-pill after">订阅后: 站点规则命中</span>
+        </div>
+        <div class="captcha-row">
+          <div class="captcha-box">
+            <img id="sub-test-site-rule-captcha" width="120" height="40" alt="site rule captcha">
+          </div>
+          <input type="text" id="sub-test-site-rule-input" placeholder="由站点规则回填" maxlength="4">
+          <button class="refresh-btn" onclick="refreshSiteRule()">🔄 刷新</button>
+        </div>
+        <button id="sub-test-site-rule-submit" class="refresh-btn" style="margin-top:8px;">模拟提交按钮</button>
+        <div class="live-status" id="siteRuleStatus">等待校验（依赖当前域名）……</div>
+      </div>
+
+      <!-- 7. siteBlacklist -->
+      <div class="test-section">
+        <h3>⑦ 站点黑名单<span class="badge k-blacklist">siteBlacklist</span></h3>
+        <div class="test-meta">
+          订阅包注入黑名单 <code>subtest-blacklist.example.com</code> 与 <code>*.subtest-banned.example</code>。这条规则无法在当前页面直接验证（除非把本测试页托管到上述虚构域名）。请到 <strong>扩展设置 → 高级 → 黑名单</strong> 中检查是否已写入对应记录。
+        </div>
+        <div class="info-only">
+          <strong>验证步骤：</strong><br>
+          1. 订阅生效后，打开 <code>扩展设置 → 黑名单</code><br>
+          2. 应能看到新增项：<code>subtest-blacklist.example.com</code> 与 <code>*.subtest-banned.example</code><br>
+          3. 删除订阅后，对应项应自动回滚消失。
+        </div>
+        <div class="live-status" id="siteBlacklistStatus">人工核对</div>
+      </div>
+
+      <!-- 8. calculateRules -->
+      <div class="test-section">
+        <h3>⑧ 计算规则<span class="badge k-calc">calculateRules</span></h3>
+        <div class="test-meta">
+          订阅包注入两条计算规则：通配符 <code>subtest-math.example</code> + 正则 <code>^subtest-regex-math\.test$</code>。两者均绑定到虚构域名，主要用于验证规则是否被正确合并到本地计算规则列表。
+        </div>
+        <div class="info-only">
+          <strong>验证步骤：</strong><br>
+          1. 订阅生效后，打开 <code>扩展设置 → 计算规则</code><br>
+          2. 应看到新增的两条规则（pattern 与上述匹配）<br>
+          3. 删除订阅后，两条规则应自动回滚消失。
+        </div>
+        <div class="live-status" id="calcRuleStatus">人工核对</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    /* ========== 主题切换 ========== */
+    (function () {
+      const btns = document.querySelectorAll('.theme-btn');
+      const saved = localStorage.getItem('theme') || 'auto';
+      function applyTheme(theme) {
+        if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme', theme);
+        btns.forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+        localStorage.setItem('theme', theme);
+      }
+      btns.forEach(btn => btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
+      applyTheme(saved);
+    })();
+
+    /* ========== 计算订阅 URL ========== */
+    (function () {
+      const origin = location.origin;
+      const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+      const currentUrl = origin + '/subscription.json';
+      const loopback = `${location.protocol}//127.0.0.1:${port}/subscription.json`;
+      document.getElementById('urlCurrent').value = currentUrl;
+      document.getElementById('urlLoopback').value = loopback;
+    })();
+
+    /* ========== 工具 ========== */
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('visible');
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => toast.classList.remove('visible'), 1800);
+    }
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('✅ 已复制：' + text);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); showToast('✅ 已复制：' + text); }
+        catch { showToast('❌ 复制失败，请手动选中'); }
+        finally { document.body.removeChild(ta); }
+      }
+    }
+
+    function copyUrl(id) { copyText(document.getElementById(id).value); }
+
+    function copyAbsoluteRelative() {
+      const localUrl = new URL('./subscription.json', location.href).href;
+      copyText(localUrl);
+    }
+
+    function randomStr(len) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let r = '';
+      for (let i = 0; i < len; i++) r += chars[Math.floor(Math.random() * chars.length)];
+      return r;
+    }
+
+    function randomColor() {
+      const colors = ['#4a90e2', '#e8a0b4', '#52c48c', '#f5a623', '#9b59b6', '#e74c3c'];
+      return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    function createCaptchaDataUrl(code, w, h) {
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#f0f7ff');
+      grad.addColorStop(1, '#fce8ef');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      for (let i = 0; i < 3; i++) {
+        ctx.strokeStyle = `rgba(74, 144, 226, ${0.2 + Math.random() * 0.2})`;
+        ctx.beginPath();
+        ctx.moveTo(Math.random() * w, Math.random() * h);
+        ctx.lineTo(Math.random() * w, Math.random() * h);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < 24; i++) {
+        ctx.fillStyle = `rgba(232, 160, 180, ${0.3 + Math.random() * 0.3})`;
+        ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+      }
+
+      ctx.font = `bold ${Math.floor(h * 0.55)}px Arial`;
+      ctx.textBaseline = 'middle';
+      const startX = 8;
+      const spacing = (w - 16) / code.length;
+      for (let i = 0; i < code.length; i++) {
+        ctx.save();
+        ctx.translate(startX + i * spacing + spacing / 2, h / 2);
+        ctx.rotate((Math.random() - 0.5) * 0.3);
+        ctx.fillStyle = randomColor();
+        ctx.fillText(code[i], -ctx.measureText(code[i]).width / 2, 0);
+        ctx.restore();
+      }
+
+      return canvas.toDataURL('image/png');
+    }
+
+    /* ========== JSON 可达性检查 ========== */
+    async function verifyJson() {
+      const statusEl = document.getElementById('verifyStatus');
+      const url = document.getElementById('urlCurrent').value;
+      statusEl.className = 'live-status pending';
+      statusEl.style.flex = '1';
+      statusEl.textContent = '正在检查 ' + url + ' ……';
+      try {
+        const resp = await fetch(url, { cache: 'no-cache' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        if (!data.name || !data.version) throw new Error('缺少 name 或 version');
+        const fields = Object.keys(data).length;
+        statusEl.className = 'live-status pass';
+        statusEl.textContent = `✅ ${data.name} v${data.version}（${fields} 字段，含 ${(data.includeKeywords || []).length} 触发词 / ${Object.keys(data.siteRules || {}).length} 站点规则）`;
+      } catch (e) {
+        statusEl.className = 'live-status fail';
+        statusEl.textContent = '❌ ' + (e && e.message ? e.message : e);
+      }
+    }
+
+    function downloadJson() {
+      const url = new URL('./subscription.json', location.href).href;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'test-subscription.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    /* ========== 测试用验证码 ========== */
+    let includeKeywordCode = '';
+    let excludePatternCode = '';
+    let inputExcludeCode = '';
+    let siteRuleCode = '';
+
+    function refreshIncludeKeyword() {
+      includeKeywordCode = randomStr(4);
+      document.getElementById('includeKeywordImg').src = createCaptchaDataUrl(includeKeywordCode, 120, 40);
+      document.getElementById('includeKeywordInput').value = '';
+    }
+
+    function refreshExcludePattern() {
+      excludePatternCode = randomStr(4);
+      document.getElementById('excludePatternImg').src = createCaptchaDataUrl(excludePatternCode, 120, 40);
+      document.getElementById('excludePatternInput').value = '';
+    }
+
+    function refreshInputExclude() {
+      inputExcludeCode = randomStr(5);
+      document.getElementById('inputExcludeCaptchaImg').src = createCaptchaDataUrl(inputExcludeCode, 120, 40);
+      document.getElementById('inputExcludeWrong').value = '';
+      document.getElementById('inputExcludeRight').value = '';
+    }
+
+    function refreshSiteRule() {
+      siteRuleCode = randomStr(4);
+      document.getElementById('sub-test-site-rule-captcha').src = createCaptchaDataUrl(siteRuleCode, 120, 40);
+      document.getElementById('sub-test-site-rule-input').value = '';
+    }
+
+    /* ========== 回归清单与实时状态 ========== */
+    const checks = [
+      { id: 'check-include', name: '① 触发关键词', detail: () => describeFilled('includeKeywordInput', includeKeywordCode) },
+      { id: 'check-exclude', name: '② 排除模式', detail: () => describeEmpty('excludePatternInput') },
+      { id: 'check-agreement-kw', name: '③ 协议关键词', detail: () => describeChecked('subTestAgreeKwCheckbox') },
+      { id: 'check-input-exclude', name: '④ 输入排除', detail: () => describeWrongVsRight() },
+      { id: 'check-agreement-sel', name: '⑤ 协议选择器', detail: () => describeAgreementSelectors() },
+      { id: 'check-site-rule', name: '⑥ 站点规则', detail: () => describeSiteRule() },
+      { id: 'check-blacklist', name: '⑦ 站点黑名单', detail: () => ({ state: 'pending', text: '需人工核对扩展设置' }) },
+      { id: 'check-calc', name: '⑧ 计算规则', detail: () => ({ state: 'pending', text: '需人工核对扩展设置' }) },
+    ];
+
+    function describeFilled(inputId, expectedCode) {
+      const v = (document.getElementById(inputId)?.value || '').toUpperCase();
+      if (!v) return { state: 'pending', text: '未回填' };
+      if (expectedCode && v === String(expectedCode).toUpperCase()) return { state: 'pass', text: '✓ 已正确回填' };
+      return { state: 'pass', text: '已回填: ' + v };
+    }
+
+    function describeEmpty(inputId) {
+      const v = document.getElementById(inputId)?.value || '';
+      if (!v) return { state: 'pass', text: '✓ 未被回填' };
+      return { state: 'fail', text: '✗ 被错误回填: ' + v };
+    }
+
+    function describeChecked(checkboxId) {
+      const cb = document.getElementById(checkboxId);
+      if (!cb) return { state: 'fail', text: '找不到复选框' };
+      return cb.checked ? { state: 'pass', text: '✓ 已被勾选' } : { state: 'pending', text: '未勾选' };
+    }
+
+    function describeWrongVsRight() {
+      const wrong = document.getElementById('inputExcludeWrong')?.value || '';
+      const right = document.getElementById('inputExcludeRight')?.value || '';
+      if (wrong) return { state: 'fail', text: '✗ 错误输入框被回填: ' + wrong };
+      if (right) return { state: 'pass', text: '✓ 仅正确输入框被回填: ' + right };
+      return { state: 'pending', text: '都未回填' };
+    }
+
+    function describeAgreementSelectors() {
+      const a = document.getElementById('sub-test-agreement')?.checked;
+      const b = document.querySelector('.sub-test-agreement-by-class input')?.checked;
+      if (a && b) return { state: 'pass', text: '✓ 两个选择器均已勾选' };
+      if (a || b) return { state: 'pending', text: '只勾选了一个' };
+      return { state: 'pending', text: '都未勾选' };
+    }
+
+    function describeSiteRule() {
+      const host = location.hostname || 'file';
+      const supported = ['localhost', '127.0.0.1'];
+      if (!supported.includes(host)) {
+        return { state: 'pending', text: `当前 host=${host}，不命中站点规则（需 ${supported.join(' / ')}）` };
+      }
+      const v = document.getElementById('sub-test-site-rule-input')?.value || '';
+      if (!v) return { state: 'pending', text: 'host 匹配，等待回填' };
+      return { state: 'pass', text: '✓ 站点规则回填: ' + v };
+    }
+
+    function renderChecklist() {
+      const grid = document.getElementById('checklistGrid');
+      grid.innerHTML = '';
+      for (const c of checks) {
+        const item = document.createElement('div');
+        item.className = 'checklist-item pending';
+        item.id = c.id;
+        item.innerHTML = `
+          <div class="indicator">·</div>
+          <div class="check-name">${c.name}</div>
+          <div class="check-status">未执行</div>
+        `;
+        grid.appendChild(item);
+      }
+    }
+
+    function setItemState(id, state, text) {
+      const item = document.getElementById(id);
+      if (!item) return;
+      item.classList.remove('pending', 'pass', 'fail');
+      item.classList.add(state);
+      const indicator = item.querySelector('.indicator');
+      indicator.textContent = state === 'pass' ? '✓' : state === 'fail' ? '✗' : '·';
+      item.querySelector('.check-status').textContent = text;
+    }
+
+    function setStatus(elId, state, text) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.classList.remove('pass', 'fail', 'pending');
+      el.classList.add(state);
+      el.textContent = text;
+    }
+
+    function runChecks() {
+      for (const c of checks) {
+        const res = c.detail();
+        setItemState(c.id, res.state, res.text);
+      }
+      setStatus('includeKeywordStatus', ...statusPayload(describeFilled('includeKeywordInput', includeKeywordCode)));
+      setStatus('excludePatternStatus', ...statusPayload(describeEmpty('excludePatternInput')));
+      setStatus('agreementKwStatus', ...statusPayload(describeChecked('subTestAgreeKwCheckbox')));
+      setStatus('inputExcludeStatus', ...statusPayload(describeWrongVsRight()));
+      setStatus('agreementSelectorStatus', ...statusPayload(describeAgreementSelectors()));
+      setStatus('siteRuleStatus', ...statusPayload(describeSiteRule()));
+    }
+
+    function statusPayload(detail) {
+      return [detail.state, detail.text];
+    }
+
+    /* ========== 初始化 ========== */
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshIncludeKeyword();
+      refreshExcludePattern();
+      refreshInputExclude();
+      refreshSiteRule();
+      renderChecklist();
+      runChecks();
+      setInterval(runChecks, 1000);
+    });
+  </script>
+</body>
+</html>

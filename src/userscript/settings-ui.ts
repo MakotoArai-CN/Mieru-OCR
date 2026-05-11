@@ -5,6 +5,15 @@ import type { Locale } from '@core/i18n';
 import { Dialog } from './dialog';
 import { saveUploadedModel, deleteUploadedModel, ModelCache } from './model-loader';
 import { getConfig, saveConfig, getSiteRules, saveSiteRule, deleteSiteRule, statsManager } from './storage';
+import { buildReport, downloadReport, clearLogs } from '@core/diagnostics';
+import {
+  getSubscriptions,
+  addSubscription,
+  deleteSubscription,
+  refreshSubscription,
+  updateSubscriptionMeta,
+} from './subscription-manager';
+import type { Subscription } from '@core/subscription';
 
 type ChipFieldKey = 'customIncludeKeywords' | 'customExcludePatterns' | 'customAgreementKeywords' | 'customInputExcludeKeywords';
 type DisabledChipKey = 'disabledCaptchaKeywords' | 'disabledExcludePatterns' | 'disabledAgreementKeywords' | 'disabledInputExcludeKeywords';
@@ -753,6 +762,7 @@ export class SettingsUI {
       <div class="ddddocr-tabs">
         <button class="ddddocr-tab active" data-tab="general">${t('settings.tab.general')}</button>
         <button class="ddddocr-tab" data-tab="rules">${t('settings.tab.rules')}</button>
+        <button class="ddddocr-tab" data-tab="subscription">${t('settings.tab.subscription')}</button>
         <button class="ddddocr-tab" data-tab="stats">${t('settings.tab.stats')}</button>
         <button class="ddddocr-tab" data-tab="calculate">${t('settings.tab.calculate')}</button>
         <button class="ddddocr-tab" data-tab="model">${t('settings.tab.model')}</button>
@@ -769,7 +779,17 @@ export class SettingsUI {
             ${this.renderSwitchRow('enableNotification', t('settings.notification'), t('settings.notification.hint'), config.enableNotification)}
             ${this.renderSwitchRow('autoSubmit', t('settings.autoSubmit'), t('settings.autoSubmit.hint'), config.autoSubmit ?? false)}
             ${this.renderSwitchRow('autoSolveOnRule', t('settings.autoSolveOnRule'), t('settings.autoSolveOnRule.hint'), config.autoSolveOnRule ?? true)}
+            ${this.renderSwitchRow('preserveFocus', t('settings.preserveFocus'), t('settings.preserveFocus.hint'), config.preserveFocus ?? false)}
             ${this.renderSwitchRow('debugMode', t('settings.debugMode'), t('settings.debugMode.hint'), config.debugMode)}
+          </div>
+          <div class="ddddocr-card">
+            <div class="ddddocr-card-title">${t('diag.title')}</div>
+            <div style="font-size: 12px; opacity: 0.75; margin-bottom: 10px;">${t('diag.hint')}</div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button id="ddddocr-diag-export" class="ddddocr-btn ddddocr-btn-primary">${t('diag.export')}</button>
+              <button id="ddddocr-diag-clear" class="ddddocr-btn ddddocr-btn-secondary">${t('diag.clear')}</button>
+            </div>
+            <div id="ddddocr-diag-status" style="margin-top: 8px; font-size: 12px; opacity: 0.75; min-height: 1em;"></div>
           </div>
           <div class="ddddocr-card">
             <div class="ddddocr-card-title">${t('settings.selectors')}</div>
@@ -856,6 +876,36 @@ export class SettingsUI {
             <div class="ddddocr-row-label" style="margin-top: 12px;">${t('rules.inputSelector')}</div>
             <input type="text" class="ddddocr-input" id="newRuleInputSelector" placeholder="${t('rules.inputSelector.placeholder')}">
             <button class="ddddocr-btn ddddocr-btn-primary" id="addSiteRuleBtn" style="margin-top: 16px;">${t('rules.bulkAdd')}</button>
+          </div>
+        </div>
+
+        <!-- Subscriptions -->
+        <div class="ddddocr-panel" data-panel="subscription">
+          <div class="ddddocr-card">
+            <div class="ddddocr-card-header">
+              <div class="ddddocr-card-title">${t('sub.title')}</div>
+              <button class="ddddocr-btn ddddocr-btn-secondary ddddocr-btn-sm" id="refreshAllSubsBtn">${t('sub.refreshAll')}</button>
+            </div>
+            <div id="subscriptionsList">${this.renderSubscriptions()}</div>
+          </div>
+          <div class="ddddocr-card">
+            <div class="ddddocr-card-title">${t('sub.add')}</div>
+            <div class="ddddocr-row-label">${t('sub.url')}</div>
+            <input type="text" class="ddddocr-input" id="newSubUrl" placeholder="${t('sub.urlPlaceholder')}">
+            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('sub.name')}</div>
+            <input type="text" class="ddddocr-input" id="newSubName" placeholder="${t('sub.namePlaceholder')}">
+            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('sub.updateInterval')}</div>
+            <select class="ddddocr-select" id="newSubInterval">
+              <option value="0">${t('sub.intervalNever')}</option>
+              <option value="1">1</option>
+              <option value="6">6</option>
+              <option value="12">12</option>
+              <option value="24" selected>24</option>
+              <option value="72">72</option>
+              <option value="168">168</option>
+            </select>
+            <button class="ddddocr-btn ddddocr-btn-primary" id="addSubBtn" style="margin-top: 16px;">${t('sub.add')}</button>
+            <div class="ddddocr-hint">${t('sub.hint')}</div>
           </div>
         </div>
 
@@ -1100,6 +1150,105 @@ export class SettingsUI {
     `).join('');
   }
 
+  private renderSubscriptions(): string {
+    const subs = getSubscriptions();
+    if (!subs || subs.length === 0) {
+      return `<div class="ddddocr-empty">${t('sub.empty')}</div>`;
+    }
+    const formatTime = (ts: number) => ts ? new Date(ts).toLocaleString() : '-';
+    const statusText = (s: Subscription) => {
+      switch (s.lastStatus) {
+        case 'success': return `<span style="color: #10b981;">✓ ${t('sub.statusSuccess')}</span>`;
+        case 'error': return `<span style="color: #ef4444;" title="${escapeHtml(s.lastError || '')}">✗ ${t('sub.statusError')}</span>`;
+        case 'pending': return `<span style="color: #f59e0b;">⟳ ${t('sub.statusPending')}</span>`;
+        default: return `<span style="color: #94a3b8;">${t('sub.statusNever')}</span>`;
+      }
+    };
+    return subs.map((s) => {
+      const ruleCount = s.cachedPackage ? Object.keys(s.cachedPackage.siteRules || {}).length : 0;
+      const kwCount = s.cachedPackage ? (
+        (s.cachedPackage.includeKeywords?.length || 0) +
+        (s.cachedPackage.excludePatterns?.length || 0) +
+        (s.cachedPackage.agreementKeywords?.length || 0) +
+        (s.cachedPackage.inputExcludeKeywords?.length || 0)
+      ) : 0;
+      return `
+        <div class="ddddocr-site-rule-item" data-sub-id="${escapeHtml(s.id)}">
+          <div class="ddddocr-site-rule-info">
+            <div class="ddddocr-site-rule-key">${escapeHtml(s.name)}</div>
+            <div class="ddddocr-site-rule-selector">${escapeHtml(s.url)}</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">
+              <span>${statusText(s)}</span>
+              <span>${t('sub.lastUpdated')}: ${formatTime(s.lastUpdated)}</span>
+              ${s.cachedPackage ? `<span>${t('sub.rulesCount', ruleCount, kwCount)}</span>` : ''}
+            </div>
+          </div>
+          <div class="ddddocr-site-rule-actions">
+            <div class="ddddocr-switch ddddocr-switch-sm ${s.enabled ? 'on' : ''}" data-sub-toggle="${escapeHtml(s.id)}">
+              <div class="ddddocr-switch-knob"></div>
+            </div>
+            <button class="ddddocr-rule-edit btn-refresh-sub" data-sub-id="${escapeHtml(s.id)}">${t('sub.refresh')}</button>
+            <button class="ddddocr-rule-delete btn-delete-sub" data-sub-id="${escapeHtml(s.id)}">×</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  private refreshSubscriptionsList(): void {
+    const list = this.container?.querySelector('#subscriptionsList') as HTMLElement;
+    if (list) list.innerHTML = this.renderSubscriptions();
+    this.bindSubscriptionEvents();
+  }
+
+  private bindSubscriptionEvents(): void {
+    if (!this.container) return;
+
+    this.container.querySelectorAll('.btn-refresh-sub').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        const id = (e.currentTarget as HTMLElement).dataset.subId;
+        if (!id) return;
+        Dialog.show({ title: t('common.hint'), content: t('sub.refreshing'), icon: '' });
+        const result = await refreshSubscription(id);
+        const sub = getSubscriptions().find((s) => s.id === id);
+        if (result.success) {
+          Dialog.show({ title: t('common.success'), content: t('sub.refreshSuccess', sub?.name || id), icon: '' });
+        } else {
+          Dialog.show({ title: t('common.error'), content: t('sub.refreshFailed', sub?.name || id, result.error || ''), icon: '' });
+        }
+        this.refreshSubscriptionsList();
+        this.onConfigChange(getConfig());
+      });
+    });
+
+    this.container.querySelectorAll('.btn-delete-sub').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const id = (e.currentTarget as HTMLElement).dataset.subId;
+        if (!id) return;
+        const sub = getSubscriptions().find((s) => s.id === id);
+        Dialog.confirm({
+          title: t('sub.delete'),
+          content: t('sub.deleteConfirm', sub?.name || id),
+          onConfirm: () => {
+            deleteSubscription(id, true);
+            this.refreshSubscriptionsList();
+            this.onConfigChange(getConfig());
+          },
+        });
+      });
+    });
+
+    this.container.querySelectorAll('[data-sub-toggle]').forEach((sw) => {
+      sw.addEventListener('click', () => {
+        const id = (sw as HTMLElement).dataset.subToggle;
+        if (!id) return;
+        sw.classList.toggle('on');
+        const enabled = sw.classList.contains('on');
+        updateSubscriptionMeta(id, { enabled });
+      });
+    });
+  }
+
   private stopPropagation(e: Event): void {
     e.stopPropagation();
   }
@@ -1226,6 +1375,11 @@ export class SettingsUI {
     this.container.querySelector('#importRulesBtn')?.addEventListener('click', () => this.importSiteRules());
     this.bindSiteRuleEvents();
 
+    // 订阅
+    this.container.querySelector('#addSubBtn')?.addEventListener('click', () => this.handleAddSubscription());
+    this.container.querySelector('#refreshAllSubsBtn')?.addEventListener('click', () => this.handleRefreshAllSubs());
+    this.bindSubscriptionEvents();
+
     // 统计
     this.container.querySelector('#clearStatsBtn')?.addEventListener('click', () => this.clearStats());
 
@@ -1236,6 +1390,8 @@ export class SettingsUI {
     this.container.querySelector('#exportBtn')?.addEventListener('click', () => this.exportConfig());
     this.container.querySelector('#importBtn')?.addEventListener('click', () => this.importConfig());
     this.container.querySelector('#resetBtn')?.addEventListener('click', () => this.resetConfig());
+    this.container.querySelector('#ddddocr-diag-export')?.addEventListener('click', () => this.exportDiagnosticReport());
+    this.container.querySelector('#ddddocr-diag-clear')?.addEventListener('click', () => this.clearDiagnosticLogs());
   }
 
   private bindModelEvents(): void {
@@ -1467,6 +1623,63 @@ export class SettingsUI {
     this.bindSiteRuleEvents();
   }
 
+  private async handleAddSubscription(): Promise<void> {
+    const urlInput = this.container?.querySelector('#newSubUrl') as HTMLInputElement;
+    const nameInput = this.container?.querySelector('#newSubName') as HTMLInputElement;
+    const intervalSelect = this.container?.querySelector('#newSubInterval') as HTMLSelectElement;
+    const url = urlInput?.value.trim();
+    const name = nameInput?.value.trim();
+    const interval = parseInt(intervalSelect?.value || '24', 10);
+
+    if (!url) {
+      Dialog.show({ title: t('common.hint'), content: t('sub.url'), icon: '' });
+      return;
+    }
+
+    try {
+      const sub = addSubscription({ url, name: name || undefined, updateInterval: interval });
+      urlInput.value = '';
+      nameInput.value = '';
+      this.refreshSubscriptionsList();
+
+      // 立即拉取一次
+      Dialog.show({ title: t('common.hint'), content: t('sub.refreshing'), icon: '' });
+      const result = await refreshSubscription(sub.id);
+      if (result.success) {
+        Dialog.show({ title: t('common.success'), content: t('sub.refreshSuccess', result.pkg?.name || sub.name), icon: '' });
+      } else {
+        Dialog.show({ title: t('common.error'), content: t('sub.refreshFailed', sub.name, result.error || ''), icon: '' });
+      }
+      this.refreshSubscriptionsList();
+      this.onConfigChange(getConfig());
+    } catch (e) {
+      Dialog.show({ title: t('common.error'), content: (e as Error).message || String(e), icon: '' });
+    }
+  }
+
+  private async handleRefreshAllSubs(): Promise<void> {
+    const subs = getSubscriptions();
+    if (subs.length === 0) {
+      Dialog.show({ title: t('common.hint'), content: t('sub.empty'), icon: '' });
+      return;
+    }
+    Dialog.show({ title: t('common.hint'), content: t('sub.refreshing'), icon: '' });
+    let success = 0, fail = 0;
+    for (const sub of subs) {
+      if (!sub.enabled) continue;
+      const result = await refreshSubscription(sub.id);
+      if (result.success) success++;
+      else fail++;
+    }
+    this.refreshSubscriptionsList();
+    this.onConfigChange(getConfig());
+    Dialog.show({
+      title: t('common.success'),
+      content: `${t('sub.refreshSuccess', '')}: ${success} / ${success + fail}`,
+      icon: '',
+    });
+  }
+
   private exportSiteRules(): void {
     const rules = getSiteRules();
     const exportData = Object.entries(rules).map(([key, rule]) => ({
@@ -1523,6 +1736,52 @@ export class SettingsUI {
   private exportConfig(): void {
     const config = getConfig();
     this.downloadJson(config, 'ddddocr-config.json');
+  }
+
+  private setDiagStatus(text: string, isError = false): void {
+    const el = this.container?.querySelector('#ddddocr-diag-status') as HTMLElement | null;
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = isError ? '#dc2626' : '';
+  }
+
+  private async exportDiagnosticReport(): Promise<void> {
+    const config = getConfig();
+    this.setDiagStatus(t('diag.exporting'));
+    try {
+      const report = await buildReport(
+        { includeLogs: true, includeEnv: true, includeSettings: true, includeStats: true },
+        {
+          appName: 'Mieru-OCR Userscript',
+          appVersion: (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '0.0.0',
+          target: 'userscript',
+          getSettings: async () => config,
+          getStats: async () => statsManager.getStats(),
+        },
+      );
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `ddddocr-diag-${stamp}.json`;
+      downloadReport(report, filename);
+      const count = report.logs?.length ?? 0;
+      this.setDiagStatus(t('diag.exported', filename, String(count)));
+    } catch (e) {
+      this.setDiagStatus(t('diag.exportFailed', (e as Error).message), true);
+    }
+  }
+
+  private clearDiagnosticLogs(): void {
+    Dialog.confirm({
+      title: t('diag.clear'),
+      content: t('diag.clear'),
+      onConfirm: async () => {
+        try {
+          await clearLogs();
+          this.setDiagStatus(t('diag.cleared', '6'));
+        } catch (e) {
+          this.setDiagStatus(t('diag.clearFailed', (e as Error).message), true);
+        }
+      },
+    });
   }
 
   private importConfig(): void {

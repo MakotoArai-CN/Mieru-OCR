@@ -1,6 +1,9 @@
 import type { ExtensionSettings, SiteRule } from '@core/types';
+import { autoUpdateSubscriptions } from '../subscription-manager';
 
 const OFFSCREEN_URL = 'offscreen.html';
+const SUBSCRIPTION_ALARM_NAME = 'ddddocr-subscription-update';
+const CONTEXT_MENU_ID = 'ddddocr-recognize-image';
 
 type OcrEngineStatus = 'ready' | 'initializing' | 'fault';
 
@@ -32,6 +35,7 @@ async function ensureOffscreenDocument(): Promise<void> {
 
   if (offscreenCreating) {
     await offscreenCreating;
+    await waitForOffscreenReady();
     return;
   }
 
@@ -42,6 +46,7 @@ async function ensureOffscreenDocument(): Promise<void> {
         contextTypes: ['OFFSCREEN_DOCUMENT'],
       });
       if (Array.isArray(existing) && existing.length > 0) {
+        await waitForOffscreenReady();
         return;
       }
     } catch (e) {
@@ -61,12 +66,165 @@ async function ensureOffscreenDocument(): Promise<void> {
   } finally {
     offscreenCreating = null;
   }
+
+  await waitForOffscreenReady();
+}
+
+/**
+ * Poll the offscreen document with a ping until it responds. createDocument()
+ * resolves once the page exists, but the page's scripts may not yet have
+ * registered their message listener — sending immediately would hit
+ * "Receiving end does not exist". This bridges that gap.
+ */
+async function waitForOffscreenReady(timeoutMs = 8000): Promise<void> {
+  const start = Date.now();
+  let attempt = 0;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: 'offscreen:ping' });
+      if (resp && resp.ready) return;
+    } catch {
+      // listener not registered yet; back off and retry
+    }
+    attempt++;
+    const delay = Math.min(50 * attempt, 250);
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  throw new Error('Offscreen document 未在超时时间内就绪');
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('[Service Worker] 扩展安装/更新:', details.reason);
   if (details.reason === 'install') {
     chrome.runtime.openOptionsPage();
+  }
+  // 注册订阅自动更新闹钟（每 30 分钟检查一次到期订阅）
+  try {
+    await chrome.alarms.create(SUBSCRIPTION_ALARM_NAME, {
+      periodInMinutes: 30,
+      delayInMinutes: 1,
+    });
+  } catch (e) {
+    console.warn('[Service Worker] 注册订阅闹钟失败:', e);
+  }
+  // Sync the right-click menu state with current settings.
+  await syncImageContextMenu();
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  // service worker 启动时也确保闹钟存在
+  try {
+    const existing = await chrome.alarms.get(SUBSCRIPTION_ALARM_NAME);
+    if (!existing) {
+      await chrome.alarms.create(SUBSCRIPTION_ALARM_NAME, {
+        periodInMinutes: 30,
+        delayInMinutes: 1,
+      });
+    }
+  } catch (e) {
+    console.warn('[Service Worker] 检查订阅闹钟失败:', e);
+  }
+  await syncImageContextMenu();
+});
+
+/**
+ * Add or remove the "Recognize image with Mieru-OCR" context menu based on
+ * the user's current setting. Image-only via contexts: ['image']. Idempotent.
+ */
+async function syncImageContextMenu(): Promise<void> {
+  const ctxApi = (chrome as any).contextMenus;
+  if (!ctxApi) {
+    console.warn('[Service Worker] chrome.contextMenus 不可用，请检查 manifest 权限');
+    return;
+  }
+  let enabled = false;
+  try {
+    const r = await chrome.storage.local.get('settings');
+    enabled = !!r.settings?.imageContextMenuEnabled;
+  } catch (e) {
+    console.warn('[Service Worker] 读取右键菜单设置失败:', e);
+  }
+
+  await new Promise<void>((resolve) => {
+    try {
+      ctxApi.removeAll(() => {
+        if (chrome.runtime.lastError) {
+          console.warn('[Service Worker] removeAll lastError:', chrome.runtime.lastError.message);
+        }
+        resolve();
+      });
+    } catch (e) {
+      console.warn('[Service Worker] removeAll 异常:', e);
+      resolve();
+    }
+  });
+
+  console.log(`[Service Worker] 右键菜单同步: enabled=${enabled}`);
+  if (!enabled) return;
+
+  ctxApi.create(
+    {
+      id: CONTEXT_MENU_ID,
+      title: '用 Mieru-OCR 识别此图片',
+      contexts: ['image'],
+    },
+    () => {
+      // chrome.contextMenus.create errors via lastError, NOT throw — must check
+      // this callback or failures are silent.
+      if (chrome.runtime.lastError) {
+        console.warn('[Service Worker] 创建右键菜单失败:', chrome.runtime.lastError.message);
+      } else {
+        console.log('[Service Worker] 右键菜单已注册:', CONTEXT_MENU_ID);
+      }
+    },
+  );
+}
+
+// Top-level listener registration — required for MV3 to wake the SW on click.
+// Wrapping in `if` is fine; Chrome inspects whether addListener is called
+// during initial script execution, not the surrounding control flow.
+if ((chrome as any).contextMenus?.onClicked) {
+  (chrome as any).contextMenus.onClicked.addListener(async (info: any, tab: any) => {
+    console.log('[Service Worker] 右键菜单点击:', info.menuItemId, 'srcUrl=', info.srcUrl);
+    if (info.menuItemId !== CONTEXT_MENU_ID) return;
+    if (!info.srcUrl || !tab?.id) {
+      console.warn('[Service Worker] 右键点击缺少 srcUrl 或 tab.id');
+      return;
+    }
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        action: 'recognizeImageBySrc',
+        srcUrl: info.srcUrl,
+      });
+    } catch (e) {
+      console.warn('[Service Worker] 发送右键识别消息失败:', e);
+    }
+  });
+}
+
+// 监听 storage 变化自动同步菜单 —— storage.onChanged 在 storage.set 完成后才触发，
+// 不会像顶层 fire-and-forget 那样读到旧数据，从而避免与 saveSettings 处理器的竞态。
+// onInstalled / onStartup 处理首次注册和浏览器启动；Chrome 本身会持久化 contextMenus
+// 跨 SW 休眠，所以不需要在每次 SW 唤醒时无条件同步。
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  if (!changes.settings) return;
+  const oldVal = changes.settings.oldValue?.imageContextMenuEnabled;
+  const newVal = changes.settings.newValue?.imageContextMenuEnabled;
+  if (oldVal === newVal) return;
+  console.log('[Service Worker] 检测到右键菜单设置变化:', oldVal, '->', newVal);
+  syncImageContextMenu().catch((e) => console.warn('[Service Worker] storage.onChanged 同步失败:', e));
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== SUBSCRIPTION_ALARM_NAME) return;
+  try {
+    const result = await autoUpdateSubscriptions();
+    if (result.updated > 0 || result.failed > 0) {
+      console.log(`[Service Worker] 订阅自动更新: 成功 ${result.updated}, 失败 ${result.failed}`);
+    }
+  } catch (e) {
+    console.warn('[Service Worker] 订阅自动更新出错:', e);
   }
 });
 
@@ -143,6 +301,15 @@ async function handleMessage(
       case 'clearStats':
         await handleClearStats(sendResponse);
         break;
+      case 'smokeTestModel':
+        await handleSmokeTestModel(message, sendResponse);
+        break;
+      case 'invalidateModel':
+        await handleInvalidateModel(message, sendResponse);
+        break;
+      case 'getActiveModelId':
+        await handleGetActiveModelId(sendResponse);
+        break;
       default:
         sendResponse({ success: false, error: '未知操作: ' + message.action });
     }
@@ -212,6 +379,8 @@ async function handleSaveSettings(
   sendResponse: (response: any) => void
 ): Promise<void> {
   await chrome.storage.local.set({ settings: message.settings });
+
+  // 注意：菜单同步交给 chrome.storage.onChanged 监听器统一处理，避免双调用产生竞态。
 
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
@@ -376,6 +545,52 @@ async function handleClearStats(sendResponse: (response: any) => void): Promise<
   sendResponse({ success: true });
 }
 
+async function handleSmokeTestModel(message: any, sendResponse: (response: any) => void): Promise<void> {
+  try {
+    await ensureOffscreenDocument();
+    const resp = await chrome.runtime.sendMessage({
+      action: 'offscreen:smoke-test',
+      modelId: message.modelId,
+    });
+    sendResponse(resp || { success: false, error: 'no response' });
+  } catch (e) {
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
+async function handleInvalidateModel(message: any, sendResponse: (response: any) => void): Promise<void> {
+  try {
+    // Try to notify offscreen if it exists; if not, just succeed
+    const offscreenApi = (chrome as any).offscreen;
+    const getContexts = (chrome.runtime as any).getContexts;
+    if (offscreenApi && typeof getContexts === 'function') {
+      const existing = await getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+      if (Array.isArray(existing) && existing.length > 0) {
+        await chrome.runtime.sendMessage({
+          action: 'offscreen:invalidate-model',
+          modelId: message.modelId,
+        });
+      }
+    }
+    sendResponse({ success: true });
+  } catch (e) {
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
+/**
+ * Resolve the user's selected model id. Called by the offscreen document,
+ * which has chrome.runtime but no chrome.storage access.
+ */
+async function handleGetActiveModelId(sendResponse: (response: any) => void): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get('activeModelId');
+    sendResponse({ success: true, modelId: result.activeModelId || '__builtin__' });
+  } catch (e) {
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
 function getDefaultSettings(): ExtensionSettings {
   return {
     autoDetect: true,
@@ -421,6 +636,9 @@ function getDefaultSettings(): ExtensionSettings {
     enableSingleSliderAssist: true,
     enableClickSelectAssist: false,
     siteBlacklist: [],
+    imageContextMenuEnabled: false,
+    imageContextMenuAutoFill: true,
+    preserveFocus: false,
   };
 }
 

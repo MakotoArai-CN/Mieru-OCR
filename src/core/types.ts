@@ -130,6 +130,14 @@ export interface OCRConfig {
   autoSubmit: boolean;
   autoSolveOnRule: boolean;
   siteBlacklist: string[];
+  /** Show "用 Mieru-OCR 识别图片" item in the browser's right-click menu on images. Default off. Extension only. */
+  imageContextMenuEnabled: boolean;
+  /** When the right-click result is recognized, also try to fill a related input. Default on. Always copies to clipboard regardless. */
+  imageContextMenuAutoFill: boolean;
+  /** Preserve the user's current focus when auto-filling the captcha input. Default off (steal focus, more visible).
+   *  Set to true on sites whose anti-bot detection flags sudden focus jumps as automation.
+   */
+  preserveFocus: boolean;
 }
 
 export interface ExtensionSettings extends OCRConfig {

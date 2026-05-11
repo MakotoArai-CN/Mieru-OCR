@@ -3,6 +3,27 @@ declare const browser: any;
 import { CONSTANTS, DEFAULT_EXTENSION_SETTINGS } from '@core/config';
 import { initLocale, setLocale, t, translatePage } from '@core/i18n';
 import type { Locale } from '@core/i18n';
+import {
+  getSubscriptions,
+  addSubscription,
+  deleteSubscription,
+  refreshSubscription,
+  updateSubscriptionMeta,
+} from '../subscription-manager';
+import type { Subscription } from '@core/subscription';
+import {
+  BUILTIN_MODEL_ID,
+  getActiveModelId,
+  setActiveModelId,
+  listModels,
+  saveModel,
+  deleteModel,
+  validateModelFiles,
+  truncateName,
+  type ModelMeta,
+} from '../model-store';
+import { showConfirm } from '../ui/modal';
+import { buildReport, downloadReport, clearLogs } from '@core/diagnostics';
 
 interface CalculateRule {
   pattern: string;
@@ -86,6 +107,8 @@ async function init(): Promise<void> {
   translatePage();
   await loadRules();
   await loadStats();
+  await loadSubscriptions();
+  await loadModelsSection();
   displayVersion();
 }
 
@@ -96,6 +119,9 @@ function cacheElements(): void {
   elements.autoFill = document.getElementById('autoFill');
   elements.typewriterEffect = document.getElementById('typewriterEffect');
   elements.autoSolveOnRule = document.getElementById('autoSolveOnRule');
+  elements.imageContextMenuEnabled = document.getElementById('imageContextMenuEnabled');
+  elements.imageContextMenuAutoFill = document.getElementById('imageContextMenuAutoFill');
+  elements.preserveFocus = document.getElementById('preserveFocus');
   elements.autoSubmit = document.getElementById('autoSubmit');
   elements.autoCheckAgreement = document.getElementById('autoCheckAgreement');
   elements.captchaSelector = document.getElementById('captchaSelector');
@@ -140,6 +166,11 @@ function bindEvents(): void {
   document.getElementById('btn-export-rules')?.addEventListener('click', () => { void exportRules(); });
   document.getElementById('btn-import-rules')?.addEventListener('click', () => triggerImport('rules'));
   document.getElementById('btn-add-bulk-rules')?.addEventListener('click', () => { void addBulkRules(); });
+  document.getElementById('btn-add-sub')?.addEventListener('click', () => { void handleAddSubscription(); });
+  document.getElementById('btn-refresh-all-subs')?.addEventListener('click', () => { void handleRefreshAllSubs(); });
+  document.getElementById('btn-upload-model')?.addEventListener('click', () => { void handleUploadModel(); });
+  bindFilePickerDisplay('new-model-file', 'new-model-file-name');
+  bindFilePickerDisplay('new-charsets-file', 'new-charsets-file-name');
   document.getElementById('btn-export-config')?.addEventListener('click', () => { void exportConfig(); });
   document.getElementById('btn-import-config')?.addEventListener('click', () => triggerImport('config'));
   document.getElementById('btn-reset-all')?.addEventListener('click', () => { void resetAll(); });
@@ -148,6 +179,8 @@ function bindEvents(): void {
   document.getElementById('btn-clear-stats')?.addEventListener('click', () => { void clearStats(); });
   document.getElementById('btn-save-edit-rule')?.addEventListener('click', () => { void saveEditRule(); });
   document.getElementById('btn-cancel-edit-rule')?.addEventListener('click', cancelEditRule);
+  document.getElementById('btn-diag-export')?.addEventListener('click', () => { void exportDiagnosticReport(); });
+  document.getElementById('btn-diag-clear')?.addEventListener('click', () => { void clearDiagnosticLogs(); });
 
   (elements.fileImport as HTMLInputElement | null)?.addEventListener('change', (event) => { void handleFileImport(event); });
 
@@ -258,6 +291,8 @@ function bindLanguageSwitcher(): void {
       await refreshAllChipLists();
       await loadRules();
       await loadStats();
+      await loadSubscriptions();
+      await loadModelsSection();
       const s = await getSettings();
       renderAgreementSelectors(s.agreementSelectors || []);
       renderCalculateRules(s.calculateRules || []);
@@ -449,6 +484,9 @@ async function loadSettings(): Promise<void> {
   (elements.autoFill as HTMLInputElement).checked = settings.autoFill !== false;
   (elements.typewriterEffect as HTMLInputElement).checked = settings.typewriterEffect !== false;
   (elements.autoSolveOnRule as HTMLInputElement).checked = Boolean(settings.autoSolveOnRule);
+  (elements.imageContextMenuEnabled as HTMLInputElement).checked = Boolean(settings.imageContextMenuEnabled);
+  (elements.imageContextMenuAutoFill as HTMLInputElement).checked = settings.imageContextMenuAutoFill !== false;
+  (elements.preserveFocus as HTMLInputElement).checked = Boolean(settings.preserveFocus);
   (elements.autoSubmit as HTMLInputElement).checked = Boolean(settings.autoSubmit);
   (elements.autoCheckAgreement as HTMLInputElement).checked = settings.autoCheckAgreement !== false;
   (elements.captchaSelector as HTMLInputElement).value = settings.captchaSelector || '';
@@ -609,6 +647,9 @@ async function saveGeneralSettings(): Promise<void> {
   settings.autoFill = (elements.autoFill as HTMLInputElement).checked;
   settings.typewriterEffect = (elements.typewriterEffect as HTMLInputElement).checked;
   settings.autoSolveOnRule = (elements.autoSolveOnRule as HTMLInputElement).checked;
+  settings.imageContextMenuEnabled = (elements.imageContextMenuEnabled as HTMLInputElement).checked;
+  settings.imageContextMenuAutoFill = (elements.imageContextMenuAutoFill as HTMLInputElement).checked;
+  settings.preserveFocus = (elements.preserveFocus as HTMLInputElement).checked;
   settings.autoSubmit = (elements.autoSubmit as HTMLInputElement).checked;
   settings.autoCheckAgreement = (elements.autoCheckAgreement as HTMLInputElement).checked;
   settings.captchaSelector = (elements.captchaSelector as HTMLInputElement).value.trim();
@@ -826,6 +867,88 @@ async function exportConfig(): Promise<void> {
   }
 }
 
+// ============================================================
+// 诊断报告
+// ============================================================
+
+function setDiagStatus(text: string, isError = false): void {
+  const el = document.getElementById('diag-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--danger, #dc2626)' : '';
+}
+
+async function exportDiagnosticReport(): Promise<void> {
+  let settings: any = null;
+  try {
+    const r = await browser.runtime.sendMessage({ action: 'getSettings' });
+    settings = r?.success ? r.settings : null;
+  } catch { /* fall back to defaults */ }
+
+  const includeLogs = (document.getElementById('diag-include-logs') as HTMLInputElement)?.checked ?? true;
+  const includeEnv = (document.getElementById('diag-include-env') as HTMLInputElement)?.checked ?? true;
+  const includeSettings = (document.getElementById('diag-include-settings') as HTMLInputElement)?.checked ?? true;
+  const includeStats = (document.getElementById('diag-include-stats') as HTMLInputElement)?.checked ?? true;
+
+  setDiagStatus(t('diag.exporting'));
+  try {
+    const manifest = browser.runtime.getManifest();
+    const report = await buildReport(
+      { includeLogs, includeEnv, includeSettings, includeStats },
+      {
+        appName: manifest.name || 'Mieru-OCR Extension',
+        appVersion: manifest.version || '0.0.0',
+        target: 'firefox-extension',
+        getSettings: async () => settings ?? DEFAULT_EXTENSION_SETTINGS,
+        getActiveModel: async () => {
+          try {
+            const id = await getActiveModelId();
+            if (!id) return null;
+            const all = await listModels();
+            const m = all.find((x) => x.id === id);
+            return m ? { id: m.id, size: m.size, charsetsLength: m.charsetsLength, source: m.source } : { id };
+          } catch { return null; }
+        },
+        getStats: async () => {
+          try {
+            const r = await browser.runtime.sendMessage({ action: 'getStats' });
+            return r?.success ? r.stats : null;
+          } catch { return null; }
+        },
+      },
+    );
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `ddddocr-diag-${stamp}.json`;
+    downloadReport(report, filename);
+    const count = report.logs?.length ?? 0;
+    setDiagStatus(t('diag.exported', filename, String(count)));
+    showToast(t('diag.exported', filename, String(count)), 'success');
+  } catch (e) {
+    const msg = (e as Error).message;
+    setDiagStatus(t('diag.exportFailed', msg), true);
+    showToast(t('diag.exportFailed', msg), 'error');
+  }
+}
+
+async function clearDiagnosticLogs(): Promise<void> {
+  const ok = await showConfirm({
+    title: t('diag.clear'),
+    message: t('diag.clear'),
+    confirmText: t('diag.clear'),
+    cancelText: t('common.cancel'),
+  });
+  if (!ok) return;
+  try {
+    await clearLogs();
+    setDiagStatus(t('diag.cleared', '6'));
+    showToast(t('diag.cleared', '6'), 'success');
+  } catch (e) {
+    const msg = (e as Error).message;
+    setDiagStatus(t('diag.clearFailed', msg), true);
+    showToast(t('diag.clearFailed', msg), 'error');
+  }
+}
+
 function downloadJson(data: any, filename: string): void {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -973,6 +1096,335 @@ async function resetAll(): Promise<void> {
   } catch {
     showToast(t('config.resetFailed'), 'error');
   }
+}
+
+// ============================================================
+// 订阅规则
+// ============================================================
+
+async function loadSubscriptions(): Promise<void> {
+  const list = document.getElementById('subscriptions-list');
+  if (!list) return;
+  const subs = await getSubscriptions();
+  if (!subs.length) {
+    list.innerHTML = `<div class="empty-state"><p>${t('sub.empty')}</p></div>`;
+    return;
+  }
+  const formatTime = (ts: number) => ts ? new Date(ts).toLocaleString() : '-';
+  const statusBadge = (s: Subscription) => {
+    switch (s.lastStatus) {
+      case 'success': return `<span class="rule-badge" style="background: rgba(16,185,129,0.15); color: #10b981;">✓ ${t('sub.statusSuccess')}</span>`;
+      case 'error': return `<span class="rule-badge" style="background: rgba(239,68,68,0.15); color: #ef4444;" title="${escapeAttr(s.lastError || '')}">✗ ${t('sub.statusError')}</span>`;
+      case 'pending': return `<span class="rule-badge" style="background: rgba(245,158,11,0.15); color: #f59e0b;">⟳ ${t('sub.statusPending')}</span>`;
+      default: return `<span class="rule-badge">${t('sub.statusNever')}</span>`;
+    }
+  };
+  list.innerHTML = subs.map((s) => {
+    const ruleCount = s.cachedPackage ? Object.keys(s.cachedPackage.siteRules || {}).length : 0;
+    const kwCount = s.cachedPackage ? (
+      (s.cachedPackage.includeKeywords?.length || 0) +
+      (s.cachedPackage.excludePatterns?.length || 0) +
+      (s.cachedPackage.agreementKeywords?.length || 0) +
+      (s.cachedPackage.inputExcludeKeywords?.length || 0)
+    ) : 0;
+    return `
+      <div class="rule-item" data-sub-id="${escapeAttr(s.id)}">
+        <div class="rule-info">
+          <div class="rule-hostname">${escapeHtml(s.name)}</div>
+          <div class="rule-selector">${escapeHtml(s.url)}</div>
+          <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--text-muted);">
+            ${statusBadge(s)}
+            <span>${t('sub.lastUpdated')}: ${formatTime(s.lastUpdated)}</span>
+            ${s.cachedPackage ? `<span>${t('sub.rulesCount', ruleCount, kwCount)}</span>` : ''}
+          </div>
+        </div>
+        <div class="rule-actions">
+          <label class="switch" style="margin-right: 8px;">
+            <input type="checkbox" class="sub-toggle" data-sub-id="${escapeAttr(s.id)}" ${s.enabled ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+          <button class="btn btn-sm btn-secondary btn-refresh-sub" data-sub-id="${escapeAttr(s.id)}">${t('sub.refresh')}</button>
+          <button class="btn btn-sm btn-danger btn-delete-sub" data-sub-id="${escapeAttr(s.id)}">${t('sub.delete')}</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('.btn-refresh-sub').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.subId;
+      if (!id) return;
+      showToast(t('sub.refreshing'), 'success');
+      const result = await refreshSubscription(id);
+      const subs2 = await getSubscriptions();
+      const sub = subs2.find((s) => s.id === id);
+      if (result.success) {
+        showToast(t('sub.refreshSuccess', sub?.name || id), 'success');
+      } else {
+        showToast(t('sub.refreshFailed', sub?.name || id, result.error || ''), 'error');
+      }
+      await loadSubscriptions();
+      await loadRules();
+      await refreshAllChipLists();
+      await loadSettings();
+    });
+  });
+
+  list.querySelectorAll('.btn-delete-sub').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.subId;
+      if (!id) return;
+      const subs2 = await getSubscriptions();
+      const sub = subs2.find((s) => s.id === id);
+      if (!confirm(t('sub.deleteConfirm', sub?.name || id))) return;
+      await deleteSubscription(id, true);
+      await loadSubscriptions();
+      await loadRules();
+      await refreshAllChipLists();
+      await loadSettings();
+      showToast(t('sub.delete'), 'success');
+    });
+  });
+
+  list.querySelectorAll<HTMLInputElement>('.sub-toggle').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      const id = cb.dataset.subId;
+      if (!id) return;
+      await updateSubscriptionMeta(id, { enabled: cb.checked });
+    });
+  });
+}
+
+async function handleAddSubscription(): Promise<void> {
+  const urlInput = document.getElementById('new-sub-url') as HTMLInputElement | null;
+  const nameInput = document.getElementById('new-sub-name') as HTMLInputElement | null;
+  const intervalSelect = document.getElementById('new-sub-interval') as HTMLSelectElement | null;
+  const url = urlInput?.value.trim() || '';
+  const name = nameInput?.value.trim() || '';
+  const interval = parseInt(intervalSelect?.value || '24', 10);
+
+  if (!url) {
+    showToast(t('sub.invalidUrl'), 'error');
+    return;
+  }
+
+  try {
+    const sub = await addSubscription({ url, name: name || undefined, updateInterval: interval });
+    if (urlInput) urlInput.value = '';
+    if (nameInput) nameInput.value = '';
+    showToast(t('sub.added'), 'success');
+    await loadSubscriptions();
+
+    const result = await refreshSubscription(sub.id);
+    if (result.success) {
+      showToast(t('sub.refreshSuccess', result.pkg?.name || sub.name), 'success');
+    } else {
+      showToast(t('sub.refreshFailed', sub.name, result.error || ''), 'error');
+    }
+    await loadSubscriptions();
+    await loadRules();
+    await refreshAllChipLists();
+    await loadSettings();
+  } catch (e) {
+    showToast((e as Error).message || String(e), 'error');
+  }
+}
+
+async function handleRefreshAllSubs(): Promise<void> {
+  const subs = await getSubscriptions();
+  if (!subs.length) {
+    showToast(t('sub.empty'), 'error');
+    return;
+  }
+  showToast(t('sub.refreshing'), 'success');
+  let success = 0, fail = 0;
+  for (const sub of subs) {
+    if (!sub.enabled) continue;
+    const result = await refreshSubscription(sub.id);
+    if (result.success) success++; else fail++;
+  }
+  await loadSubscriptions();
+  await loadRules();
+  await refreshAllChipLists();
+  await loadSettings();
+  showToast(`${success} / ${success + fail}`, fail === 0 ? 'success' : 'error');
+}
+
+function escapeAttr(text: string): string {
+  return String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================
+// 模型管理
+// ============================================================
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+async function loadModelsSection(): Promise<void> {
+  const list = document.getElementById('models-list');
+  if (!list) return;
+  const usageEl = document.getElementById('storage-usage');
+  const allModels = await listModels();
+  const activeId = await getActiveModelId();
+
+  const formatTime = (ts: number) => ts ? new Date(ts).toLocaleString() : '-';
+
+  list.innerHTML = allModels.map((m) => {
+    const isActive = activeId === m.id;
+    const isBuiltin = m.source === 'builtin';
+    const display = truncateName(m.name, 40);
+    const sizeLine = m.size > 0
+      ? `<span>${t('model.fileSize')}: ${formatBytes(m.size)}</span>`
+      : '';
+    const charsetsLine = m.charsetsLength > 0
+      ? `<span>${t('model.charsetsCount')}: ${m.charsetsLength}</span>`
+      : '';
+    const uploadedLine = m.uploadedAt > 0
+      ? `<span>${t('model.uploaded')}: ${formatTime(m.uploadedAt)}</span>`
+      : '';
+    const builtinBadge = isBuiltin
+      ? `<span style="display: inline-block; font-size: 11px; padding: 2px 6px; background: rgba(74,144,226,0.15); color: var(--primary); border-radius: 4px; margin-right: 6px;">BUILTIN</span>`
+      : '';
+    const activateOrUsed = isActive
+      ? `<span style="font-size: 12px; color: #10b981; padding: 4px 10px;">${t('model.usedNow')}</span>`
+      : `<button class="btn btn-sm btn-secondary btn-activate-model" data-model-id="${escapeAttr(m.id)}">${t('model.useThis')}</button>`;
+    const deleteBtn = isBuiltin
+      ? ''
+      : `<button class="btn btn-sm btn-danger btn-delete-model" data-model-id="${escapeAttr(m.id)}">${t('model.deleteBtn')}</button>`;
+    return `
+      <div class="rule-item" data-model-id="${escapeAttr(m.id)}">
+        <div class="rule-info">
+          <div class="rule-hostname" title="${escapeAttr(m.name)}">${builtinBadge}${escapeHtml(display)}</div>
+          ${m.description ? `<div class="rule-selector">${escapeHtml(m.description)}</div>` : ''}
+          <div style="margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-muted);">
+            ${sizeLine}${charsetsLine}${uploadedLine}
+          </div>
+        </div>
+        <div class="rule-actions">
+          ${activateOrUsed}
+          ${deleteBtn}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('.btn-activate-model').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.modelId;
+      if (!id) return;
+      await setActiveModelId(id);
+      const customs2 = await listModels();
+      const target = customs2.find((m) => m.id === id);
+      const name = id === BUILTIN_MODEL_ID ? t('model.builtinName') : (target?.name || id);
+      showToast(t('model.activated', name), 'success');
+      await loadModelsSection();
+    });
+  });
+
+  list.querySelectorAll('.btn-delete-model').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.modelId;
+      if (!id) return;
+      const customs2 = await listModels();
+      const target = customs2.find((m) => m.id === id);
+      if (!target) return;
+      if (!confirm(t('model.deleteConfirm', target.name))) return;
+      await deleteModel(id);
+      showToast(t('model.deleted'), 'success');
+      await loadModelsSection();
+    });
+  });
+
+  if (usageEl) {
+    const customModels = allModels.filter((m) => m.source !== 'builtin');
+    const totalBytes = customModels.reduce((sum, m) => sum + (m.size || 0), 0);
+    const builtinCount = allModels.length - customModels.length;
+    usageEl.textContent = t(
+      'model.storageUsage',
+      formatBytes(totalBytes),
+      String(customModels.length),
+      String(builtinCount),
+    );
+  }
+}
+
+async function handleUploadModel(): Promise<void> {
+  const nameInput = document.getElementById('new-model-name') as HTMLInputElement | null;
+  const descInput = document.getElementById('new-model-description') as HTMLInputElement | null;
+  const modelFileInput = document.getElementById('new-model-file') as HTMLInputElement | null;
+  const charsetsFileInput = document.getElementById('new-charsets-file') as HTMLInputElement | null;
+
+  const name = nameInput?.value.trim() || '';
+  const description = descInput?.value.trim() || '';
+  const modelFile = modelFileInput?.files?.[0];
+  const charsetsFile = charsetsFileInput?.files?.[0];
+
+  if (!name) {
+    showToast(t('model.nameRequired'), 'error');
+    return;
+  }
+  if (!modelFile || !charsetsFile) {
+    showToast(t('model.fillBoth'), 'error');
+    return;
+  }
+
+  const validation = await validateModelFiles(modelFile, charsetsFile);
+  if (!validation.ok) {
+    showToast(t('model.uploadFailed', validation.error || ''), 'error');
+    return;
+  }
+
+  let savedMeta: ModelMeta;
+  try {
+    savedMeta = await saveModel({
+      name,
+      description: description || undefined,
+      modelBuffer: validation.modelBuffer!,
+      charsets: validation.charsets!,
+    });
+  } catch (e) {
+    showToast(t('model.uploadFailed', (e as Error).message), 'error');
+    return;
+  }
+
+  if (nameInput) nameInput.value = '';
+  if (descInput) descInput.value = '';
+  if (modelFileInput) modelFileInput.value = '';
+  if (charsetsFileInput) charsetsFileInput.value = '';
+  resetFilePickerDisplay('new-model-file-name');
+  resetFilePickerDisplay('new-charsets-file-name');
+
+  showToast(t('model.uploadSuccess', savedMeta.name), 'success');
+  await loadModelsSection();
+}
+
+function bindFilePickerDisplay(inputId: string, displayId: string): void {
+  const input = document.getElementById(inputId) as HTMLInputElement | null;
+  const display = document.getElementById(displayId);
+  if (!input || !display) return;
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (file) {
+      display.textContent = file.name;
+      display.classList.add('has-file');
+      display.removeAttribute('data-i18n');
+    } else {
+      resetFilePickerDisplay(displayId);
+    }
+  });
+}
+
+function resetFilePickerDisplay(displayId: string): void {
+  const display = document.getElementById(displayId);
+  if (!display) return;
+  display.textContent = t('common.noFileChosen');
+  display.classList.remove('has-file');
+  display.setAttribute('data-i18n', 'common.noFileChosen');
 }
 
 function showToast(message: string, type: 'success' | 'error'): void {

@@ -1,7 +1,24 @@
-import { defineConfig } from 'vite';
+import { defineConfig, createLogger } from 'vite';
 import { resolve } from 'path';
 import { copyFileSync, mkdirSync, existsSync, readdirSync, rmSync, statSync, readFileSync, writeFileSync } from 'fs';
 import AdmZip from 'adm-zip';
+
+/**
+ * ort.min.js is a UMD bundle (sets `window.ort`); it must be a classic
+ * <script>, not a module. Vite warns we can't bundle it — that's fine, our
+ * copyPublicAssets plugin copies it verbatim. Filter the noise.
+ */
+function makeQuietLogger() {
+  const logger = createLogger();
+  const origWarn = logger.warn.bind(logger);
+  logger.warn = (msg: string, opts?: any) => {
+    if (typeof msg === 'string' && msg.includes('ort.min.js') && msg.includes("can't be bundled")) {
+      return; // expected, copied at build time
+    }
+    origWarn(msg, opts);
+  };
+  return logger;
+}
 
 function readVersion(): string {
   const versionPath = resolve(__dirname, 'version');
@@ -85,6 +102,21 @@ function copyPublicAssets() {
         console.log('Copied charsets.json');
       } else {
         console.warn('charsets.json not found in public/, skipping...');
+      }
+
+      // Extra bundled models — paired model+charsets files. Skipped silently if absent.
+      const extraBundled = [
+        ['common_small.onnx', 'charsets_small.json'],
+        ['model_extreme_v6.onnx', 'charsets_extreme_v6.json'],
+      ];
+      for (const [m, c] of extraBundled) {
+        const mp = resolve(publicDir, m);
+        const cp = resolve(publicDir, c);
+        if (existsSync(mp) && existsSync(cp)) {
+          copyFileSync(mp, resolve(distDir, m));
+          copyFileSync(cp, resolve(distDir, c));
+          console.log(`Copied bundled extra: ${m} + ${c}`);
+        }
       }
 
       const testHtmlPath = resolve(publicDir, 'test.html');
@@ -209,7 +241,7 @@ function copyPublicAssets() {
 
       const zipFile = new AdmZip();
       zipFile.addLocalFolder(distDir);
-      const zipPath = resolve(import.meta.dirname, `dist/ddddocr-extension-v${releaseVersion}.zip`);
+      const zipPath = resolve(import.meta.dirname, `dist/Mieru-OCR-v${releaseVersion}.zip`);
       zipFile.writeZip(zipPath);
       console.log(`Created ${zipPath}`);
 
@@ -219,6 +251,7 @@ function copyPublicAssets() {
 }
 
 export default defineConfig({
+  customLogger: makeQuietLogger(),
   resolve: {
     alias: {
       '@core': resolve(__dirname, 'src/core'),

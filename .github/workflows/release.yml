@@ -96,22 +96,22 @@ jobs:
           mkdir -p release-assets
 
           # Userscript
-          if [ -f dist/userscript/ddddocr-web.user.js ]; then
-            cp dist/userscript/ddddocr-web.user.js "release-assets/ddddocr-web-v${VERSION}.user.js"
+          if [ -f dist/userscript/Mieru-OCR.user.js ]; then
+            cp dist/userscript/Mieru-OCR.user.js "release-assets/Mieru-OCR-v${VERSION}.user.js"
             echo "Collected userscript"
           fi
 
           # Chrome extension zip
-          CHROME_ZIP=$(find dist/ -name "ddddocr-extension-v*.zip" -type f | head -1)
+          CHROME_ZIP=$(find dist/ -name "Mieru-OCR-v*.zip" -type f | head -1)
           if [ -n "$CHROME_ZIP" ]; then
-            cp "$CHROME_ZIP" "release-assets/ddddocr-extension-chrome-v${VERSION}.zip"
+            cp "$CHROME_ZIP" "release-assets/Mieru-OCR-chrome-v${VERSION}.zip"
             echo "Collected Chrome extension"
           fi
 
           # Firefox extension zip
-          FIREFOX_ZIP=$(find dist/ -name "ddddocr-firefox-v*.zip" -type f | head -1)
+          FIREFOX_ZIP=$(find dist/ -name "Mieru-OCR-firefox-v*.zip" -type f | head -1)
           if [ -n "$FIREFOX_ZIP" ]; then
-            cp "$FIREFOX_ZIP" "release-assets/ddddocr-extension-firefox-v${VERSION}.zip"
+            cp "$FIREFOX_ZIP" "release-assets/Mieru-OCR-firefox-v${VERSION}.zip"
             echo "Collected Firefox extension"
           fi
 
@@ -187,9 +187,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.get-version.outputs.version }}
-          name: DDDD OCR v${{ needs.get-version.outputs.version }}
+          name: Mieru-OCR v${{ needs.get-version.outputs.version }}
           body: |
-            ## DDDD OCR v${{ needs.get-version.outputs.version }}
+            ## Mieru-OCR v${{ needs.get-version.outputs.version }}
 
             完全离线的验证码识别工具，支持浏览器扩展和油猴脚本。
 
@@ -203,9 +203,9 @@ jobs:
 
             | 类型 | 下载 | 说明 |
             |:----:|:----:|:-----|
-            | 油猴脚本 | [![Userscript](https://img.shields.io/badge/Tampermonkey-Userscript-00485B?style=for-the-badge&logo=tampermonkey&logoColor=white)](https://github.com/${{ github.repository }}/releases/download/v${{ needs.get-version.outputs.version }}/ddddocr-web-v${{ needs.get-version.outputs.version }}.user.js) | Tampermonkey / Violentmonkey |
-            | Chrome | [![Chrome](https://img.shields.io/badge/Chrome-Extension-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/${{ github.repository }}/releases/download/v${{ needs.get-version.outputs.version }}/ddddocr-extension-chrome-v${{ needs.get-version.outputs.version }}.zip) | Chrome / Edge (MV3) |
-            | Firefox | [![Firefox](https://img.shields.io/badge/Firefox-Extension-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white)](https://github.com/${{ github.repository }}/releases/download/v${{ needs.get-version.outputs.version }}/ddddocr-extension-firefox-v${{ needs.get-version.outputs.version }}.zip) | Firefox (MV2) |
+            | 油猴脚本 | [![Userscript](https://img.shields.io/badge/Tampermonkey-Userscript-00485B?style=for-the-badge&logo=tampermonkey&logoColor=white)](https://github.com/${{ github.repository }}/releases/download/v${{ needs.get-version.outputs.version }}/Mieru-OCR-v${{ needs.get-version.outputs.version }}.user.js) | Tampermonkey / Violentmonkey |
+            | Chrome | [![Chrome](https://img.shields.io/badge/Chrome-Extension-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/${{ github.repository }}/releases/download/v${{ needs.get-version.outputs.version }}/Mieru-OCR-chrome-v${{ needs.get-version.outputs.version }}.zip) | Chrome / Edge (MV3) |
+            | Firefox | [![Firefox](https://img.shields.io/badge/Firefox-Extension-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white)](https://github.com/${{ github.repository }}/releases/download/v${{ needs.get-version.outputs.version }}/Mieru-OCR-firefox-v${{ needs.get-version.outputs.version }}.zip) | Firefox (MV2) |
 
             ---
 

@@ -1,7 +1,21 @@
-import { defineConfig } from 'vite';
+import { defineConfig, createLogger } from 'vite';
 import { resolve } from 'path';
 import { copyFileSync, mkdirSync, existsSync, readdirSync, rmSync, statSync, readFileSync, writeFileSync } from 'fs';
 import AdmZip from 'adm-zip';
+
+function makeQuietLogger() {
+  const logger = createLogger();
+  const origWarn = logger.warn.bind(logger);
+  logger.warn = (msg: string, opts?: any) => {
+    if (typeof msg === 'string'
+      && (msg.includes('ort.min.js') || msg.includes('background.js'))
+      && msg.includes("can't be bundled")) {
+      return; // expected — copyPublicAssets writes them at build time
+    }
+    origWarn(msg, opts);
+  };
+  return logger;
+}
 
 function readVersion(): string {
   const versionPath = resolve(__dirname, 'version');
@@ -81,6 +95,20 @@ function copyFirefoxAssets() {
       if (existsSync(charsetsPath)) {
         copyFileSync(charsetsPath, resolve(distDir, 'charsets.json'));
         console.log('Copied charsets.json');
+      }
+
+      const extraBundled = [
+        ['common_small.onnx', 'charsets_small.json'],
+        ['model_extreme_v6.onnx', 'charsets_extreme_v6.json'],
+      ];
+      for (const [m, c] of extraBundled) {
+        const mp = resolve(publicDir, m);
+        const cp = resolve(publicDir, c);
+        if (existsSync(mp) && existsSync(cp)) {
+          copyFileSync(mp, resolve(distDir, m));
+          copyFileSync(cp, resolve(distDir, c));
+          console.log(`Copied bundled extra: ${m} + ${c}`);
+        }
       }
 
       const ortDistDir = resolve(__dirname, 'node_modules/onnxruntime-web/dist');
@@ -177,7 +205,7 @@ function copyFirefoxAssets() {
 
       const zipFile = new AdmZip();
       zipFile.addLocalFolder(distDir);
-      const zipPath = resolve(__dirname, `dist/ddddocr-firefox-v${releaseVersion}.zip`);
+      const zipPath = resolve(__dirname, `dist/Mieru-OCR-firefox-v${releaseVersion}.zip`);
       zipFile.writeZip(zipPath);
       console.log(`Created ${zipPath}`);
       console.log(`Firefox build completed (release ${releaseVersion}, manifest ${manifestVersion})`);
@@ -186,6 +214,7 @@ function copyFirefoxAssets() {
 }
 
 export default defineConfig({
+  customLogger: makeQuietLogger(),
   resolve: {
     alias: {
       '@core': resolve(__dirname, 'src/core'),

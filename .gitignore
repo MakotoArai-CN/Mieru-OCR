@@ -4,3 +4,5 @@ LLM*
 *.log
 .DS_Store
 .vscode/
+benchmark*
+experiments/

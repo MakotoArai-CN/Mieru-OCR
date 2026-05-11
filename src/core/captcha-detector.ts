@@ -4,6 +4,18 @@ import type { CaptchaElementInfo, InputElementInfo } from './types';
 export interface DetectedCaptcha {
   id: string;
   type: 'image' | 'canvas' | 'svg' | 'background';
+  /**
+   * Optional refinement for interactive captchas. Detection only — auto-solve
+   * still TODO, but consumers can render different UI / treat differently.
+   */
+  subType?: 'slider' | 'click-select';
+  /**
+   * For slider/click-select captchas the user-visible container is often
+   * a <div>/<section> wrapping one or more <canvas>/<img>. `element` is the
+   * outer container (so coordinate / event work happens there); `innerCanvas`
+   * is the actual pixel surface the OCR pipeline samples from.
+   */
+  innerCanvas?: HTMLCanvasElement | HTMLImageElement;
   element: Element;
   rect: DOMRect;
   confidence: number;
@@ -78,6 +90,7 @@ export class CaptchaDetector {
     this.scanCanvas();
     this.scanSvg();
     this.scanBackgroundImages();
+    this.scanInteractiveContainers();
     Logger.timeEnd('CaptchaDetector.scan');
     Logger.debug('扫描结果:', this.detectedCaptchas.length, '个验证码');
     return this.detectedCaptchas;
@@ -162,6 +175,110 @@ export class CaptchaDetector {
         Logger.debug('检测到背景图验证码:', captcha.elementInfo);
       }
     });
+  }
+
+  /**
+   * Detect interactive captchas wrapped in DOM containers (the most common
+   * real-world pattern):
+   *   <div class="slider-captcha"><canvas>...</canvas><div class="track">...</div></div>
+   *   <div class="click-captcha"><canvas>...</canvas></div>
+   *
+   * The outer container is what users interact with (drag track / click area),
+   * but the inner canvas is what OCR needs to sample. We add these as type
+   * 'canvas' (so capture pipeline reuses canvas path) but tag with subType.
+   */
+  private scanInteractiveContainers(): void {
+    const SLIDER = (CONSTANTS as any).SLIDER_KEYWORDS as string[] | undefined;
+    const CLICK = (CONSTANTS as any).CLICK_SELECT_KEYWORDS as string[] | undefined;
+    if (!SLIDER && !CLICK) return;
+    const slider = (SLIDER || []).map((s) => s.toLowerCase());
+    const click = (CLICK || []).map((s) => s.toLowerCase());
+
+    // Cap how deeply we search — a real captcha container is at most a
+    // handful of nodes wide. Avoid scanning the whole document.
+    const MAX_NODES = 600;
+    let scanned = 0;
+
+    // Collect candidates: any element whose self-attributes match keywords.
+    // We use [class*=...] / [id*=...] selector heuristics for performance.
+    const seen = new Set<Element>();
+    const matchKeyword = (el: Element, list: string[]): boolean => {
+      const haystack = (
+        ((el as HTMLElement).className?.toString?.() || '') + ' '
+        + ((el as HTMLElement).id || '') + ' '
+        + (el.getAttribute('data-captcha-type') || '') + ' '
+        + (el.getAttribute('aria-label') || '')
+      ).toLowerCase();
+      if (!haystack.trim()) return false;
+      return list.some((kw) => haystack.includes(kw));
+    };
+
+    const consider = (el: Element, kind: 'slider' | 'click-select', idx: number) => {
+      if (seen.has(el) || ++scanned > MAX_NODES) return;
+      seen.add(el);
+      // Skip if outer is hidden / off-screen.
+      if (!this.isVisible(el)) return;
+      // Container should have a canvas or img descendant — that's the
+      // actual pixel surface OCR will read from.
+      const inner = el.querySelector('canvas, img');
+      if (!inner) return;
+      const rect = el.getBoundingClientRect();
+      // Slider tracks tend to be wider than tall; click-select areas are
+      // closer to square. Both should be at least captcha-sized though.
+      if (rect.width < 60 || rect.height < 24) return;
+      // Skip if this element (or any ancestor) was already detected.
+      const innerEl = inner as HTMLCanvasElement | HTMLImageElement;
+      if (this.detectedCaptchas.some((c) => c.element === el || c.element === innerEl)) return;
+
+      const captcha: DetectedCaptcha = {
+        id: `captcha-${kind}-${idx}`,
+        type: 'canvas',
+        subType: kind,
+        element: el,
+        innerCanvas: innerEl,
+        rect,
+        confidence: this.calculateConfidence(el) + 10, // small boost: keyword match was already strong
+        inputElement: this.findRelatedInput(el),
+        elementInfo: this.extractCaptchaInfo(el),
+      };
+      this.detectedCaptchas.push(captcha);
+      Logger.debug(`检测到交互式验证码 (${kind}):`, captcha.elementInfo);
+    };
+
+    // Build a single querySelector covering both keyword sets via [class*=]/[id*=].
+    // Note: [class*=keyword] is case-sensitive for selectors, but we further
+    // confirm via matchKeyword (lowercased) inside.
+    const buildSel = (list: string[]): string => list
+      .flatMap((kw) => [`[class*="${kw}" i]`, `[id*="${kw}" i]`, `[data-captcha-type*="${kw}" i]`])
+      .join(',');
+
+    if (slider.length) {
+      const sel = buildSel(slider);
+      try {
+        document.querySelectorAll(sel).forEach((el, i) => {
+          if (matchKeyword(el, slider)) consider(el, 'slider', i);
+        });
+      } catch {
+        // Fallback: linear scan if compound selector fails (very long lists)
+        document.querySelectorAll('div, section, span').forEach((el, i) => {
+          if (scanned > MAX_NODES) return;
+          if (matchKeyword(el, slider)) consider(el, 'slider', i);
+        });
+      }
+    }
+    if (click.length) {
+      const sel = buildSel(click);
+      try {
+        document.querySelectorAll(sel).forEach((el, i) => {
+          if (matchKeyword(el, click)) consider(el, 'click-select', i);
+        });
+      } catch {
+        document.querySelectorAll('div, section, span').forEach((el, i) => {
+          if (scanned > MAX_NODES) return;
+          if (matchKeyword(el, click)) consider(el, 'click-select', i);
+        });
+      }
+    }
   }
 
   private extractCaptchaInfo(element: Element): CaptchaElementInfo {
@@ -550,6 +667,9 @@ export class CaptchaDetector {
     for (const input of inputs) {
       const htmlInput = input as HTMLInputElement;
       if (!this.isValidCaptchaInput(htmlInput)) continue;
+      // 排除 search / 登录 / 邮箱等明显与验证码无关的输入框 —— 它们即使距离最近也不应被回填。
+      // 唯一例外：该输入框同时带有验证码关键词（罕见但允许）。
+      if (this.isExcludedInputByText(htmlInput) && !this.isCaptchaInputByName(htmlInput)) continue;
       const inputRect = input.getBoundingClientRect();
       const distance = this.calculateDistance(captchaRect, inputRect);
       if (distance > maxDistance) continue;
@@ -615,6 +735,9 @@ export class CaptchaDetector {
     for (const input of inputs) {
       const htmlInput = input as HTMLInputElement;
       if (!this.isValidCaptchaInput(htmlInput)) continue;
+      // 全局兜底搜索时更严格：除非该输入框带验证码关键词，否则不接受明显属于排除类别（搜索/账号/邮箱等）的输入。
+      // 因为在文档全局范围内，「最近」的输入框完全可能是页面顶部的搜索栏，而它和验证码图片本无关联。
+      if (this.isExcludedInputByText(htmlInput) && !this.isCaptchaInputByName(htmlInput)) continue;
       const inputRect = input.getBoundingClientRect();
       const roughlyNear =
         (
@@ -907,6 +1030,14 @@ export class CaptchaDetector {
   }
 
   async captureImage(captcha: DetectedCaptcha): Promise<string> {
+    // For interactive containers, OCR samples the inner canvas/img — the
+    // outer DOM container is the user-interaction target, not the pixel source.
+    if (captcha.innerCanvas) {
+      if (captcha.innerCanvas instanceof HTMLCanvasElement) {
+        return this.captureCanvasElement(captcha.innerCanvas);
+      }
+      return this.captureImgElement(captcha.innerCanvas);
+    }
     switch (captcha.type) {
       case 'image':
         return this.captureImgElement(captcha.element as HTMLImageElement);
@@ -925,6 +1056,12 @@ export class CaptchaDetector {
   }
 
   async captureBlob(captcha: DetectedCaptcha): Promise<Blob> {
+    if (captcha.innerCanvas) {
+      if (captcha.innerCanvas instanceof HTMLCanvasElement) {
+        return this.captureCanvasAsBlob(captcha.innerCanvas);
+      }
+      return this.captureImgAsBlob(captcha.innerCanvas);
+    }
     switch (captcha.type) {
       case 'image':
         return this.captureImgAsBlob(captcha.element as HTMLImageElement);

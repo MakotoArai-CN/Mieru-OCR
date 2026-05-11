@@ -1,0 +1,62 @@
+{
+  "name": "Mieru-OCR 公共订阅示例",
+  "description": "包含常见网站的验证码识别规则与关键词补充。这是一个示例订阅，演示订阅规则包格式。",
+  "version": "1.0.0",
+  "author": "MakotoArai-CN",
+  "updatedAt": 1735689600000,
+
+  "siteRules": {
+    "example.com": {
+      "hostname": "example.com",
+      "selector": "img.captcha",
+      "inputSelector": "input[name='captcha']",
+      "submitSelector": "button[type='submit']"
+    },
+    "https://login.example.org": {
+      "hostname": "login.example.org",
+      "fullUrl": "https://login.example.org/login",
+      "selector": "#captcha-img",
+      "inputSelector": "#captcha-input"
+    }
+  },
+
+  "calculateRules": [
+    {
+      "pattern": "*.math-captcha.com",
+      "matchType": "wildcard",
+      "outputMode": "result",
+      "enabled": true
+    }
+  ],
+
+  "includeKeywords": [
+    "verifyimg",
+    "vimg",
+    "captchaCode"
+  ],
+
+  "excludePatterns": [
+    "qrcode",
+    "thumbnail"
+  ],
+
+  "agreementKeywords": [
+    "agree-to-terms",
+    "user-agreement-checkbox"
+  ],
+
+  "inputExcludeKeywords": [
+    "captcha-mobile",
+    "captcha-email"
+  ],
+
+  "agreementSelectors": [
+    "#agreeTos",
+    ".terms-checkbox input"
+  ],
+
+  "siteBlacklist": [
+    "https://example.com/no-captcha-page",
+    "*.banned-site.com"
+  ]
+}

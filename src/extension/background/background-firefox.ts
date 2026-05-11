@@ -1,6 +1,10 @@
 declare const browser: any;
 import { OCREngine } from '@core/ocr-engine';
 import type { ExtensionSettings } from '@core/types';
+import { autoUpdateSubscriptions } from '../subscription-manager';
+import { BUILTIN_MODEL_ID, getActiveModelId, getModelData } from '../model-store';
+
+const SUBSCRIPTION_ALARM_NAME = 'ddddocr-subscription-update';
 
 type OcrEngineStatus = 'ready' | 'initializing' | 'fault';
 
@@ -16,8 +20,13 @@ let ocrStatus: OcrStatus = {
   updatedAt: Date.now(),
 };
 
-let ocrEngine: OCREngine | null = null;
-let ocrEnginePromise: Promise<OCREngine> | null = null;
+interface EngineEntry {
+  id: string;
+  engine: OCREngine;
+  lastUsed: number;
+}
+const MAX_CACHED_ENGINES = 2;
+const engineCache: Map<string, EngineEntry> = new Map();
 let ortInstance: any = null;
 
 function setOcrStatus(status: OcrEngineStatus, message?: string): void {
@@ -57,40 +66,76 @@ async function loadOrt(): Promise<any> {
   return ortInstance;
 }
 
+async function fetchBuiltinModel(): Promise<{ model: ArrayBuffer; charsets: string[] }> {
+  const [modelRes, charsetsRes] = await Promise.all([
+    fetch(browser.runtime.getURL('common.onnx')),
+    fetch(browser.runtime.getURL('charsets.json')),
+  ]);
+  return {
+    model: await modelRes.arrayBuffer(),
+    charsets: await charsetsRes.json(),
+  };
+}
+
+async function buildEngine(modelId: string): Promise<OCREngine> {
+  const ort = await loadOrt();
+  const engine = new OCREngine({
+    getModel: async () => {
+      if (modelId === BUILTIN_MODEL_ID) {
+        return fetchBuiltinModel();
+      }
+      const data = await getModelData(modelId);
+      if (!data) {
+        console.warn(`[Background Firefox] Model ${modelId} not found, falling back to builtin`);
+        return fetchBuiltinModel();
+      }
+      return { model: data.modelBlob, charsets: data.charsets };
+    },
+    getOrt: async () => ort,
+    wasmPaths: browser.runtime.getURL('/'),
+  });
+  await engine.init();
+  return engine;
+}
+
 async function getOCREngine(): Promise<OCREngine> {
-  if (ocrEngine) return ocrEngine;
+  let modelId: string;
+  try {
+    modelId = await getActiveModelId();
+  } catch {
+    modelId = BUILTIN_MODEL_ID;
+  }
 
-  if (ocrEnginePromise) return ocrEnginePromise;
+  const cached = engineCache.get(modelId);
+  if (cached) {
+    cached.lastUsed = Date.now();
+    return cached.engine;
+  }
 
-  ocrEnginePromise = (async () => {
-    try {
-      const ort = await loadOrt();
-
-      const engine = new OCREngine({
-        getModel: async () => {
-          const [modelRes, charsetsRes] = await Promise.all([
-            fetch(browser.runtime.getURL('common.onnx')),
-            fetch(browser.runtime.getURL('charsets.json')),
-          ]);
-          return {
-            model: await modelRes.arrayBuffer(),
-            charsets: await charsetsRes.json(),
-          };
-        },
-        getOrt: async () => ort,
-        wasmPaths: browser.runtime.getURL('/'),
-      });
-
-      await engine.init();
-      ocrEngine = engine;
-      return engine;
-    } catch (error) {
-      ocrEnginePromise = null;
-      throw error;
+  try {
+    const engine = await buildEngine(modelId);
+    engineCache.set(modelId, { id: modelId, engine, lastUsed: Date.now() });
+    if (engineCache.size > MAX_CACHED_ENGINES) {
+      let oldestId: string | null = null;
+      let oldestTime = Infinity;
+      for (const [id, entry] of engineCache) {
+        if (entry.lastUsed < oldestTime) {
+          oldestTime = entry.lastUsed;
+          oldestId = id;
+        }
+      }
+      if (oldestId) engineCache.delete(oldestId);
     }
-  })();
-
-  return ocrEnginePromise;
+    return engine;
+  } catch (e) {
+    if (modelId !== BUILTIN_MODEL_ID) {
+      console.warn(`[Background Firefox] Active model ${modelId} failed: ${(e as Error).message}, falling back to builtin`);
+      const fallback = await buildEngine(BUILTIN_MODEL_ID);
+      engineCache.set(BUILTIN_MODEL_ID, { id: BUILTIN_MODEL_ID, engine: fallback, lastUsed: Date.now() });
+      return fallback;
+    }
+    throw e;
+  }
 }
 
 browser.runtime.onInstalled.addListener((details: any) => {
@@ -98,7 +143,88 @@ browser.runtime.onInstalled.addListener((details: any) => {
   if (details.reason === 'install') {
     browser.runtime.openOptionsPage();
   }
+  // 注册订阅自动更新闹钟
+  if (browser.alarms) {
+    browser.alarms.create(SUBSCRIPTION_ALARM_NAME, {
+      periodInMinutes: 30,
+      delayInMinutes: 1,
+    });
+  }
+  syncImageContextMenu();
 });
+
+const CONTEXT_MENU_ID_FF = 'ddddocr-recognize-image';
+
+async function syncImageContextMenu(): Promise<void> {
+  const ctxApi = (browser as any).contextMenus || (browser as any).menus;
+  if (!ctxApi) return;
+  let enabled = false;
+  try {
+    const r = await browser.storage.local.get('settings');
+    enabled = !!r.settings?.imageContextMenuEnabled;
+  } catch { /* default off */ }
+
+  try {
+    await new Promise<void>((resolve) => {
+      try { ctxApi.removeAll(() => resolve()); } catch { resolve(); }
+    });
+  } catch { /* non-fatal */ }
+  if (!enabled) return;
+
+  try {
+    ctxApi.create({
+      id: CONTEXT_MENU_ID_FF,
+      title: '用 Mieru-OCR 识别此图片',
+      contexts: ['image'],
+    });
+  } catch (e) {
+    console.warn('[Background Firefox] 创建右键菜单失败:', e);
+  }
+}
+
+const ctxApiFF = (browser as any).contextMenus || (browser as any).menus;
+if (ctxApiFF?.onClicked) {
+  ctxApiFF.onClicked.addListener(async (info: any, tab: any) => {
+    if (info.menuItemId !== CONTEXT_MENU_ID_FF) return;
+    if (!info.srcUrl || !tab?.id) return;
+    try {
+      await browser.tabs.sendMessage(tab.id, {
+        action: 'recognizeImageBySrc',
+        srcUrl: info.srcUrl,
+      });
+    } catch (e) {
+      console.warn('[Background Firefox] 发送右键识别消息失败:', e);
+    }
+  });
+}
+
+// 后台脚本启动时同步一次菜单（MV2 的持久化背景页通常常驻，重载扩展时会重启脚本）
+syncImageContextMenu().catch((e) => console.warn('[Background Firefox] 启动时同步右键菜单失败:', e));
+
+// 监听 settings 变化自动同步菜单 —— 与 saveSettings 处理器去重，避免双调用
+if (browser.storage?.onChanged) {
+  browser.storage.onChanged.addListener((changes: any, areaName: string) => {
+    if (areaName !== 'local' || !changes.settings) return;
+    const oldVal = changes.settings.oldValue?.imageContextMenuEnabled;
+    const newVal = changes.settings.newValue?.imageContextMenuEnabled;
+    if (oldVal === newVal) return;
+    syncImageContextMenu().catch((e) => console.warn('[Background Firefox] storage.onChanged 同步失败:', e));
+  });
+}
+
+if (browser.alarms) {
+  browser.alarms.onAlarm.addListener(async (alarm: any) => {
+    if (alarm.name !== SUBSCRIPTION_ALARM_NAME) return;
+    try {
+      const result = await autoUpdateSubscriptions();
+      if (result.updated > 0 || result.failed > 0) {
+        console.log(`[Background Firefox] 订阅自动更新: 成功 ${result.updated}, 失败 ${result.failed}`);
+      }
+    } catch (e) {
+      console.warn('[Background Firefox] 订阅自动更新出错:', e);
+    }
+  });
+}
 
 browser.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
   if (typeof sendResponse === 'function') {
@@ -236,6 +362,7 @@ async function handleSaveSettings(
   sendResponse: (response: any) => void
 ): Promise<void> {
   await browser.storage.local.set({ settings: message.settings });
+  // 菜单同步交给 storage.onChanged 监听器统一处理
   try {
     const tabs = await browser.tabs.query({});
     for (const tab of tabs) {
@@ -462,6 +589,9 @@ function getDefaultSettings(): ExtensionSettings {
     enableSingleSliderAssist: true,
     enableClickSelectAssist: false,
     siteBlacklist: [],
+    imageContextMenuEnabled: false,
+    imageContextMenuAutoFill: true,
+    preserveFocus: false,
   };
 }
 
