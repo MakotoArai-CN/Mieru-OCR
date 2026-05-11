@@ -105,19 +105,17 @@ function copyPublicAssets() {
       }
 
       // Extra bundled models — paired model+charsets files. Skipped silently if absent.
-      const extraBundled = [
-        ['common_small.onnx', 'charsets_small.json'],
-        ['model_extreme_v6.onnx', 'charsets_extreme_v6.json'],
-      ];
-      for (const [m, c] of extraBundled) {
-        const mp = resolve(publicDir, m);
-        const cp = resolve(publicDir, c);
-        if (existsSync(mp) && existsSync(cp)) {
-          copyFileSync(mp, resolve(distDir, m));
-          copyFileSync(cp, resolve(distDir, c));
-          console.log(`Copied bundled extra: ${m} + ${c}`);
-        }
-      }
+      // const extraBundled = [
+      // ];
+      // for (const [m, c] of extraBundled) {
+      //   const mp = resolve(publicDir, m);
+      //   const cp = resolve(publicDir, c);
+      //   if (existsSync(mp) && existsSync(cp)) {
+      //     copyFileSync(mp, resolve(distDir, m));
+      //     copyFileSync(cp, resolve(distDir, c));
+      //     console.log(`Copied bundled extra: ${m} + ${c}`);
+      //   }
+      // }
 
       const testHtmlPath = resolve(publicDir, 'test.html');
       if (existsSync(testHtmlPath)) {
