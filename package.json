@@ -15,6 +15,7 @@
     "@types/chrome": "^0.0.268",
     "@types/node": "^20.11.0",
     "@types/tampermonkey": "^5.0.3",
+    "esbuild": "^0.27.0",
     "sass": "^1.69.7",
     "terser": "^5.44.0",
     "typescript": "^5.3.3",
