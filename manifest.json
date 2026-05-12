@@ -53,10 +53,6 @@
       "resources": [
         "common.onnx",
         "charsets.json",
-        "common_small.onnx",
-        "charsets_small.json",
-        "model_extreme_v6.onnx",
-        "charsets_extreme_v6.json",
         "offscreen.html",
         "icons/*",
         "ort-wasm-simd.wasm",

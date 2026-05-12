@@ -95,29 +95,7 @@ export const BUNDLED_MODELS: BundledModelDef[] = [
     charsetsFile: 'charsets.json',
     approxSize: 0,
     approxCharsets: 0,
-  },
-  {
-    id: '__bundled_small__',
-    name: 'common_small (轻量)',
-    description: '体积更小的轻量模型，加载更快、精度略低',
-    modelFile: 'common_small.onnx',
-    charsetsFile: 'charsets_small.json',
-    approxSize: 0,
-    approxCharsets: 0,
-  },
-  {
-    id: '__bundled_extreme_v6__',
-    name: 'extreme v6 (实验)',
-    description: '基于量化/重训练的实验模型，体积更小，仍在测试中',
-    modelFile: 'model_extreme_v6.onnx',
-    charsetsFile: 'charsets_extreme_v6.json',
-    approxSize: 0,
-    approxCharsets: 0,
-    fixedWidth: 192,
-    preprocess: 'standardize',
-    preprocessMean: 0.456,
-    preprocessStd: 0.224,
-  },
+  }
 ];
 
 export function getBundledModel(id: string): BundledModelDef | undefined {
