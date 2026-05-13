@@ -15,19 +15,19 @@ declare const browser: any;
 
 let cachedStorage: any = null;
 
-// Lazy storage shim — defers global access until first use, prefers chrome (this is also
-// the Chrome MV3 build), and guards against `browser` polyfills that throw on property access.
+// Lazy storage shim — defers global access until first use. Prefer Firefox's Promise-based
+// browser.storage in Firefox builds, then fall back to chrome.storage for Chromium.
 function getStorage(): any {
   if (cachedStorage) return cachedStorage;
   try {
-    if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
-      cachedStorage = chrome.storage.local;
+    if (typeof browser !== 'undefined' && browser?.storage?.local) {
+      cachedStorage = browser.storage.local;
       return cachedStorage;
     }
   } catch { /* fall through */ }
   try {
-    if (typeof browser !== 'undefined' && browser?.storage?.local) {
-      cachedStorage = browser.storage.local;
+    if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
+      cachedStorage = chrome.storage.local;
       return cachedStorage;
     }
   } catch { /* fall through */ }
