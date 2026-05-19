@@ -34,6 +34,8 @@ export interface GuessedElement {
 
 export class CaptchaDetector {
   private detectedCaptchas: DetectedCaptcha[] = [];
+  /** Cache last logged scan count to suppress identical-result spam in diagnostics buffer. */
+  private lastLoggedScanCount = -1;
   private processedElements = new WeakMap<Element, string>();
   private checkedAgreements = new WeakSet<HTMLInputElement>();
   private customIncludeKeywords: string[] = [];
@@ -78,6 +80,15 @@ export class CaptchaDetector {
   private isExcludedElement(element: Element): boolean {
     const className = ((element as HTMLElement).className?.toString?.() || '').toLowerCase();
     const id = ((element as HTMLElement).id || '').toLowerCase();
+    // 排除本扩展自身注入的 UI 元素（toast / picker overlay / 高亮框 / loading 等），
+    // 它们的 id / class 都以 `Mieru-` 前缀（picker 用），或 `ddddocr` （历史命名）开头。
+    // 不加这条扫描会把右键识别的 toast 当成背景图验证码。
+    if (id.startsWith('mieru-') || className.startsWith('mieru-') || className.includes(' mieru-')) {
+      return true;
+    }
+    if (id.startsWith('ddddocr') || className.includes('ddddocr')) {
+      return true;
+    }
     const excludePatterns = this.getExcludePatterns();
     const combined = `${className} ${id}`.trim();
     return excludePatterns.some(pattern => combined.includes(pattern));
@@ -92,7 +103,12 @@ export class CaptchaDetector {
     this.scanBackgroundImages();
     this.scanInteractiveContainers();
     Logger.timeEnd('CaptchaDetector.scan');
-    Logger.debug('扫描结果:', this.detectedCaptchas.length, '个验证码');
+    // 仅在结果数变化或 >0 时记录日志，避免周期扫描刷爆 200 条诊断缓冲
+    const count = this.detectedCaptchas.length;
+    if (count > 0 || count !== this.lastLoggedScanCount) {
+      Logger.debug('扫描结果:', count, '个验证码');
+      this.lastLoggedScanCount = count;
+    }
     return this.detectedCaptchas;
   }
 

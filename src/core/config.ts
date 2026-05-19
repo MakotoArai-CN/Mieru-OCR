@@ -135,6 +135,7 @@ export const DEFAULT_CONFIG: OCRConfig = {
   imageContextMenuEnabled: false,
   imageContextMenuAutoFill: true,
   preserveFocus: false,
+  deepScan: false,
 };
 
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {

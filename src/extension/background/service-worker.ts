@@ -2,8 +2,8 @@ import type { ExtensionSettings, SiteRule } from '@core/types';
 import { autoUpdateSubscriptions } from '../subscription-manager';
 
 const OFFSCREEN_URL = 'offscreen.html';
-const SUBSCRIPTION_ALARM_NAME = 'ddddocr-subscription-update';
-const CONTEXT_MENU_ID = 'ddddocr-recognize-image';
+const SUBSCRIPTION_ALARM_NAME = 'Mieru-subscription-update';
+const CONTEXT_MENU_ID = 'Mieru-recognize-image';
 
 type OcrEngineStatus = 'ready' | 'initializing' | 'fault';
 
@@ -185,17 +185,23 @@ async function syncImageContextMenu(): Promise<void> {
 // during initial script execution, not the surrounding control flow.
 if ((chrome as any).contextMenus?.onClicked) {
   (chrome as any).contextMenus.onClicked.addListener(async (info: any, tab: any) => {
-    console.log('[Service Worker] 右键菜单点击:', info.menuItemId, 'srcUrl=', info.srcUrl);
+    console.log('[Service Worker] 右键菜单点击:', info.menuItemId, 'srcUrl=', info.srcUrl, 'frameId=', info.frameId);
     if (info.menuItemId !== CONTEXT_MENU_ID) return;
     if (!info.srcUrl || !tab?.id) {
       console.warn('[Service Worker] 右键点击缺少 srcUrl 或 tab.id');
       return;
     }
     try {
+      // info.frameId 标识右键点击发生在哪个 frame（顶层是 0，iframe 是非零 ID）。
+      // 不传 frameId 的话默认发到顶层，会导致 iframe 内图片识别命中不到元素。
+      const sendOptions: chrome.tabs.MessageSendOptions = {};
+      if (typeof info.frameId === 'number') {
+        sendOptions.frameId = info.frameId;
+      }
       await chrome.tabs.sendMessage(tab.id, {
         action: 'recognizeImageBySrc',
         srcUrl: info.srcUrl,
-      });
+      }, sendOptions);
     } catch (e) {
       console.warn('[Service Worker] 发送右键识别消息失败:', e);
     }
@@ -639,6 +645,7 @@ function getDefaultSettings(): ExtensionSettings {
     imageContextMenuEnabled: false,
     imageContextMenuAutoFill: true,
     preserveFocus: false,
+    deepScan: false,
   };
 }
 

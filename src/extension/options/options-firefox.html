@@ -183,6 +183,17 @@
 
           <div class="form-group switch-group">
             <div class="switch-label">
+              <label data-i18n="settings.deepScan">深度扫描</label>
+              <span class="hint" data-i18n="settings.deepScan.hint">默认关闭。开启后内容脚本会注入所有子 iframe，并启用顶层 picker 到子框架的拾取接力——用于政府 / CMS 等把验证码嵌在 iframe 内的站点。代价：广告与统计 iframe 也会加载脚本（不会主动识别），仅在常规模式拾取不到目标时开启。</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="deepScan">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
               <label data-i18n="settings.autoSubmit">自动提交表单</label>
               <span class="hint" data-i18n="settings.autoSubmit.hint">填充后自动提交（谨慎使用，验证码识别准确率并不是100%）</span>
             </div>

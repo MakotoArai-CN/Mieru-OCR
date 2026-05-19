@@ -77,6 +77,11 @@ export interface SiteRule {
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
+  /** 当目标元素位于子 iframe 内时，记录顶层文档中定位到该 iframe 的 selector。
+   *  自动应用规则时：sub-frame 自己用 selector 命中元素；top-frame 用 frameSelector 命中 iframe。 */
+  frameSelector?: string;
+  /** 规则采集时的 iframe URL（仅用于诊断/迁移，不参与匹配，URL 跨实例可能不稳定） */
+  frameUrl?: string;
 }
 
 export interface SiteRuleStorage {
@@ -138,6 +143,9 @@ export interface OCRConfig {
    *  Set to true on sites whose anti-bot detection flags sudden focus jumps as automation.
    */
   preserveFocus: boolean;
+  /** 深度扫描：让 content script 在所有子 iframe 中也运行，并启用顶层 picker 跨框架接力。
+   *  默认关闭——开启后广告/分析 iframe 也会注入脚本。仅在常规模式拾取不到目标元素时打开。 */
+  deepScan: boolean;
 }
 
 export interface ExtensionSettings extends OCRConfig {

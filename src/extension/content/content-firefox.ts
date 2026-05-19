@@ -8,6 +8,11 @@ import { initLocale, t } from '@core/i18n';
 
 declare const browser: any;
 
+/** 当前 content.js 是否运行在顶层文档（all_frames:true 后 sub-frame 同样会注入本脚本）。 */
+const IS_TOP_FRAME: boolean = (() => {
+  try { return window.top === window; } catch { return false; }
+})();
+
 let debugMode = false;
 let contextInvalidated = false;
 const detector = new CaptchaDetector();
@@ -37,6 +42,7 @@ let captchaSelector = '';
 let inputSelector = '';
 let submitSelector = '';
 let siteBlacklist: string[] = [];
+let deepScan = false;
 
 let guessedElements: GuessedElement[] = [];
 let guessMode: 'captcha' | 'input' | null = null;
@@ -127,6 +133,7 @@ async function initSettings(): Promise<void> {
       autoCalculate = !!response.settings.autoCalculate;
       autoCheckAgreement = response.settings.autoCheckAgreement !== false;
       preserveFocus = !!response.settings.preserveFocus;
+      deepScan = !!response.settings.deepScan;
       calculateRules = response.settings.calculateRules || [];
       agreementSelectors = response.settings.agreementSelectors || [];
       captchaSelector = response.settings.captchaSelector || '';
@@ -231,12 +238,32 @@ function buildCaptchasFromSelector(selector: string): DetectedCaptcha[] {
 
 async function init(): Promise<void> {
   await initSettings();
-  Logger.info('内容脚本已加载 (Firefox)', { url: getFullUrl(), hostname: location.hostname });
+
+  // 子框架启动门控：未启用「深度扫描」时直接退出，避免在广告 / 分析 iframe 中徒增开销。
+  if (!IS_TOP_FRAME && !deepScan) {
+    return;
+  }
+
+  Logger.info('内容脚本已加载 (Firefox)', {
+    url: getFullUrl(),
+    hostname: location.hostname,
+    topFrame: IS_TOP_FRAME,
+    deepScan,
+  });
+
+  if (deepScan) {
+    installFrameBridge();
+    if (!IS_TOP_FRAME) {
+      requestParentHostInfo();
+    }
+  }
+
   browser.runtime.onMessage.addListener((message: any, sender: any) => {
     return new Promise((resolve) => {
       handleMessage(message, sender, resolve);
     });
   });
+
   setTimeout(async () => {
     if (isBlacklisted()) {
       Logger.info('当前站点在黑名单中，跳过自动识别');
@@ -246,7 +273,7 @@ async function init(): Promise<void> {
     scanPage();
     startAutoDetector();
     checkAgreementBoxes();
-  }, 800);
+  }, IS_TOP_FRAME ? 800 : 1200);
 }
 
 function handleMessage(message: any, _sender: any, sendResponse: (response: any) => void): void {
@@ -296,7 +323,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
     return;
   }
   try {
-    Logger.info('右键识别请求:', srcUrl);
+    Logger.info('右键识别请求:', srcUrl, { topFrame: IS_TOP_FRAME });
     let imgEl: HTMLImageElement | null = null;
     for (const img of Array.from(document.querySelectorAll('img'))) {
       if (img instanceof HTMLImageElement && (img.src === srcUrl || img.currentSrc === srcUrl)) {
@@ -327,7 +354,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
     });
     if (!response?.success) {
       Logger.warn('右键识别失败:', response?.error);
-      showContextMenuToast({ kind: 'error', errorMessage: response?.error || t('content.unknownError') });
+      reportContextResult({ kind: 'error', errorMessage: response?.error || t('content.unknownError') });
       sendResponse({ success: false, error: response?.error });
       return;
     }
@@ -341,14 +368,6 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
     }
     Logger.info('右键识别结果:', resultText);
 
-    let copied = false;
-    try {
-      await navigator.clipboard.writeText(resultText);
-      copied = true;
-    } catch (e) {
-      Logger.warn('剪贴板写入失败:', e);
-    }
-
     let filled = false;
     let fillSkipReason: 'no-input' | 'fill-error' | null = null;
     if (imageContextMenuAutoFill) {
@@ -357,7 +376,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
       if (!inputEl) inputEl = queryInputElementBySelector(inputSelector);
       if (!inputEl) {
         fillSkipReason = 'no-input';
-        Logger.info('右键识别：未找到可填入的输入框（已复制到剪贴板，用户可手动粘贴）');
+        Logger.info('右键识别：未找到可填入的输入框');
       } else {
         try {
           await autoFill.fill(inputEl, resultText, {
@@ -377,19 +396,65 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
       }
     }
 
-    showContextMenuToast({
+    reportContextResult({
       result: resultText,
       filled,
-      copied,
       fillSkipReason,
       autoFillEnabled: imageContextMenuAutoFill,
     });
-    sendResponse({ success: true, text: resultText, filled, copied });
+    sendResponse({ success: true, text: resultText, filled });
   } catch (e) {
     Logger.error('右键识别出错:', e);
-    showContextMenuToast({ kind: 'error', errorMessage: (e as Error).message });
+    reportContextResult({ kind: 'error', errorMessage: (e as Error).message });
     sendResponse({ success: false, error: (e as Error).message });
   }
+}
+
+/** Sub-frame 转发右键识别结果到顶层 frame，由顶层完成剪贴板写入与 toast 展示。 */
+function reportContextResult(
+  payload: { kind: 'error'; errorMessage: string }
+    | { result: string; filled: boolean; fillSkipReason: 'no-input' | 'fill-error' | null; autoFillEnabled: boolean }
+): void {
+  if (IS_TOP_FRAME || !deepScan) {
+    deliverContextResult(payload);
+    return;
+  }
+  try {
+    window.top?.postMessage({
+      _mieru: MIERU_MSG_NS,
+      type: 'ctx-result',
+      payload,
+    }, '*');
+    Logger.info('[deepScan] 右键识别结果转发到顶层 (Firefox)', { kind: (payload as any).kind || 'ok' });
+  } catch (e) {
+    Logger.warn('[deepScan] 转发右键结果失败，回退本地展示 (Firefox)', e);
+    deliverContextResult(payload);
+  }
+}
+
+async function deliverContextResult(
+  payload: { kind: 'error'; errorMessage: string }
+    | { result: string; filled: boolean; fillSkipReason: 'no-input' | 'fill-error' | null; autoFillEnabled: boolean }
+): Promise<void> {
+  if ((payload as any).kind === 'error') {
+    showContextMenuToast(payload as any);
+    return;
+  }
+  const ok = payload as { result: string; filled: boolean; fillSkipReason: 'no-input' | 'fill-error' | null; autoFillEnabled: boolean };
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(ok.result);
+    copied = true;
+  } catch (e) {
+    Logger.warn('剪贴板写入失败:', e);
+  }
+  showContextMenuToast({
+    result: ok.result,
+    filled: ok.filled,
+    copied,
+    fillSkipReason: ok.fillSkipReason,
+    autoFillEnabled: ok.autoFillEnabled,
+  });
 }
 
 type ContextToastInput =
@@ -405,7 +470,7 @@ type ContextToastInput =
 
 function showContextMenuToast(input: ContextToastInput): void {
   try {
-    const id = 'ddddocr-ctx-toast';
+    const id = 'Mieru-ctx-toast';
     const old = document.getElementById(id);
     if (old) old.remove();
 
@@ -496,10 +561,23 @@ async function checkAndApplySiteRule(): Promise<void> {
     Logger.debug('站点规则:', rules);
     const currentUrl = getFullUrl();
     const currentHostname = location.hostname;
+
+    const candidateHostnames = new Set<string>([currentHostname]);
+    if (!IS_TOP_FRAME && parentHostname) {
+      candidateHostnames.add(parentHostname);
+    }
+
     let matchedRule: (SiteRule & { hostname: string }) | null = null;
     for (const key of Object.keys(rules)) {
       const rule = rules[key];
       if (!rule.enabled) continue;
+
+      // 接力规则归属判定：顶层跳过；子框架需 frameUrl 与自身匹配
+      if (rule.frameSelector) {
+        if (IS_TOP_FRAME) continue;
+        if (!frameUrlMatchesSelf(rule.frameUrl)) continue;
+      }
+
       if (rule.fullUrl && currentUrl === rule.fullUrl) {
         matchedRule = rule;
         break;
@@ -508,7 +586,7 @@ async function checkAndApplySiteRule(): Promise<void> {
         matchedRule = rule;
         break;
       }
-      if (rule.hostname === currentHostname && !rule.fullUrl && !rule.urlPattern) {
+      if (candidateHostnames.has(rule.hostname) && !rule.fullUrl && !rule.urlPattern) {
         matchedRule = rule;
       }
     }
@@ -525,7 +603,11 @@ async function checkAndApplySiteRule(): Promise<void> {
         customCaptchaElement = element;
         customInputElement = inputEl;
         currentCaptcha = buildCaptchaFromElement(element, 'rule-selected', inputEl);
-        Logger.info('应用站点规则, 验证码元素:', currentCaptcha.elementInfo);
+        Logger.info('应用站点规则, 验证码元素:', {
+          ...currentCaptcha.elementInfo,
+          viaFrameRule: !!matchedRule.frameSelector,
+          topFrame: IS_TOP_FRAME,
+        });
         detector.highlight(currentCaptcha);
         setTimeout(() => detector.unhighlight(currentCaptcha!), 1200);
         if (autoSolveOnRuleEnabled) {
@@ -537,6 +619,19 @@ async function checkAndApplySiteRule(): Promise<void> {
     }
   } catch (error) {
     Logger.error('检查网站规则失败:', error);
+  }
+}
+
+function frameUrlMatchesSelf(frameUrl: string | undefined): boolean {
+  if (!frameUrl) return true;
+  try {
+    const a = new URL(frameUrl);
+    const b = new URL(location.href);
+    if (a.origin !== b.origin) return false;
+    if (a.pathname === b.pathname) return true;
+    return b.pathname.startsWith(a.pathname.replace(/[^/]+$/, ''));
+  } catch {
+    return false;
   }
 }
 
@@ -671,19 +766,39 @@ async function handleFill(text: string, options: any, sendResponse: (response: a
   }
 }
 
-function handleGetStatus(sendResponse: (response: any) => void): void {
+async function handleGetStatus(sendResponse: (response: any) => void): Promise<void> {
   const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.getDetectedCaptchas();
   const resolvedInput = customInputElement || queryInputElementBySelector(inputSelector) || currentCaptcha?.inputElement;
+
+  let hasFrameRule = false;
+  if (IS_TOP_FRAME && deepScan) {
+    try {
+      const rulesResponse = await browser.runtime.sendMessage({ action: 'getSiteRules' });
+      const rules: Record<string, any> = (rulesResponse && rulesResponse.success) ? (rulesResponse.rules || {}) : {};
+      const currentHostname = location.hostname;
+      const currentUrl = getFullUrl();
+      hasFrameRule = Object.values(rules).some((r: any) => {
+        if (!r || !r.enabled || !r.frameSelector) return false;
+        if (r.fullUrl) return r.fullUrl === currentUrl;
+        if (r.urlPattern) return currentUrl.startsWith(r.urlPattern);
+        return r.hostname === currentHostname;
+      });
+    } catch (e) {
+      Logger.warn('[deepScan] 查询接力规则失败 (Firefox)', e);
+    }
+  }
+
   sendResponse({
     success: true,
     isProcessing: processingElements.size > 0,
     captchaCount: captchas.length,
-    hasCaptcha: captchas.length > 0 || !!customCaptchaElement,
+    hasCaptcha: captchas.length > 0 || !!customCaptchaElement || hasFrameRule,
     currentCaptcha: currentCaptcha ? { id: currentCaptcha.id, type: currentCaptcha.type, confidence: currentCaptcha.confidence } : null,
     autoDetectEnabled,
-    hasCustomInput: !!customInputElement,
-    hasCustomCaptcha: !!customCaptchaElement,
-    isReady: !!(customCaptchaElement || captchas.length > 0) && !!resolvedInput,
+    hasCustomInput: !!customInputElement || hasFrameRule,
+    hasCustomCaptcha: !!customCaptchaElement || hasFrameRule,
+    hasFrameRule,
+    isReady: hasFrameRule || (!!(customCaptchaElement || captchas.length > 0) && !!resolvedInput),
   });
 }
 
@@ -691,6 +806,40 @@ function handleStartPicker(sendResponse: (response: any) => void): void {
   initElementPicker('captcha', async (result) => {
     if (result.cancelled) { sendResponse({ success: false, cancelled: true }); return; }
     if (result.success) {
+      // 跨框架接力：直接保存规则（含 frameSelector），无法在顶层文档对元素做后续操作
+      if (result.frameSelector) {
+        Logger.info('[deepScan] 接力规则保存 (Firefox)', {
+          frameSelector: result.frameSelector,
+          innerSelector: result.selector,
+        });
+        try {
+          await browser.runtime.sendMessage({
+            action: 'saveSiteRule',
+            hostname: location.hostname,
+            rule: {
+              selector: result.selector,
+              frameSelector: result.frameSelector,
+              frameUrl: result.frameUrl,
+              fullUrl: getFullUrl(),
+              urlPattern: getUrlPattern(),
+              enabled: true,
+            },
+          });
+        } catch (e) {
+          Logger.error('[deepScan] 保存接力规则失败 (Firefox)', e);
+        }
+        sendResponse({
+          success: true,
+          selector: result.selector,
+          frameSelector: result.frameSelector,
+          frameUrl: result.frameUrl,
+          info: result.info,
+          hostname: location.hostname,
+          fullUrl: getFullUrl(),
+          urlPattern: getUrlPattern(),
+        });
+        return;
+      }
       customCaptchaElement = normalizeCaptchaElement(result.element);
       if (!customCaptchaElement) { sendResponse({ success: false, error: t('picker.selectCaptcha') }); return; }
       currentCaptcha = buildCaptchaFromElement(customCaptchaElement, 'manual-selected', resolveInputElementForCaptcha(customCaptchaElement));
@@ -703,6 +852,24 @@ function handleStartPicker(sendResponse: (response: any) => void): void {
 function handleStartInputPicker(sendResponse: (response: any) => void): void {
   initElementPicker('input', async (result) => {
     if (result.cancelled) { sendResponse({ success: false, cancelled: true }); return; }
+    if (result.success && result.frameSelector) {
+      Logger.info('[deepScan] 接力输入框规则保存 (Firefox)', {
+        frameSelector: result.frameSelector,
+        innerSelector: result.selector,
+      });
+      // 输入框相关规则与已有 captcha 规则可能拆开存储 —— 这里仅回传，由调用方决定如何合并
+      sendResponse({
+        success: true,
+        selector: result.selector,
+        frameSelector: result.frameSelector,
+        frameUrl: result.frameUrl,
+        info: result.info,
+        hostname: location.hostname,
+        fullUrl: getFullUrl(),
+        urlPattern: getUrlPattern(),
+      });
+      return;
+    }
     if (result.success && result.element instanceof HTMLInputElement) {
       customInputElement = result.element;
       if (currentCaptcha) currentCaptcha.inputElement = customInputElement;
@@ -758,15 +925,15 @@ function clearGuessMode(): void {
 function showGuessTooltip(mode: 'captcha' | 'input'): void {
   hideGuessTooltip();
   const tooltip = document.createElement('div');
-  tooltip.id = 'ddddocr-guess-tooltip';
-  tooltip.className = 'ddddocr-guessed-tooltip';
+  tooltip.id = 'Mieru-guess-tooltip';
+  tooltip.className = 'Mieru-guessed-tooltip';
   tooltip.textContent = mode === 'captcha' ? t('picker.guessCaptcha') : t('picker.guessInput');
   tooltip.style.cssText = 'top: 10px; left: 50%; transform: translateX(-50%);';
   document.body.appendChild(tooltip);
 }
 
 function hideGuessTooltip(): void {
-  const tooltip = document.getElementById('ddddocr-guess-tooltip');
+  const tooltip = document.getElementById('Mieru-guess-tooltip');
   if (tooltip) tooltip.remove();
 }
 
@@ -820,7 +987,7 @@ function handleTriggerAuto(sendResponse: (response: any) => void): void {
 }
 
 async function showCaptchaPreview(imageData: string, captcha: DetectedCaptcha): Promise<void> {
-  const existing = document.getElementById('ddddocr-preview');
+  const existing = document.getElementById('Mieru-preview');
   if (existing) existing.remove();
   let effectiveTheme = 'light';
   try {
@@ -838,7 +1005,7 @@ async function showCaptchaPreview(imageData: string, captcha: DetectedCaptcha): 
     border: isDark ? '#27272a' : '#e4e4e7',
   };
   const overlay = document.createElement('div');
-  overlay.id = 'ddddocr-preview';
+  overlay.id = 'Mieru-preview';
   overlay.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:999999;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;`;
   const dialog = document.createElement('div');
   dialog.style.cssText = `background:${colors.bg};padding:24px;border-radius:16px;max-width:500px;color:${colors.text};border:1px solid ${colors.border};`;
@@ -1085,16 +1252,187 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
   }
 }
 
+// ============================================================================
+// 深度扫描 · 跨框架 picker 桥接（Firefox MV2）
+// 协议与 Chrome 版本一致，详见 content.ts 中的注释。
+// ============================================================================
+
+const MIERU_MSG_NS = 1;
+
+interface PendingFrameRelay {
+  requestId: string;
+  iframe: HTMLIFrameElement;
+  mode: 'captcha' | 'input';
+  callback: (result: any) => void;
+}
+
+let pendingFrameRelay: PendingFrameRelay | null = null;
+let parentHostname: string | null = null;
+
+function installFrameBridge(): void {
+  window.addEventListener('message', onFrameBridgeMessage);
+  Logger.info('[deepScan] frame bridge installed (Firefox)', { topFrame: IS_TOP_FRAME });
+}
+
+function requestParentHostInfo(): void {
+  try {
+    window.parent.postMessage({ _mieru: MIERU_MSG_NS, type: 'request-host-info' }, '*');
+    Logger.info('[deepScan] 子框架请求父 hostname (Firefox)');
+  } catch (e) {
+    Logger.warn('[deepScan] postMessage(request-host-info) 失败 (Firefox)', e);
+  }
+  setTimeout(() => {
+    if (parentHostname) return;
+    try {
+      if (document.referrer) {
+        parentHostname = new URL(document.referrer).hostname;
+        Logger.info('[deepScan] parent host-info 握手超时，回退到 referrer (Firefox)', { parentHostname });
+      }
+    } catch { /* ignore */ }
+  }, 1500);
+}
+
+function onFrameBridgeMessage(event: MessageEvent): void {
+  const data = event.data;
+  if (!data || data._mieru !== MIERU_MSG_NS) return;
+
+  if (!IS_TOP_FRAME) {
+    try { if (event.source !== window.parent) return; } catch { return; }
+    if (data.type === 'enter-picker') {
+      const mode: 'captcha' | 'input' = data.mode === 'input' ? 'input' : 'captcha';
+      const requestId = String(data.requestId || '');
+      Logger.info('[deepScan] 子框架进入 picker (Firefox)', { mode, requestId, url: getFullUrl() });
+      initElementPicker(mode, (result) => {
+        try {
+          if (result.cancelled) {
+            (event.source as Window).postMessage({ _mieru: MIERU_MSG_NS, type: 'picker-cancelled', requestId }, '*');
+            Logger.info('[deepScan] 子框架回包：取消 (Firefox)', { requestId });
+          } else if (result.success) {
+            (event.source as Window).postMessage({
+              _mieru: MIERU_MSG_NS,
+              type: 'picker-result',
+              requestId,
+              selector: result.selector,
+              info: result.info,
+            }, '*');
+            Logger.info('[deepScan] 子框架回包：结果 (Firefox)', { requestId, selector: result.selector });
+          }
+        } catch (e) {
+          Logger.warn('[deepScan] 子框架回包失败 (Firefox)', e);
+        }
+      });
+    } else if (data.type === 'host-info' && typeof data.hostname === 'string') {
+      const isNew = parentHostname !== data.hostname;
+      parentHostname = data.hostname;
+      Logger.info('[deepScan] 子框架收到父 hostname (Firefox)', { parentHostname });
+      if (isNew && !customCaptchaElement) {
+        Logger.debug('[deepScan] parent hostname 到达，重试规则匹配 (Firefox)');
+        checkAndApplySiteRule();
+      }
+    }
+    return;
+  }
+
+  // 顶层：响应子框架的 host-info 请求
+  if (data.type === 'request-host-info') {
+    try {
+      (event.source as Window).postMessage({
+        _mieru: MIERU_MSG_NS, type: 'host-info', hostname: location.hostname,
+      }, '*');
+      Logger.debug('[deepScan] 顶层回复 host-info (Firefox)', { hostname: location.hostname });
+    } catch (e) {
+      Logger.warn('[deepScan] 回复 host-info 失败 (Firefox)', e);
+    }
+    return;
+  }
+
+  // 顶层：接收子框架转发的右键识别结果
+  if (data.type === 'ctx-result' && data.payload) {
+    Logger.info('[deepScan] 顶层收到子框架右键识别结果 (Firefox)', { kind: data.payload.kind || 'ok' });
+    deliverContextResult(data.payload);
+    return;
+  }
+
+  if (!pendingFrameRelay) return;
+  if (event.source !== pendingFrameRelay.iframe.contentWindow) return;
+  if (data.requestId !== pendingFrameRelay.requestId) return;
+
+  if (data.type === 'picker-result') {
+    Logger.info('[deepScan] 顶层收到子框架 picker 结果 (Firefox)', {
+      mode: pendingFrameRelay.mode,
+      innerSelector: data.selector,
+    });
+    const frameSelector = detector.generateSelector(pendingFrameRelay.iframe);
+    const frameUrl = (() => { try { return pendingFrameRelay.iframe.src || ''; } catch { return ''; } })();
+    const relay = pendingFrameRelay;
+    pendingFrameRelay = null;
+    relay.callback({
+      success: true,
+      selector: data.selector,
+      frameSelector,
+      frameUrl,
+      info: data.info,
+    });
+  } else if (data.type === 'picker-cancelled') {
+    Logger.info('[deepScan] 子框架取消 picker (Firefox)', { mode: pendingFrameRelay.mode });
+    const relay = pendingFrameRelay;
+    pendingFrameRelay = null;
+    relay.callback({ cancelled: true });
+  }
+}
+
+function startFrameRelay(
+  iframe: HTMLIFrameElement,
+  mode: 'captcha' | 'input',
+  pickerCleanup: () => void,
+  callback: (result: any) => void,
+): boolean {
+  if (!iframe.contentWindow) {
+    Logger.warn('[deepScan] iframe 没有 contentWindow (Firefox)');
+    return false;
+  }
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const cancelTimer = setTimeout(() => {
+    if (pendingFrameRelay?.requestId === requestId) {
+      Logger.warn('[deepScan] 子框架接力超时 (Firefox)');
+      pendingFrameRelay = null;
+      callback({ cancelled: true, error: 'frame-relay-timeout' });
+    }
+  }, 10000);
+
+  pendingFrameRelay = {
+    requestId,
+    iframe,
+    mode,
+    callback: (result) => { clearTimeout(cancelTimer); callback(result); },
+  };
+
+  try {
+    iframe.contentWindow.postMessage({
+      _mieru: MIERU_MSG_NS, type: 'enter-picker', mode, requestId,
+    }, '*');
+    Logger.info('[deepScan] 顶层发起子框架接力 (Firefox)', { requestId, mode, frameUrl: iframe.src });
+    pickerCleanup();
+    return true;
+  } catch (e) {
+    Logger.warn('[deepScan] postMessage 失败 (Firefox)', e);
+    clearTimeout(cancelTimer);
+    pendingFrameRelay = null;
+    return false;
+  }
+}
+
 function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) => void): void {
   let isActive = true;
   let hoveredElement: Element | null = null;
+  let hoveredIframe: HTMLIFrameElement | null = null;
   const overlay = document.createElement('div');
-  overlay.id = 'ddddocr-picker-overlay';
+  overlay.id = 'Mieru-picker-overlay';
   overlay.style.cssText = 'position:fixed;pointer-events:none;border:3px solid #6366f1;background:rgba(99,102,241,0.15);z-index:999998;display:none;border-radius:4px;';
   document.body.appendChild(overlay);
   const tooltipText = mode === 'captcha' ? t('picker.selectCaptcha') : t('picker.selectInput');
   const tooltip = document.createElement('div');
-  tooltip.id = 'ddddocr-picker-tooltip';
+  tooltip.id = 'Mieru-picker-tooltip';
   tooltip.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;padding:12px 24px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;z-index:999999;box-shadow:0 4px 20px rgba(0,0,0,0.5);display:flex;align-items:center;gap:16px;border:1px solid #6366f1;';
   tooltip.innerHTML = `<span>${tooltipText}</span><span id="picker-info" style="color:#a1a1aa;font-size:12px;"></span><button id="picker-cancel" style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;">${t('picker.cancel')}</button>`;
   document.body.appendChild(tooltip);
@@ -1110,6 +1448,27 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
     if (!isActive) return;
     const element = document.elementFromPoint(e.clientX, e.clientY);
     if (!element || element.id.includes('ddddocr')) return;
+
+    if (IS_TOP_FRAME && deepScan && element.tagName === 'IFRAME') {
+      hoveredIframe = element as HTMLIFrameElement;
+      hoveredElement = null;
+      const rect = element.getBoundingClientRect();
+      overlay.style.display = 'block';
+      overlay.style.borderColor = '#f59e0b';
+      overlay.style.background = 'rgba(245,158,11,0.15)';
+      overlay.style.top = rect.top + 'px';
+      overlay.style.left = rect.left + 'px';
+      overlay.style.width = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
+      const infoEl = document.getElementById('picker-info');
+      if (infoEl) infoEl.textContent = t('picker.iframeHint');
+      return;
+    }
+
+    hoveredIframe = null;
+    overlay.style.borderColor = '#6366f1';
+    overlay.style.background = 'rgba(99,102,241,0.15)';
+
     let target: Element | null = null;
     if (mode === 'captcha') {
       if (['IMG', 'CANVAS', 'SVG'].includes(element.tagName)) target = element;
@@ -1142,6 +1501,17 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
     if (!isActive) return;
     e.preventDefault();
     e.stopPropagation();
+
+    if (IS_TOP_FRAME && deepScan && hoveredIframe) {
+      const ok = startFrameRelay(hoveredIframe, mode, cleanup, callback);
+      if (!ok) {
+        const infoEl = document.getElementById('picker-info');
+        if (infoEl) infoEl.textContent = t('picker.iframeRelayFailed');
+        hoveredIframe = null;
+      }
+      return;
+    }
+
     if (hoveredElement) {
       const selector = detector.generateSelector(hoveredElement);
       const rect = hoveredElement.getBoundingClientRect();

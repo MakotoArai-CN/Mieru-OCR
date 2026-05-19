@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "ddddocr-unified",
+      "name": "Mieru-unified",
       "dependencies": {
         "@napi-rs/canvas": "^0.1.96",
         "adm-zip": "^0.5.16",

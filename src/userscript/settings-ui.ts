@@ -73,9 +73,9 @@ export class SettingsUI {
 
   private createStyles(): void {
     const style = document.createElement('style');
-    style.id = 'ddddocr-settings-styles';
+    style.id = 'Mieru-settings-styles';
     style.textContent = `
-.ddddocr-overlay {
+.Mieru-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -85,12 +85,12 @@ export class SettingsUI {
   backdrop-filter: blur(4px);
   z-index: 2147483646;
   display: none;
-  animation: ddddocr-fade 0.2s ease;
+  animation: Mieru-fade 0.2s ease;
   -webkit-overflow-scrolling: touch;
 }
-.ddddocr-overlay.visible { display: block; }
+.Mieru-overlay.visible { display: block; }
 
-.ddddocr-modal {
+.Mieru-modal {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -106,11 +106,11 @@ export class SettingsUI {
   display: none;
   box-shadow: 0 25px 80px rgba(74, 144, 226, 0.35);
 }
-.ddddocr-modal.visible {
+.Mieru-modal.visible {
   display: block;
-  animation: ddddocr-scale 0.3s ease;
+  animation: Mieru-scale 0.3s ease;
 }
-.ddddocr-modal.mobile {
+.Mieru-modal.mobile {
   width: 100%;
   max-width: 100%;
   height: 100%;
@@ -121,20 +121,20 @@ export class SettingsUI {
   border-radius: 0;
 }
 
-@keyframes ddddocr-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes ddddocr-scale {
+@keyframes Mieru-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes Mieru-scale {
   from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
-.ddddocr-modal.mobile.visible {
-  animation: ddddocr-slide-up 0.3s ease;
+.Mieru-modal.mobile.visible {
+  animation: Mieru-slide-up 0.3s ease;
 }
-@keyframes ddddocr-slide-up {
+@keyframes Mieru-slide-up {
   from { opacity: 0; transform: translateY(100%); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.ddddocr-header {
+.Mieru-header {
   background: rgba(255, 255, 255, 0.15);
   padding: 20px 24px;
   display: flex;
@@ -142,14 +142,14 @@ export class SettingsUI {
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
-.ddddocr-modal.mobile .ddddocr-header {
+.Mieru-modal.mobile .Mieru-header {
   padding: 16px;
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
-.ddddocr-title {
+.Mieru-title {
   color: white;
   font-size: 20px;
   font-weight: 700;
@@ -158,9 +158,9 @@ export class SettingsUI {
   gap: 10px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-.ddddocr-modal.mobile .ddddocr-title { font-size: 18px; }
+.Mieru-modal.mobile .Mieru-title { font-size: 18px; }
 
-.ddddocr-close {
+.Mieru-close {
   width: 36px;
   height: 36px;
   min-width: 36px;
@@ -177,11 +177,11 @@ export class SettingsUI {
   transition: all 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
-.ddddocr-close:hover { background: rgb(242, 0, 105); }
-.ddddocr-close:active { background: rgba(255, 255, 255, 0.5); }
-.ddddocr-modal.mobile .ddddocr-close { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+.Mieru-close:hover { background: rgb(242, 0, 105); }
+.Mieru-close:active { background: rgba(255, 255, 255, 0.5); }
+.Mieru-modal.mobile .Mieru-close { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 
-.ddddocr-tabs {
+.Mieru-tabs {
   display: flex;
   background: rgba(255, 255, 255, 0.1);
   padding: 0 16px;
@@ -190,10 +190,10 @@ export class SettingsUI {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.ddddocr-tabs::-webkit-scrollbar { display: none; }
-.ddddocr-modal.mobile .ddddocr-tabs { padding: 0 8px; position: sticky; top: 76px; z-index: 10; }
+.Mieru-tabs::-webkit-scrollbar { display: none; }
+.Mieru-modal.mobile .Mieru-tabs { padding: 0 8px; position: sticky; top: 76px; z-index: 10; }
 
-.ddddocr-tab {
+.Mieru-tab {
   padding: 14px 16px;
   color: rgba(255, 255, 255, 0.8);
   font-size: 13px;
@@ -206,10 +206,10 @@ export class SettingsUI {
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
-.ddddocr-modal.mobile .ddddocr-tab { padding: 12px 14px; font-size: 14px; min-height: 48px; }
-.ddddocr-tab:hover { color: white; }
-.ddddocr-tab.active { color: white; }
-.ddddocr-tab.active::after {
+.Mieru-modal.mobile .Mieru-tab { padding: 12px 14px; font-size: 14px; min-height: 48px; }
+.Mieru-tab:hover { color: white; }
+.Mieru-tab.active { color: white; }
+.Mieru-tab.active::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -221,7 +221,7 @@ export class SettingsUI {
   border-radius: 3px 3px 0 0;
 }
 
-.ddddocr-content {
+.Mieru-content {
   background: var(--bg-secondary);
   padding: 24px;
   max-height: calc(85vh - 180px);
@@ -229,21 +229,21 @@ export class SettingsUI {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
-.ddddocr-modal.mobile .ddddocr-content {
+.Mieru-modal.mobile .Mieru-content {
   padding: 16px;
   max-height: none;
   height: calc(100% - 140px);
   padding-bottom: 24px;
 }
-.ddddocr-content::-webkit-scrollbar { width: 6px; }
-.ddddocr-content::-webkit-scrollbar-track { background: var(--border); border-radius: 3px; }
-.ddddocr-content::-webkit-scrollbar-thumb { background: #FFB6C1; border-radius: 3px; }
-.ddddocr-content::-webkit-scrollbar-thumb:hover { background: #FF69B4; }
+.Mieru-content::-webkit-scrollbar { width: 6px; }
+.Mieru-content::-webkit-scrollbar-track { background: var(--border); border-radius: 3px; }
+.Mieru-content::-webkit-scrollbar-thumb { background: #FFB6C1; border-radius: 3px; }
+.Mieru-content::-webkit-scrollbar-thumb:hover { background: #FF69B4; }
 
-.ddddocr-panel { display: none; }
-.ddddocr-panel.active { display: block; }
+.Mieru-panel { display: none; }
+.Mieru-panel.active { display: block; }
 
-.ddddocr-card {
+.Mieru-card {
   background: var(--bg-primary);
   border-radius: 16px;
   padding: 20px;
@@ -251,9 +251,9 @@ export class SettingsUI {
   box-shadow: 0 2px 12px rgba(74, 144, 226, 0.08);
   border: 1px solid rgba(74, 144, 226, 0.06);
 }
-.ddddocr-modal.mobile .ddddocr-card { padding: 16px; border-radius: 12px; }
+.Mieru-modal.mobile .Mieru-card { padding: 16px; border-radius: 12px; }
 
-.ddddocr-card-title {
+.Mieru-card-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
@@ -262,7 +262,7 @@ export class SettingsUI {
   align-items: center;
   gap: 8px;
 }
-.ddddocr-card-title::before {
+.Mieru-card-title::before {
   content: '';
   width: 4px;
   height: 16px;
@@ -270,7 +270,7 @@ export class SettingsUI {
   border-radius: 2px;
 }
 
-.ddddocr-row {
+.Mieru-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -278,16 +278,16 @@ export class SettingsUI {
   border-bottom: 1px solid var(--border);
   gap: 12px;
 }
-.ddddocr-modal.mobile .ddddocr-row { padding: 16px 0; }
-.ddddocr-row:last-child { border-bottom: none; }
+.Mieru-modal.mobile .Mieru-row { padding: 16px 0; }
+.Mieru-row:last-child { border-bottom: none; }
 
-.ddddocr-row-info { flex: 1; min-width: 0; }
-.ddddocr-row-label { font-size: 14px; color: var(--text-primary); font-weight: 500; }
-.ddddocr-modal.mobile .ddddocr-row-label { font-size: 15px; }
-.ddddocr-row-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.ddddocr-modal.mobile .ddddocr-row-desc { font-size: 13px; }
+.Mieru-row-info { flex: 1; min-width: 0; }
+.Mieru-row-label { font-size: 14px; color: var(--text-primary); font-weight: 500; }
+.Mieru-modal.mobile .Mieru-row-label { font-size: 15px; }
+.Mieru-row-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.Mieru-modal.mobile .Mieru-row-desc { font-size: 13px; }
 
-.ddddocr-switch {
+.Mieru-switch {
   position: relative;
   width: 48px;
   height: 26px;
@@ -298,9 +298,9 @@ export class SettingsUI {
   transition: background 0.3s;
   -webkit-tap-highlight-color: transparent;
 }
-.ddddocr-modal.mobile .ddddocr-switch { width: 56px; height: 32px; min-width: 56px; }
-.ddddocr-switch.on { background: #4A90E2; }
-.ddddocr-switch-knob {
+.Mieru-modal.mobile .Mieru-switch { width: 56px; height: 32px; min-width: 56px; }
+.Mieru-switch.on { background: #4A90E2; }
+.Mieru-switch-knob {
   position: absolute;
   top: 3px;
   left: 3px;
@@ -311,11 +311,11 @@ export class SettingsUI {
   transition: transform 0.3s;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
-.ddddocr-modal.mobile .ddddocr-switch-knob { width: 26px; height: 26px; }
-.ddddocr-switch.on .ddddocr-switch-knob { transform: translateX(22px); }
-.ddddocr-modal.mobile .ddddocr-switch.on .ddddocr-switch-knob { transform: translateX(24px); }
+.Mieru-modal.mobile .Mieru-switch-knob { width: 26px; height: 26px; }
+.Mieru-switch.on .Mieru-switch-knob { transform: translateX(22px); }
+.Mieru-modal.mobile .Mieru-switch.on .Mieru-switch-knob { transform: translateX(24px); }
 
-.ddddocr-input {
+.Mieru-input {
   width: 100%;
   padding: 12px 14px;
   border: 2px solid var(--border);
@@ -327,10 +327,10 @@ export class SettingsUI {
   background: var(--bg-primary);
   color: var(--text-primary);
 }
-.ddddocr-modal.mobile .ddddocr-input { padding: 14px 16px; font-size: 16px; border-radius: 12px; }
-.ddddocr-input:focus { outline: none; border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15); }
+.Mieru-modal.mobile .Mieru-input { padding: 14px 16px; font-size: 16px; border-radius: 12px; }
+.Mieru-input:focus { outline: none; border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15); }
 
-.ddddocr-select {
+.Mieru-select {
   width: 100%;
   padding: 12px 14px;
   border: 2px solid var(--border);
@@ -343,10 +343,10 @@ export class SettingsUI {
   color: var(--text-primary);
   cursor: pointer;
 }
-.ddddocr-modal.mobile .ddddocr-select { padding: 14px 16px; font-size: 16px; border-radius: 12px; }
-.ddddocr-select:focus { outline: none; border-color: #4A90E2; }
+.Mieru-modal.mobile .Mieru-select { padding: 14px 16px; font-size: 16px; border-radius: 12px; }
+.Mieru-select:focus { outline: none; border-color: #4A90E2; }
 
-.ddddocr-textarea {
+.Mieru-textarea {
   width: 100%;
   padding: 12px 14px;
   border: 2px solid var(--border);
@@ -361,10 +361,10 @@ export class SettingsUI {
   background: var(--bg-primary);
   color: var(--text-primary);
 }
-.ddddocr-modal.mobile .ddddocr-textarea { padding: 14px 16px; font-size: 14px; min-height: 120px; border-radius: 12px; }
-.ddddocr-textarea:focus { outline: none; border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15); }
+.Mieru-modal.mobile .Mieru-textarea { padding: 14px 16px; font-size: 14px; min-height: 120px; border-radius: 12px; }
+.Mieru-textarea:focus { outline: none; border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15); }
 
-.ddddocr-file-zone {
+.Mieru-file-zone {
   border: 2px dashed #d1e3f6;
   border-radius: 12px;
   padding: 24px;
@@ -375,15 +375,15 @@ export class SettingsUI {
   background: rgba(74, 144, 226, 0.02);
   -webkit-tap-highlight-color: transparent;
 }
-.ddddocr-file-zone:hover { border-color: #4A90E2; background: rgba(74, 144, 226, 0.05); }
-.ddddocr-file-zone:active { background: rgba(74, 144, 226, 0.1); }
-.ddddocr-file-zone input { display: none; }
-.ddddocr-file-icon { font-size: 32px; margin-bottom: 8px; color: #4A90E2; }
-.ddddocr-file-text { font-size: 13px; color: var(--text-secondary); }
-.ddddocr-file-name { font-size: 12px; color: #4A90E2; margin-top: 8px; font-weight: 500; }
+.Mieru-file-zone:hover { border-color: #4A90E2; background: rgba(74, 144, 226, 0.05); }
+.Mieru-file-zone:active { background: rgba(74, 144, 226, 0.1); }
+.Mieru-file-zone input { display: none; }
+.Mieru-file-icon { font-size: 32px; margin-bottom: 8px; color: #4A90E2; }
+.Mieru-file-text { font-size: 13px; color: var(--text-secondary); }
+.Mieru-file-name { font-size: 12px; color: #4A90E2; margin-top: 8px; font-weight: 500; }
 
-.ddddocr-btn-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
-.ddddocr-btn {
+.Mieru-btn-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.Mieru-btn {
   flex: 1;
   min-width: 100px;
   padding: 12px 20px;
@@ -395,20 +395,20 @@ export class SettingsUI {
   transition: all 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
-.ddddocr-modal.mobile .ddddocr-btn { padding: 14px 20px; font-size: 15px; min-height: 48px; }
-.ddddocr-btn-primary { background: #4A90E2; color: white; }
-.ddddocr-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(74, 144, 226, 0.35); }
-.ddddocr-btn-primary:active { transform: translateY(0); }
-.ddddocr-btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); }
-.ddddocr-btn-secondary:hover { background: var(--border); }
-.ddddocr-btn-secondary:active { background: var(--bg-hover); }
-.ddddocr-btn-danger { background: #fee2e2; color: #dc2626; }
-.ddddocr-btn-danger:hover { background: #fecaca; }
-.ddddocr-btn-danger:active { background: #fca5a5; }
-.ddddocr-btn-sm { padding: 8px 14px; font-size: 12px; flex: none;}
-.ddddocr-modal.mobile .ddddocr-btn-sm { padding: 10px 16px; font-size: 13px; min-height: 40px; }
+.Mieru-modal.mobile .Mieru-btn { padding: 14px 20px; font-size: 15px; min-height: 48px; }
+.Mieru-btn-primary { background: #4A90E2; color: white; }
+.Mieru-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(74, 144, 226, 0.35); }
+.Mieru-btn-primary:active { transform: translateY(0); }
+.Mieru-btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); }
+.Mieru-btn-secondary:hover { background: var(--border); }
+.Mieru-btn-secondary:active { background: var(--bg-hover); }
+.Mieru-btn-danger { background: #fee2e2; color: #dc2626; }
+.Mieru-btn-danger:hover { background: #fecaca; }
+.Mieru-btn-danger:active { background: #fca5a5; }
+.Mieru-btn-sm { padding: 8px 14px; font-size: 12px; flex: none;}
+.Mieru-modal.mobile .Mieru-btn-sm { padding: 10px 16px; font-size: 13px; min-height: 40px; }
 
-.ddddocr-hint {
+.Mieru-hint {
   background: rgba(74, 144, 226, 0.08);
   border: 1px solid rgba(74, 144, 226, 0.15);
   border-radius: 10px;
@@ -417,9 +417,9 @@ export class SettingsUI {
   color: var(--text-secondary);
   margin-top: 12px;
 }
-.ddddocr-modal.mobile .ddddocr-hint { font-size: 13px; padding: 14px 16px; }
+.Mieru-modal.mobile .Mieru-hint { font-size: 13px; padding: 14px 16px; }
 
-.ddddocr-badge {
+.Mieru-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -433,7 +433,7 @@ export class SettingsUI {
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
-.ddddocr-rule-item {
+.Mieru-rule-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -443,12 +443,12 @@ export class SettingsUI {
   margin-bottom: 8px;
   border: 1px solid rgba(74, 144, 226, 0.08);
 }
-.ddddocr-modal.mobile .ddddocr-rule-item { flex-wrap: wrap; padding: 14px; }
-.ddddocr-rule-item:last-child { margin-bottom: 0; }
-.ddddocr-rule-pattern { flex: 1; font-family: monospace; font-size: 13px; color: var(--text-primary); word-break: break-all; min-width: 0; }
-.ddddocr-rule-type { font-size: 11px; padding: 4px 8px; background: var(--border); border-radius: 4px; color: var(--text-secondary); white-space: nowrap; }
-.ddddocr-rule-output { font-size: 11px; padding: 4px 8px; background: #dbeafe; border-radius: 4px; color: #4A90E2; white-space: nowrap; }
-.ddddocr-rule-delete {
+.Mieru-modal.mobile .Mieru-rule-item { flex-wrap: wrap; padding: 14px; }
+.Mieru-rule-item:last-child { margin-bottom: 0; }
+.Mieru-rule-pattern { flex: 1; font-family: monospace; font-size: 13px; color: var(--text-primary); word-break: break-all; min-width: 0; }
+.Mieru-rule-type { font-size: 11px; padding: 4px 8px; background: var(--border); border-radius: 4px; color: var(--text-secondary); white-space: nowrap; }
+.Mieru-rule-output { font-size: 11px; padding: 4px 8px; background: #dbeafe; border-radius: 4px; color: #4A90E2; white-space: nowrap; }
+.Mieru-rule-delete {
   background: none;
   border: none;
   color: #ef4444;
@@ -462,7 +462,7 @@ export class SettingsUI {
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
 }
-.ddddocr-rule-edit {
+.Mieru-rule-edit {
   background: none;
   border: none;
   color: #4A90E2;
@@ -477,25 +477,25 @@ export class SettingsUI {
   -webkit-tap-highlight-color: transparent;
 }
 
-.ddddocr-empty { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
+.Mieru-empty { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
 
-.ddddocr-add-rule { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.ddddocr-add-rule input { flex: 2; min-width: 120px; }
-.ddddocr-add-rule select { flex: 1; min-width: 80px; }
-.ddddocr-modal.mobile .ddddocr-add-rule { flex-direction: column; }
-.ddddocr-modal.mobile .ddddocr-add-rule input,
-.ddddocr-modal.mobile .ddddocr-add-rule select { width: 100%; flex: none; }
+.Mieru-add-rule { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.Mieru-add-rule input { flex: 2; min-width: 120px; }
+.Mieru-add-rule select { flex: 1; min-width: 80px; }
+.Mieru-modal.mobile .Mieru-add-rule { flex-direction: column; }
+.Mieru-modal.mobile .Mieru-add-rule input,
+.Mieru-modal.mobile .Mieru-add-rule select { width: 100%; flex: none; }
 
 /* 统计样式 */
-.ddddocr-stats-grid {
+.Mieru-stats-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   margin-bottom: 16px;
 }
-.ddddocr-modal.mobile .ddddocr-stats-grid { grid-template-columns: 1fr; }
+.Mieru-modal.mobile .Mieru-stats-grid { grid-template-columns: 1fr; }
 
-.ddddocr-stat-card {
+.Mieru-stat-card {
   background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
   border-radius: 12px;
   padding: 16px;
@@ -503,7 +503,7 @@ export class SettingsUI {
   position: relative;
   overflow: hidden;
 }
-.ddddocr-stat-card::before {
+.Mieru-stat-card::before {
   content: '';
   position: absolute;
   top: -50%;
@@ -513,16 +513,16 @@ export class SettingsUI {
   background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
   pointer-events: none;
 }
-.ddddocr-stat-card.accent { background: linear-gradient(135deg, #FF69B4 0%, #FF1493 100%); }
-.ddddocr-stat-card.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
-.ddddocr-stat-card.warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.Mieru-stat-card.accent { background: linear-gradient(135deg, #FF69B4 0%, #FF1493 100%); }
+.Mieru-stat-card.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.Mieru-stat-card.warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
 
-.ddddocr-stat-label { font-size: 12px; opacity: 0.9; margin-bottom: 6px; }
-.ddddocr-stat-value { font-size: 28px; font-weight: 700; line-height: 1; }
-.ddddocr-stat-unit { font-size: 14px; font-weight: 400; opacity: 0.8; margin-left: 4px; }
+.Mieru-stat-label { font-size: 12px; opacity: 0.9; margin-bottom: 6px; }
+.Mieru-stat-value { font-size: 28px; font-weight: 700; line-height: 1; }
+.Mieru-stat-unit { font-size: 14px; font-weight: 400; opacity: 0.8; margin-left: 4px; }
 
-.ddddocr-rank-list { max-height: 400px; overflow-y: auto; }
-.ddddocr-rank-item {
+.Mieru-rank-list { max-height: 400px; overflow-y: auto; }
+.Mieru-rank-item {
   display: flex;
   align-items: center;
   padding: 14px 12px;
@@ -532,10 +532,10 @@ export class SettingsUI {
   border: 1px solid rgba(74, 144, 226, 0.08);
   transition: all 0.2s;
 }
-.ddddocr-rank-item:hover { background: var(--bg-tertiary); }
-.ddddocr-rank-item:last-child { margin-bottom: 0; }
+.Mieru-rank-item:hover { background: var(--bg-tertiary); }
+.Mieru-rank-item:last-child { margin-bottom: 0; }
 
-.ddddocr-rank-num {
+.Mieru-rank-num {
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -549,20 +549,20 @@ export class SettingsUI {
   margin-right: 12px;
   flex-shrink: 0;
 }
-.ddddocr-rank-item:nth-child(1) .ddddocr-rank-num { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
-.ddddocr-rank-item:nth-child(2) .ddddocr-rank-num { background: linear-gradient(135deg, #94a3b8, #64748b); color: white; }
-.ddddocr-rank-item:nth-child(3) .ddddocr-rank-num { background: linear-gradient(135deg, #cd7f32, #b8860b); color: white; }
+.Mieru-rank-item:nth-child(1) .Mieru-rank-num { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
+.Mieru-rank-item:nth-child(2) .Mieru-rank-num { background: linear-gradient(135deg, #94a3b8, #64748b); color: white; }
+.Mieru-rank-item:nth-child(3) .Mieru-rank-num { background: linear-gradient(135deg, #cd7f32, #b8860b); color: white; }
 
-.ddddocr-rank-info { flex: 1; min-width: 0; }
-.ddddocr-rank-host { font-size: 14px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ddddocr-rank-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; gap: 12px; }
-.ddddocr-rank-count { font-size: 18px; font-weight: 700; color: #4A90E2; margin-left: 12px; flex-shrink: 0; }
+.Mieru-rank-info { flex: 1; min-width: 0; }
+.Mieru-rank-host { font-size: 14px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.Mieru-rank-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: flex; gap: 12px; }
+.Mieru-rank-count { font-size: 18px; font-weight: 700; color: #4A90E2; margin-left: 12px; flex-shrink: 0; }
 
-.ddddocr-progress-bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
-.ddddocr-progress-fill { height: 100%; background: linear-gradient(90deg, #4A90E2, #FF69B4); border-radius: 3px; transition: width 0.3s ease; }
+.Mieru-progress-bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+.Mieru-progress-fill { height: 100%; background: linear-gradient(90deg, #4A90E2, #FF69B4); border-radius: 3px; transition: width 0.3s ease; }
 
 /* 站点规则样式 */
-.ddddocr-site-rule-item {
+.Mieru-site-rule-item {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -572,31 +572,31 @@ export class SettingsUI {
   margin-bottom: 10px;
   border: 1px solid rgba(74, 144, 226, 0.08);
 }
-.ddddocr-site-rule-item:last-child { margin-bottom: 0; }
-.ddddocr-site-rule-info { flex: 1; min-width: 0; }
-.ddddocr-site-rule-key { font-size: 14px; font-weight: 500; color: var(--text-primary); word-break: break-all; margin-bottom: 4px; }
-.ddddocr-site-rule-selector { font-size: 12px; color: var(--text-secondary); font-family: monospace; word-break: break-all; }
-.ddddocr-site-rule-badge { font-size: 10px; padding: 2px 6px; background: #dbeafe; color: #4A90E2; border-radius: 4px; margin-top: 6px; display: inline-block; }
-.ddddocr-site-rule-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.Mieru-site-rule-item:last-child { margin-bottom: 0; }
+.Mieru-site-rule-info { flex: 1; min-width: 0; }
+.Mieru-site-rule-key { font-size: 14px; font-weight: 500; color: var(--text-primary); word-break: break-all; margin-bottom: 4px; }
+.Mieru-site-rule-selector { font-size: 12px; color: var(--text-secondary); font-family: monospace; word-break: break-all; }
+.Mieru-site-rule-badge { font-size: 10px; padding: 2px 6px; background: #dbeafe; color: #4A90E2; border-radius: 4px; margin-top: 6px; display: inline-block; }
+.Mieru-site-rule-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
-.ddddocr-card-header {
+.Mieru-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
 }
-.ddddocr-card-header .ddddocr-card-title { margin-bottom: 0; }
+.Mieru-card-header .Mieru-card-title { margin-bottom: 0; }
 
 /* Chip keyword styles */
-.ddddocr-keyword-group {
+.Mieru-keyword-group {
   padding: 16px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 12px;
   margin-bottom: 12px;
 }
-.ddddocr-keyword-group:last-child { margin-bottom: 0; }
-.ddddocr-keyword-header {
+.Mieru-keyword-group:last-child { margin-bottom: 0; }
+.Mieru-keyword-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -604,23 +604,23 @@ export class SettingsUI {
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
-.ddddocr-keyword-actions {
+.Mieru-keyword-actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-.ddddocr-keyword-subtitle {
+.Mieru-keyword-subtitle {
   font-size: 12px;
   color: var(--text-muted);
 }
-.ddddocr-chip-list {
+.Mieru-chip-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   min-height: 38px;
 }
-.ddddocr-chip-item {
+.Mieru-chip-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -631,17 +631,17 @@ export class SettingsUI {
   max-width: 100%;
   font-size: 13px;
 }
-.ddddocr-chip-item.builtin { border-color: rgba(74, 144, 226, 0.35); }
-.ddddocr-chip-item.custom { border-color: rgba(255, 105, 180, 0.35); }
-.ddddocr-chip-text {
+.Mieru-chip-item.builtin { border-color: rgba(74, 144, 226, 0.35); }
+.Mieru-chip-item.custom { border-color: rgba(255, 105, 180, 0.35); }
+.Mieru-chip-text {
   color: var(--text-primary);
   word-break: break-all;
 }
-.ddddocr-chip-meta {
+.Mieru-chip-meta {
   font-size: 11px;
   color: var(--text-muted);
 }
-.ddddocr-chip-remove {
+.Mieru-chip-remove {
   width: 20px;
   height: 20px;
   border: none;
@@ -657,9 +657,9 @@ export class SettingsUI {
   font-size: 14px;
   transition: all 0.2s;
 }
-.ddddocr-chip-remove:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-.ddddocr-chip-input-row { margin-top: 12px; }
-.ddddocr-chip-input {
+.Mieru-chip-remove:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.Mieru-chip-input-row { margin-top: 12px; }
+.Mieru-chip-input {
   width: 100%;
   padding: 10px 14px;
   border: 2px solid var(--border);
@@ -670,8 +670,8 @@ export class SettingsUI {
   color: var(--text-primary);
   transition: all 0.2s;
 }
-.ddddocr-chip-input:focus { outline: none; border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15); }
-.ddddocr-chip-reset {
+.Mieru-chip-input:focus { outline: none; border-color: #4A90E2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.15); }
+.Mieru-chip-reset {
   padding: 4px 10px;
   font-size: 11px;
   border: 1px solid var(--border);
@@ -681,8 +681,8 @@ export class SettingsUI {
   cursor: pointer;
   transition: all 0.2s;
 }
-.ddddocr-chip-reset:hover { border-color: #4A90E2; color: #4A90E2; }
-.ddddocr-chip-empty {
+.Mieru-chip-reset:hover { border-color: #4A90E2; color: #4A90E2; }
+.Mieru-chip-empty {
   width: 100%;
   text-align: center;
   padding: 12px;
@@ -690,7 +690,7 @@ export class SettingsUI {
   font-size: 12px;
 }
 `;
-    if (!document.getElementById('ddddocr-settings-styles')) {
+    if (!document.getElementById('Mieru-settings-styles')) {
       document.head.appendChild(style);
     }
   }
@@ -727,10 +727,10 @@ export class SettingsUI {
 
     private async createContainer(): Promise<void> {
     this.overlay = document.createElement('div');
-    this.overlay.className = 'ddddocr-overlay';
+    this.overlay.className = 'Mieru-overlay';
 
     this.container = document.createElement('div');
-    this.container.className = 'ddddocr-modal';
+    this.container.className = 'Mieru-modal';
     if (isMobile()) {
       this.container.classList.add('mobile');
     }
@@ -755,24 +755,24 @@ export class SettingsUI {
     const agreementHtml = this.renderAgreementSelectors(config.agreementSelectors || []);
 
     this.container.innerHTML = `
-      <div class="ddddocr-header">
-        <div class="ddddocr-title">${t('settings.title')}</div>
-        <button class="ddddocr-close">×</button>
+      <div class="Mieru-header">
+        <div class="Mieru-title">${t('settings.title')}</div>
+        <button class="Mieru-close">×</button>
       </div>
-      <div class="ddddocr-tabs">
-        <button class="ddddocr-tab active" data-tab="general">${t('settings.tab.general')}</button>
-        <button class="ddddocr-tab" data-tab="rules">${t('settings.tab.rules')}</button>
-        <button class="ddddocr-tab" data-tab="subscription">${t('settings.tab.subscription')}</button>
-        <button class="ddddocr-tab" data-tab="stats">${t('settings.tab.stats')}</button>
-        <button class="ddddocr-tab" data-tab="calculate">${t('settings.tab.calculate')}</button>
-        <button class="ddddocr-tab" data-tab="model">${t('settings.tab.model')}</button>
-        <button class="ddddocr-tab" data-tab="whitelist">${t('settings.tab.whitelist')}</button>
+      <div class="Mieru-tabs">
+        <button class="Mieru-tab active" data-tab="general">${t('settings.tab.general')}</button>
+        <button class="Mieru-tab" data-tab="rules">${t('settings.tab.rules')}</button>
+        <button class="Mieru-tab" data-tab="subscription">${t('settings.tab.subscription')}</button>
+        <button class="Mieru-tab" data-tab="stats">${t('settings.tab.stats')}</button>
+        <button class="Mieru-tab" data-tab="calculate">${t('settings.tab.calculate')}</button>
+        <button class="Mieru-tab" data-tab="model">${t('settings.tab.model')}</button>
+        <button class="Mieru-tab" data-tab="whitelist">${t('settings.tab.whitelist')}</button>
       </div>
-      <div class="ddddocr-content">
+      <div class="Mieru-content">
         <!-- General -->
-        <div class="ddddocr-panel active" data-panel="general">
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('settings.detect.title')}</div>
+        <div class="Mieru-panel active" data-panel="general">
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('settings.detect.title')}</div>
             ${this.renderSwitchRow('autoDetect', t('settings.detect.auto'), t('settings.detect.autoHint'), config.autoDetect)}
             ${this.renderSwitchRow('typewriterEffect', t('settings.typewriter'), t('settings.typewriter.hint'), config.typewriterEffect)}
             ${this.renderSwitchRow('autoCheckAgreement', t('settings.autoCheckAgreement'), t('settings.autoCheckAgreement.hint'), config.autoCheckAgreement)}
@@ -780,52 +780,53 @@ export class SettingsUI {
             ${this.renderSwitchRow('autoSubmit', t('settings.autoSubmit'), t('settings.autoSubmit.hint'), config.autoSubmit ?? false)}
             ${this.renderSwitchRow('autoSolveOnRule', t('settings.autoSolveOnRule'), t('settings.autoSolveOnRule.hint'), config.autoSolveOnRule ?? true)}
             ${this.renderSwitchRow('preserveFocus', t('settings.preserveFocus'), t('settings.preserveFocus.hint'), config.preserveFocus ?? false)}
+            ${this.renderSwitchRow('deepScan', t('settings.deepScan'), t('settings.deepScan.hint'), (config as any).deepScan ?? false)}
             ${this.renderSwitchRow('debugMode', t('settings.debugMode'), t('settings.debugMode.hint'), config.debugMode)}
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('diag.title')}</div>
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('diag.title')}</div>
             <div style="font-size: 12px; opacity: 0.75; margin-bottom: 10px;">${t('diag.hint')}</div>
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-              <button id="ddddocr-diag-export" class="ddddocr-btn ddddocr-btn-primary">${t('diag.export')}</button>
-              <button id="ddddocr-diag-clear" class="ddddocr-btn ddddocr-btn-secondary">${t('diag.clear')}</button>
+              <button id="Mieru-diag-export" class="Mieru-btn Mieru-btn-primary">${t('diag.export')}</button>
+              <button id="Mieru-diag-clear" class="Mieru-btn Mieru-btn-secondary">${t('diag.clear')}</button>
             </div>
-            <div id="ddddocr-diag-status" style="margin-top: 8px; font-size: 12px; opacity: 0.75; min-height: 1em;"></div>
+            <div id="Mieru-diag-status" style="margin-top: 8px; font-size: 12px; opacity: 0.75; min-height: 1em;"></div>
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('settings.selectors')}</div>
-            <div class="ddddocr-row-label">${t('settings.captchaSelector')}</div>
-            <input type="text" class="ddddocr-input" data-key="captchaSelector" placeholder="img.captcha, #captchaImg" value="${escapeHtml(config.captchaSelector || '')}">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('settings.inputSelector')}</div>
-            <input type="text" class="ddddocr-input" data-key="inputSelector" placeholder="input#code, .captcha-input" value="${escapeHtml(config.inputSelector || '')}">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('settings.submitSelector')}</div>
-            <input type="text" class="ddddocr-input" data-key="submitSelector" placeholder="${t('settings.submitSelector.placeholder')}" value="${escapeHtml(config.submitSelector || '')}">
-            <div class="ddddocr-hint">${t('settings.captchaSelector.hint')}</div>
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('settings.agreementSelector')}</div>
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('settings.selectors')}</div>
+            <div class="Mieru-row-label">${t('settings.captchaSelector')}</div>
+            <input type="text" class="Mieru-input" data-key="captchaSelector" placeholder="img.captcha, #captchaImg" value="${escapeHtml(config.captchaSelector || '')}">
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('settings.inputSelector')}</div>
+            <input type="text" class="Mieru-input" data-key="inputSelector" placeholder="input#code, .captcha-input" value="${escapeHtml(config.inputSelector || '')}">
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('settings.submitSelector')}</div>
+            <input type="text" class="Mieru-input" data-key="submitSelector" placeholder="${t('settings.submitSelector.placeholder')}" value="${escapeHtml(config.submitSelector || '')}">
+            <div class="Mieru-hint">${t('settings.captchaSelector.hint')}</div>
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('settings.agreementSelector')}</div>
             <div id="agreementSelectorsList">${agreementHtml}</div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
-              <input type="text" class="ddddocr-input" id="newAgreementSelector" placeholder="${t('settings.agreementSelector.placeholder')}" style="margin-top: 0; flex: 1;">
-              <button class="ddddocr-btn ddddocr-btn-primary ddddocr-btn-sm" id="addAgreementSelectorBtn">${t('common.add')}</button>
+              <input type="text" class="Mieru-input" id="newAgreementSelector" placeholder="${t('settings.agreementSelector.placeholder')}" style="margin-top: 0; flex: 1;">
+              <button class="Mieru-btn Mieru-btn-primary Mieru-btn-sm" id="addAgreementSelectorBtn">${t('common.add')}</button>
             </div>
-            <div class="ddddocr-hint">${t('settings.agreementSelector.hint')}</div>
+            <div class="Mieru-hint">${t('settings.agreementSelector.hint')}</div>
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('settings.appearance')}</div>
-            <div class="ddddocr-row">
-              <div class="ddddocr-row-info">
-                <div class="ddddocr-row-label">${t('settings.theme')}</div>
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('settings.appearance')}</div>
+            <div class="Mieru-row">
+              <div class="Mieru-row-info">
+                <div class="Mieru-row-label">${t('settings.theme')}</div>
               </div>
-              <select class="ddddocr-select" data-key="theme" style="margin-top:0; width: auto; min-width: 120px;">
+              <select class="Mieru-select" data-key="theme" style="margin-top:0; width: auto; min-width: 120px;">
                 <option value="auto" ${config.theme === 'auto' ? 'selected' : ''}>${t('settings.theme.auto')}</option>
                 <option value="light" ${config.theme === 'light' ? 'selected' : ''}>${t('settings.theme.light')}</option>
                 <option value="dark" ${config.theme === 'dark' ? 'selected' : ''}>${t('settings.theme.dark')}</option>
               </select>
             </div>
-            <div class="ddddocr-row">
-              <div class="ddddocr-row-info">
-                <div class="ddddocr-row-label">${t('settings.language')}</div>
-                <div class="ddddocr-row-desc">${t('settings.language.hint')}</div>
+            <div class="Mieru-row">
+              <div class="Mieru-row-info">
+                <div class="Mieru-row-label">${t('settings.language')}</div>
+                <div class="Mieru-row-desc">${t('settings.language.hint')}</div>
               </div>
-              <select class="ddddocr-select" data-key="language" style="margin-top:0; width: auto; min-width: 120px;">
+              <select class="Mieru-select" data-key="language" style="margin-top:0; width: auto; min-width: 120px;">
                 <option value="auto" ${config.language === 'auto' ? 'selected' : ''}>${t('settings.language.auto')}</option>
                 <option value="zh" ${config.language === 'zh' ? 'selected' : ''}>${t('settings.language.zh')}</option>
                 <option value="ja" ${config.language === 'ja' ? 'selected' : ''}>${t('settings.language.ja')}</option>
@@ -833,69 +834,69 @@ export class SettingsUI {
               </select>
             </div>
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('settings.keywords.title')}</div>
-            <div id="ddddocr-keyword-chip-groups">
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('settings.keywords.title')}</div>
+            <div id="Mieru-keyword-chip-groups">
               ${this.renderKeywordChipGroupsHtml()}
             </div>
           </div>
         </div>
 
         <!-- Site Rules -->
-        <div class="ddddocr-panel" data-panel="rules">
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-header">
-              <div class="ddddocr-card-title">${t('rules.saved')}</div>
+        <div class="Mieru-panel" data-panel="rules">
+          <div class="Mieru-card">
+            <div class="Mieru-card-header">
+              <div class="Mieru-card-title">${t('rules.saved')}</div>
               <div style="display: flex; gap: 8px;">
-                <button class="ddddocr-btn ddddocr-btn-secondary ddddocr-btn-sm" id="exportRulesBtn">${t('common.export')}</button>
-                <button class="ddddocr-btn ddddocr-btn-secondary ddddocr-btn-sm" id="importRulesBtn">${t('common.import')}</button>
+                <button class="Mieru-btn Mieru-btn-secondary Mieru-btn-sm" id="exportRulesBtn">${t('common.export')}</button>
+                <button class="Mieru-btn Mieru-btn-secondary Mieru-btn-sm" id="importRulesBtn">${t('common.import')}</button>
               </div>
             </div>
             <div id="siteRulesList">${siteRulesHtml}</div>
           </div>
-          <div class="ddddocr-card" id="editRuleCard" style="display: none;">
-            <div class="ddddocr-card-title">${t('rules.edit')}</div>
-            <div class="ddddocr-row-label">${t('rules.ruleId')}</div>
-            <input type="text" class="ddddocr-input" id="editRuleKey" readonly>
+          <div class="Mieru-card" id="editRuleCard" style="display: none;">
+            <div class="Mieru-card-title">${t('rules.edit')}</div>
+            <div class="Mieru-row-label">${t('rules.ruleId')}</div>
+            <input type="text" class="Mieru-input" id="editRuleKey" readonly>
             <input type="hidden" id="editRuleOriginalKey">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('rules.captchaSelector')}</div>
-            <input type="text" class="ddddocr-input" id="editRuleSelector" placeholder="${t('rules.captchaSelector.placeholder')}">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('rules.inputSelector')}</div>
-            <input type="text" class="ddddocr-input" id="editRuleInput" placeholder="${t('rules.inputSelector.placeholder')}">
-            <div class="ddddocr-btn-group">
-              <button class="ddddocr-btn ddddocr-btn-primary" id="saveEditRuleBtn">${t('rules.saveEdit')}</button>
-              <button class="ddddocr-btn ddddocr-btn-secondary" id="cancelEditRuleBtn">${t('common.cancel')}</button>
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('rules.captchaSelector')}</div>
+            <input type="text" class="Mieru-input" id="editRuleSelector" placeholder="${t('rules.captchaSelector.placeholder')}">
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('rules.inputSelector')}</div>
+            <input type="text" class="Mieru-input" id="editRuleInput" placeholder="${t('rules.inputSelector.placeholder')}">
+            <div class="Mieru-btn-group">
+              <button class="Mieru-btn Mieru-btn-primary" id="saveEditRuleBtn">${t('rules.saveEdit')}</button>
+              <button class="Mieru-btn Mieru-btn-secondary" id="cancelEditRuleBtn">${t('common.cancel')}</button>
             </div>
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('rules.bulk')}</div>
-            <div class="ddddocr-row-label">${t('rules.ruleId')}</div>
-            <input type="text" class="ddddocr-input" id="newRuleHostname" placeholder="${t('rules.ruleId.placeholder')}" style="margin-top: 0;">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('rules.captchaSelector')}</div>
-            <input type="text" class="ddddocr-input" id="newRuleSelector" placeholder="${t('rules.captchaSelector.placeholder')}">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('rules.inputSelector')}</div>
-            <input type="text" class="ddddocr-input" id="newRuleInputSelector" placeholder="${t('rules.inputSelector.placeholder')}">
-            <button class="ddddocr-btn ddddocr-btn-primary" id="addSiteRuleBtn" style="margin-top: 16px;">${t('rules.bulkAdd')}</button>
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('rules.bulk')}</div>
+            <div class="Mieru-row-label">${t('rules.ruleId')}</div>
+            <input type="text" class="Mieru-input" id="newRuleHostname" placeholder="${t('rules.ruleId.placeholder')}" style="margin-top: 0;">
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('rules.captchaSelector')}</div>
+            <input type="text" class="Mieru-input" id="newRuleSelector" placeholder="${t('rules.captchaSelector.placeholder')}">
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('rules.inputSelector')}</div>
+            <input type="text" class="Mieru-input" id="newRuleInputSelector" placeholder="${t('rules.inputSelector.placeholder')}">
+            <button class="Mieru-btn Mieru-btn-primary" id="addSiteRuleBtn" style="margin-top: 16px;">${t('rules.bulkAdd')}</button>
           </div>
         </div>
 
         <!-- Subscriptions -->
-        <div class="ddddocr-panel" data-panel="subscription">
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-header">
-              <div class="ddddocr-card-title">${t('sub.title')}</div>
-              <button class="ddddocr-btn ddddocr-btn-secondary ddddocr-btn-sm" id="refreshAllSubsBtn">${t('sub.refreshAll')}</button>
+        <div class="Mieru-panel" data-panel="subscription">
+          <div class="Mieru-card">
+            <div class="Mieru-card-header">
+              <div class="Mieru-card-title">${t('sub.title')}</div>
+              <button class="Mieru-btn Mieru-btn-secondary Mieru-btn-sm" id="refreshAllSubsBtn">${t('sub.refreshAll')}</button>
             </div>
             <div id="subscriptionsList">${this.renderSubscriptions()}</div>
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('sub.add')}</div>
-            <div class="ddddocr-row-label">${t('sub.url')}</div>
-            <input type="text" class="ddddocr-input" id="newSubUrl" placeholder="${t('sub.urlPlaceholder')}">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('sub.name')}</div>
-            <input type="text" class="ddddocr-input" id="newSubName" placeholder="${t('sub.namePlaceholder')}">
-            <div class="ddddocr-row-label" style="margin-top: 12px;">${t('sub.updateInterval')}</div>
-            <select class="ddddocr-select" id="newSubInterval">
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('sub.add')}</div>
+            <div class="Mieru-row-label">${t('sub.url')}</div>
+            <input type="text" class="Mieru-input" id="newSubUrl" placeholder="${t('sub.urlPlaceholder')}">
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('sub.name')}</div>
+            <input type="text" class="Mieru-input" id="newSubName" placeholder="${t('sub.namePlaceholder')}">
+            <div class="Mieru-row-label" style="margin-top: 12px;">${t('sub.updateInterval')}</div>
+            <select class="Mieru-select" id="newSubInterval">
               <option value="0">${t('sub.intervalNever')}</option>
               <option value="1">1</option>
               <option value="6">6</option>
@@ -904,46 +905,46 @@ export class SettingsUI {
               <option value="72">72</option>
               <option value="168">168</option>
             </select>
-            <button class="ddddocr-btn ddddocr-btn-primary" id="addSubBtn" style="margin-top: 16px;">${t('sub.add')}</button>
-            <div class="ddddocr-hint">${t('sub.hint')}</div>
+            <button class="Mieru-btn Mieru-btn-primary" id="addSubBtn" style="margin-top: 16px;">${t('sub.add')}</button>
+            <div class="Mieru-hint">${t('sub.hint')}</div>
           </div>
         </div>
 
         <!-- Statistics -->
-        <div class="ddddocr-panel" data-panel="stats">
+        <div class="Mieru-panel" data-panel="stats">
           ${statsHtml}
         </div>
 
         <!-- Arithmetic -->
-        <div class="ddddocr-panel" data-panel="calculate">
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('calc.arithmetic')}</div>
+        <div class="Mieru-panel" data-panel="calculate">
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('calc.arithmetic')}</div>
             ${this.renderSwitchRow('autoCalculate', t('calc.autoCalc'), t('calc.autoCalcHint'), config.autoCalculate)}
             <div id="calculateOptionsArea" style="display: ${config.autoCalculate ? 'block' : 'none'}">
-              <div class="ddddocr-row-label" style="margin-top: 16px;">${t('calc.outputMode')}</div>
-              <select class="ddddocr-select" data-key="calculateOutputMode">
+              <div class="Mieru-row-label" style="margin-top: 16px;">${t('calc.outputMode')}</div>
+              <select class="Mieru-select" data-key="calculateOutputMode">
                 <option value="result" ${config.calculateOutputMode === 'result' ? 'selected' : ''}>${t('calc.outputResultExample')}</option>
                 <option value="equation" ${config.calculateOutputMode === 'equation' ? 'selected' : ''}>${t('calc.outputEquationExample')}</option>
               </select>
-              <div class="ddddocr-hint">${t('calc.outputHint')}</div>
+              <div class="Mieru-hint">${t('calc.outputHint')}</div>
             </div>
           </div>
-          <div class="ddddocr-card" id="calculateRulesCard" style="display: ${config.autoCalculate ? 'block' : 'none'}">
-            <div class="ddddocr-card-title">${t('calc.siteRules')}</div>
+          <div class="Mieru-card" id="calculateRulesCard" style="display: ${config.autoCalculate ? 'block' : 'none'}">
+            <div class="Mieru-card-title">${t('calc.siteRules')}</div>
             <div id="calculateRulesList">${calcRulesHtml}</div>
-            <div class="ddddocr-add-rule">
-              <input type="text" class="ddddocr-input" id="newCalcRulePattern" placeholder="${t('calc.patternPlaceholder')}" style="margin-top:0">
-              <select class="ddddocr-select" id="newCalcRuleMatchType" style="margin-top:0">
+            <div class="Mieru-add-rule">
+              <input type="text" class="Mieru-input" id="newCalcRulePattern" placeholder="${t('calc.patternPlaceholder')}" style="margin-top:0">
+              <select class="Mieru-select" id="newCalcRuleMatchType" style="margin-top:0">
                 <option value="wildcard">${t('calc.wildcard')}</option>
                 <option value="regex">${t('calc.regexFull')}</option>
               </select>
-              <select class="ddddocr-select" id="newCalcRuleOutputMode" style="margin-top:0">
+              <select class="Mieru-select" id="newCalcRuleOutputMode" style="margin-top:0">
                 <option value="result">${t('calc.outputResult')}</option>
                 <option value="equation">${t('calc.outputEquation')}</option>
               </select>
-              <button class="ddddocr-btn ddddocr-btn-primary ddddocr-btn-sm" id="addCalcRuleBtn">${t('common.add')}</button>
+              <button class="Mieru-btn Mieru-btn-primary Mieru-btn-sm" id="addCalcRuleBtn">${t('common.add')}</button>
             </div>
-            <div class="ddddocr-hint">
+            <div class="Mieru-hint">
               <b>${t('calc.wildcard')}:</b> ${t('calc.wildcardHint')}<br>
               <b>${t('calc.regex')}:</b> ${t('calc.regexHint')}
             </div>
@@ -951,56 +952,56 @@ export class SettingsUI {
         </div>
 
         <!-- Model Management -->
-        <div class="ddddocr-panel" data-panel="model">
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('model.source')}</div>
-            ${hasUploadedModel ? `<div class="ddddocr-badge">[${t('common.enabled')}] ${t('model.upload')} (${(uploadedModelSize / 1024 / 1024).toFixed(1)} MB)</div>` : ''}
+        <div class="Mieru-panel" data-panel="model">
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('model.source')}</div>
+            ${hasUploadedModel ? `<div class="Mieru-badge">[${t('common.enabled')}] ${t('model.upload')} (${(uploadedModelSize / 1024 / 1024).toFixed(1)} MB)</div>` : ''}
             ${this.renderSwitchRow('useUploadedModel', t('model.source'), t('model.upload'), config.useUploadedModel)}
             ${this.renderSwitchRow('autoDownload', t('settings.detect.auto'), t('model.downloadDisabled'), config.autoDownload)}
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('model.upload')}</div>
-            <div class="ddddocr-file-zone" id="modelZone">
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('model.upload')}</div>
+            <div class="Mieru-file-zone" id="modelZone">
               <input type="file" id="modelFile" accept=".onnx">
-              <div class="ddddocr-file-icon">[ONNX]</div>
-              <div class="ddddocr-file-text">${t('model.selectFiles')} common.onnx</div>
-              <div class="ddddocr-file-name" id="modelName"></div>
+              <div class="Mieru-file-icon">[ONNX]</div>
+              <div class="Mieru-file-text">${t('model.selectFiles')} common.onnx</div>
+              <div class="Mieru-file-name" id="modelName"></div>
             </div>
-            <div class="ddddocr-file-zone" id="charsetsZone" style="margin-top: 12px;">
+            <div class="Mieru-file-zone" id="charsetsZone" style="margin-top: 12px;">
               <input type="file" id="charsetsFile" accept=".json">
-              <div class="ddddocr-file-icon">[JSON]</div>
-              <div class="ddddocr-file-text">${t('model.selectFiles')} charsets.json</div>
-              <div class="ddddocr-file-name" id="charsetsName"></div>
+              <div class="Mieru-file-icon">[JSON]</div>
+              <div class="Mieru-file-text">${t('model.selectFiles')} charsets.json</div>
+              <div class="Mieru-file-name" id="charsetsName"></div>
             </div>
-            <div class="ddddocr-btn-group">
-              <button class="ddddocr-btn ddddocr-btn-primary" id="uploadBtn">${t('common.save')}</button>
-              <button class="ddddocr-btn ddddocr-btn-danger" id="deleteModelBtn">${t('model.deleteTitle')}</button>
+            <div class="Mieru-btn-group">
+              <button class="Mieru-btn Mieru-btn-primary" id="uploadBtn">${t('common.save')}</button>
+              <button class="Mieru-btn Mieru-btn-danger" id="deleteModelBtn">${t('model.deleteTitle')}</button>
             </div>
           </div>
         </div>
 
         <!-- Site Whitelist -->
-        <div class="ddddocr-panel" data-panel="whitelist">
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('whitelist.settings')}</div>
+        <div class="Mieru-panel" data-panel="whitelist">
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('whitelist.settings')}</div>
             ${this.renderSwitchRow('enableWhitelist', t('whitelist.title'), t('whitelist.settings'), config.enableWhitelist)}
             <div id="whitelistArea" style="display: ${config.enableWhitelist ? 'block' : 'none'}">
-              <textarea class="ddddocr-textarea" data-key="whitelist" placeholder="example.com&#10;*.example.com&#10;sub.example.com">${(config.whitelist || []).join('\n')}</textarea>
-              <div class="ddddocr-hint">${window.location.hostname}</div>
+              <textarea class="Mieru-textarea" data-key="whitelist" placeholder="example.com&#10;*.example.com&#10;sub.example.com">${(config.whitelist || []).join('\n')}</textarea>
+              <div class="Mieru-hint">${window.location.hostname}</div>
             </div>
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('blacklist.title')}</div>
-            <div class="ddddocr-row-label">${t('blacklist.label')}</div>
-            <textarea class="ddddocr-textarea" data-key="siteBlacklist" placeholder="${t('blacklist.placeholder')}">${(config.siteBlacklist || []).join('\n')}</textarea>
-            <div class="ddddocr-hint">${t('blacklist.hint')}</div>
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('blacklist.title')}</div>
+            <div class="Mieru-row-label">${t('blacklist.label')}</div>
+            <textarea class="Mieru-textarea" data-key="siteBlacklist" placeholder="${t('blacklist.placeholder')}">${(config.siteBlacklist || []).join('\n')}</textarea>
+            <div class="Mieru-hint">${t('blacklist.hint')}</div>
           </div>
-          <div class="ddddocr-card">
-            <div class="ddddocr-card-title">${t('config.importExport')}</div>
-            <div class="ddddocr-btn-group">
-              <button class="ddddocr-btn ddddocr-btn-secondary" id="exportBtn">${t('common.export')}</button>
-              <button class="ddddocr-btn ddddocr-btn-secondary" id="importBtn">${t('common.import')}</button>
-              <button class="ddddocr-btn ddddocr-btn-danger" id="resetBtn">${t('common.reset')}</button>
+          <div class="Mieru-card">
+            <div class="Mieru-card-title">${t('config.importExport')}</div>
+            <div class="Mieru-btn-group">
+              <button class="Mieru-btn Mieru-btn-secondary" id="exportBtn">${t('common.export')}</button>
+              <button class="Mieru-btn Mieru-btn-secondary" id="importBtn">${t('common.import')}</button>
+              <button class="Mieru-btn Mieru-btn-danger" id="resetBtn">${t('common.reset')}</button>
             </div>
           </div>
         </div>
@@ -1020,13 +1021,13 @@ export class SettingsUI {
 
   private renderSwitchRow(key: string, label: string, desc: string, checked: boolean): string {
     return `
-      <div class="ddddocr-row">
-        <div class="ddddocr-row-info">
-          <div class="ddddocr-row-label">${label}</div>
-          <div class="ddddocr-row-desc">${desc}</div>
+      <div class="Mieru-row">
+        <div class="Mieru-row-info">
+          <div class="Mieru-row-label">${label}</div>
+          <div class="Mieru-row-desc">${desc}</div>
         </div>
-        <div class="ddddocr-switch ${checked ? 'on' : ''}" data-key="${key}">
-          <div class="ddddocr-switch-knob"></div>
+        <div class="Mieru-switch ${checked ? 'on' : ''}" data-key="${key}">
+          <div class="Mieru-switch-knob"></div>
         </div>
       </div>
     `;
@@ -1034,14 +1035,14 @@ export class SettingsUI {
 
   private renderCalculateRules(rules: CalculateRule[]): string {
     if (!rules || rules.length === 0) {
-      return `<div class="ddddocr-empty">${t('calc.noRules')}</div>`;
+      return `<div class="Mieru-empty">${t('calc.noRules')}</div>`;
     }
     return rules.map((rule, index) => `
-      <div class="ddddocr-rule-item" data-index="${index}">
-        <span class="ddddocr-rule-pattern">${escapeHtml(rule.pattern)}</span>
-        <span class="ddddocr-rule-type">${rule.matchType === 'regex' ? t('calc.regex') : t('calc.wildcard')}</span>
-        <span class="ddddocr-rule-output">${rule.outputMode === 'result' ? t('calc.outputResult') : t('calc.outputEquation')}</span>
-        <button class="ddddocr-rule-delete btn-delete-calc-rule" data-index="${index}">×</button>
+      <div class="Mieru-rule-item" data-index="${index}">
+        <span class="Mieru-rule-pattern">${escapeHtml(rule.pattern)}</span>
+        <span class="Mieru-rule-type">${rule.matchType === 'regex' ? t('calc.regex') : t('calc.wildcard')}</span>
+        <span class="Mieru-rule-output">${rule.outputMode === 'result' ? t('calc.outputResult') : t('calc.outputEquation')}</span>
+        <button class="Mieru-rule-delete btn-delete-calc-rule" data-index="${index}">×</button>
       </div>
     `).join('');
   }
@@ -1050,22 +1051,22 @@ export class SettingsUI {
     const rules = getSiteRules();
     const keys = Object.keys(rules);
     if (keys.length === 0) {
-      return `<div class="ddddocr-empty">${t('rules.empty')}</div>`;
+      return `<div class="Mieru-empty">${t('rules.empty')}</div>`;
     }
     return keys.map(key => {
       const rule = rules[key];
       const displayKey = key.length > 35 ? key.substring(0, 35) + '...' : key;
       const selectorDisplay = rule.selector.length > 40 ? rule.selector.substring(0, 40) + '...' : rule.selector;
       return `
-        <div class="ddddocr-site-rule-item" data-key="${escapeHtml(key)}">
-          <div class="ddddocr-site-rule-info">
-            <div class="ddddocr-site-rule-key">${escapeHtml(displayKey)}</div>
-            <div class="ddddocr-site-rule-selector">${escapeHtml(selectorDisplay)}</div>
-            ${rule.fullUrl ? `<div class="ddddocr-site-rule-badge">${t('rules.fullUrlMatch')}</div>` : ''}
+        <div class="Mieru-site-rule-item" data-key="${escapeHtml(key)}">
+          <div class="Mieru-site-rule-info">
+            <div class="Mieru-site-rule-key">${escapeHtml(displayKey)}</div>
+            <div class="Mieru-site-rule-selector">${escapeHtml(selectorDisplay)}</div>
+            ${rule.fullUrl ? `<div class="Mieru-site-rule-badge">${t('rules.fullUrlMatch')}</div>` : ''}
           </div>
-          <div class="ddddocr-site-rule-actions">
-            <button class="ddddocr-rule-edit btn-edit-site-rule" data-key="${escapeHtml(key)}">${t('common.edit')}</button>
-            <button class="ddddocr-rule-delete btn-delete-site-rule" data-key="${escapeHtml(key)}">×</button>
+          <div class="Mieru-site-rule-actions">
+            <button class="Mieru-rule-edit btn-edit-site-rule" data-key="${escapeHtml(key)}">${t('common.edit')}</button>
+            <button class="Mieru-rule-delete btn-delete-site-rule" data-key="${escapeHtml(key)}">×</button>
           </div>
         </div>
       `;
@@ -1081,7 +1082,7 @@ export class SettingsUI {
 
     let rankHtml = '';
     if (sites.length === 0) {
-      rankHtml = `<div class="ddddocr-empty">${t('stats.empty')}</div>`;
+      rankHtml = `<div class="Mieru-empty">${t('stats.empty')}</div>`;
     } else {
       sites.sort((a, b) => b[1].count - a[1].count);
       const topSites = sites.slice(0, 15);
@@ -1091,61 +1092,61 @@ export class SettingsUI {
         const lastTimeStr = formatTime(siteStats.lastTime);
         const progressWidth = Math.round((siteStats.count / maxCount) * 100);
         return `
-          <div class="ddddocr-rank-item">
-            <div class="ddddocr-rank-num">${index + 1}</div>
-            <div class="ddddocr-rank-info">
-              <div class="ddddocr-rank-host">${escapeHtml(hostname)}</div>
-              <div class="ddddocr-rank-meta">
+          <div class="Mieru-rank-item">
+            <div class="Mieru-rank-num">${index + 1}</div>
+            <div class="Mieru-rank-info">
+              <div class="Mieru-rank-host">${escapeHtml(hostname)}</div>
+              <div class="Mieru-rank-meta">
                 <span>${t('stats.avg', siteAvgTime)}</span>
                 <span>${t('stats.last', lastTimeStr)}</span>
               </div>
-              <div class="ddddocr-progress-bar">
-                <div class="ddddocr-progress-fill" style="width: ${progressWidth}%"></div>
+              <div class="Mieru-progress-bar">
+                <div class="Mieru-progress-fill" style="width: ${progressWidth}%"></div>
               </div>
             </div>
-            <div class="ddddocr-rank-count">${siteStats.count}</div>
+            <div class="Mieru-rank-count">${siteStats.count}</div>
           </div>
         `;
       }).join('');
     }
 
     return `
-      <div class="ddddocr-stats-grid">
-        <div class="ddddocr-stat-card">
-          <div class="ddddocr-stat-label">${t('stats.totalCount')}</div>
-          <div class="ddddocr-stat-value">${stats.total}<span class="ddddocr-stat-unit">${t('common.times')}</span></div>
+      <div class="Mieru-stats-grid">
+        <div class="Mieru-stat-card">
+          <div class="Mieru-stat-label">${t('stats.totalCount')}</div>
+          <div class="Mieru-stat-value">${stats.total}<span class="Mieru-stat-unit">${t('common.times')}</span></div>
         </div>
-        <div class="ddddocr-stat-card accent">
-          <div class="ddddocr-stat-label">${t('stats.siteCount')}</div>
-          <div class="ddddocr-stat-value">${sites.length}<span class="ddddocr-stat-unit">${t('common.items')}</span></div>
+        <div class="Mieru-stat-card accent">
+          <div class="Mieru-stat-label">${t('stats.siteCount')}</div>
+          <div class="Mieru-stat-value">${sites.length}<span class="Mieru-stat-unit">${t('common.items')}</span></div>
         </div>
-        <div class="ddddocr-stat-card success">
-          <div class="ddddocr-stat-label">${t('stats.avgTime')}</div>
-          <div class="ddddocr-stat-value">${avgTime}<span class="ddddocr-stat-unit">ms</span></div>
+        <div class="Mieru-stat-card success">
+          <div class="Mieru-stat-label">${t('stats.avgTime')}</div>
+          <div class="Mieru-stat-value">${avgTime}<span class="Mieru-stat-unit">ms</span></div>
         </div>
-        <div class="ddddocr-stat-card warning">
-          <div class="ddddocr-stat-label">${t('stats.lastUpdate')}</div>
-          <div class="ddddocr-stat-value" style="font-size: 16px;">${lastUpdate}</div>
+        <div class="Mieru-stat-card warning">
+          <div class="Mieru-stat-label">${t('stats.lastUpdate')}</div>
+          <div class="Mieru-stat-value" style="font-size: 16px;">${lastUpdate}</div>
         </div>
       </div>
-      <div class="ddddocr-card">
-        <div class="ddddocr-card-header">
-          <div class="ddddocr-card-title">${t('stats.ranking')}</div>
-          <button class="ddddocr-btn ddddocr-btn-danger ddddocr-btn-sm" id="clearStatsBtn">${t('stats.clear')}</button>
+      <div class="Mieru-card">
+        <div class="Mieru-card-header">
+          <div class="Mieru-card-title">${t('stats.ranking')}</div>
+          <button class="Mieru-btn Mieru-btn-danger Mieru-btn-sm" id="clearStatsBtn">${t('stats.clear')}</button>
         </div>
-        <div class="ddddocr-rank-list" id="statsRankList">${rankHtml}</div>
+        <div class="Mieru-rank-list" id="statsRankList">${rankHtml}</div>
       </div>
     `;
   }
 
   private renderAgreementSelectors(selectors: string[]): string {
     if (!selectors || selectors.length === 0) {
-      return `<div class="ddddocr-empty" style="padding: 12px;">${t('settings.agreementSelector.empty')}</div>`;
+      return `<div class="Mieru-empty" style="padding: 12px;">${t('settings.agreementSelector.empty')}</div>`;
     }
     return selectors.map((selector, index) => `
-      <div class="ddddocr-rule-item" data-agreement-index="${index}">
-        <span class="ddddocr-rule-pattern">${escapeHtml(selector)}</span>
-        <button class="ddddocr-rule-delete btn-delete-agreement" data-index="${index}">×</button>
+      <div class="Mieru-rule-item" data-agreement-index="${index}">
+        <span class="Mieru-rule-pattern">${escapeHtml(selector)}</span>
+        <button class="Mieru-rule-delete btn-delete-agreement" data-index="${index}">×</button>
       </div>
     `).join('');
   }
@@ -1153,7 +1154,7 @@ export class SettingsUI {
   private renderSubscriptions(): string {
     const subs = getSubscriptions();
     if (!subs || subs.length === 0) {
-      return `<div class="ddddocr-empty">${t('sub.empty')}</div>`;
+      return `<div class="Mieru-empty">${t('sub.empty')}</div>`;
     }
     const formatTime = (ts: number) => ts ? new Date(ts).toLocaleString() : '-';
     const statusText = (s: Subscription) => {
@@ -1173,22 +1174,22 @@ export class SettingsUI {
         (s.cachedPackage.inputExcludeKeywords?.length || 0)
       ) : 0;
       return `
-        <div class="ddddocr-site-rule-item" data-sub-id="${escapeHtml(s.id)}">
-          <div class="ddddocr-site-rule-info">
-            <div class="ddddocr-site-rule-key">${escapeHtml(s.name)}</div>
-            <div class="ddddocr-site-rule-selector">${escapeHtml(s.url)}</div>
+        <div class="Mieru-site-rule-item" data-sub-id="${escapeHtml(s.id)}">
+          <div class="Mieru-site-rule-info">
+            <div class="Mieru-site-rule-key">${escapeHtml(s.name)}</div>
+            <div class="Mieru-site-rule-selector">${escapeHtml(s.url)}</div>
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">
               <span>${statusText(s)}</span>
               <span>${t('sub.lastUpdated')}: ${formatTime(s.lastUpdated)}</span>
               ${s.cachedPackage ? `<span>${t('sub.rulesCount', ruleCount, kwCount)}</span>` : ''}
             </div>
           </div>
-          <div class="ddddocr-site-rule-actions">
-            <div class="ddddocr-switch ddddocr-switch-sm ${s.enabled ? 'on' : ''}" data-sub-toggle="${escapeHtml(s.id)}">
-              <div class="ddddocr-switch-knob"></div>
+          <div class="Mieru-site-rule-actions">
+            <div class="Mieru-switch Mieru-switch-sm ${s.enabled ? 'on' : ''}" data-sub-toggle="${escapeHtml(s.id)}">
+              <div class="Mieru-switch-knob"></div>
             </div>
-            <button class="ddddocr-rule-edit btn-refresh-sub" data-sub-id="${escapeHtml(s.id)}">${t('sub.refresh')}</button>
-            <button class="ddddocr-rule-delete btn-delete-sub" data-sub-id="${escapeHtml(s.id)}">×</button>
+            <button class="Mieru-rule-edit btn-refresh-sub" data-sub-id="${escapeHtml(s.id)}">${t('sub.refresh')}</button>
+            <button class="Mieru-rule-delete btn-delete-sub" data-sub-id="${escapeHtml(s.id)}">×</button>
           </div>
         </div>
       `;
@@ -1264,11 +1265,11 @@ export class SettingsUI {
     this.container.addEventListener('touchend', this.stopPropagation);
 
     // 关闭按钮
-    this.container.querySelector('.ddddocr-close')?.addEventListener('click', () => this.hide());
+    this.container.querySelector('.Mieru-close')?.addEventListener('click', () => this.hide());
     this.overlay.addEventListener('click', () => this.hide());
 
     // 标签切换
-    this.container.querySelectorAll('.ddddocr-tab').forEach(tab => {
+    this.container.querySelectorAll('.Mieru-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         const tabName = (tab as HTMLElement).dataset.tab;
         if (tabName) this.switchTab(tabName);
@@ -1276,7 +1277,7 @@ export class SettingsUI {
     });
 
     // 开关事件 — 实时保存
-    this.container.querySelectorAll('.ddddocr-switch').forEach(sw => {
+    this.container.querySelectorAll('.Mieru-switch').forEach(sw => {
       sw.addEventListener('click', () => {
         sw.classList.toggle('on');
         const key = (sw as HTMLElement).dataset.key;
@@ -1390,8 +1391,8 @@ export class SettingsUI {
     this.container.querySelector('#exportBtn')?.addEventListener('click', () => this.exportConfig());
     this.container.querySelector('#importBtn')?.addEventListener('click', () => this.importConfig());
     this.container.querySelector('#resetBtn')?.addEventListener('click', () => this.resetConfig());
-    this.container.querySelector('#ddddocr-diag-export')?.addEventListener('click', () => this.exportDiagnosticReport());
-    this.container.querySelector('#ddddocr-diag-clear')?.addEventListener('click', () => this.clearDiagnosticLogs());
+    this.container.querySelector('#Mieru-diag-export')?.addEventListener('click', () => this.exportDiagnosticReport());
+    this.container.querySelector('#Mieru-diag-clear')?.addEventListener('click', () => this.clearDiagnosticLogs());
   }
 
   private bindModelEvents(): void {
@@ -1688,7 +1689,7 @@ export class SettingsUI {
       inputSelector: rule.inputSelector,
       fullUrl: rule.fullUrl,
     }));
-    this.downloadJson(exportData, 'ddddocr-rules.json');
+    this.downloadJson(exportData, 'Mieru-rules.json');
   }
 
   private importSiteRules(): void {
@@ -1735,11 +1736,11 @@ export class SettingsUI {
 
   private exportConfig(): void {
     const config = getConfig();
-    this.downloadJson(config, 'ddddocr-config.json');
+    this.downloadJson(config, 'Mieru-config.json');
   }
 
   private setDiagStatus(text: string, isError = false): void {
-    const el = this.container?.querySelector('#ddddocr-diag-status') as HTMLElement | null;
+    const el = this.container?.querySelector('#Mieru-diag-status') as HTMLElement | null;
     if (!el) return;
     el.textContent = text;
     el.style.color = isError ? '#dc2626' : '';
@@ -1760,7 +1761,7 @@ export class SettingsUI {
         },
       );
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `ddddocr-diag-${stamp}.json`;
+      const filename = `Mieru-diag-${stamp}.json`;
       downloadReport(report, filename);
       const count = report.logs?.length ?? 0;
       this.setDiagStatus(t('diag.exported', filename, String(count)));
@@ -1827,10 +1828,10 @@ export class SettingsUI {
   private switchTab(tabName: string): void {
     if (!this.container) return;
     this.activeTab = tabName;
-    this.container.querySelectorAll('.ddddocr-tab').forEach(tab => {
+    this.container.querySelectorAll('.Mieru-tab').forEach(tab => {
       tab.classList.toggle('active', (tab as HTMLElement).dataset.tab === tabName);
     });
-    this.container.querySelectorAll('.ddddocr-panel').forEach(panel => {
+    this.container.querySelectorAll('.Mieru-panel').forEach(panel => {
       panel.classList.toggle('active', (panel as HTMLElement).dataset.panel === tabName);
     });
     // 刷新统计页面数据
@@ -1852,19 +1853,19 @@ export class SettingsUI {
     return (Object.keys(this.CHIP_META) as ChipFieldKey[]).map((field) => {
       const keys = i18nKeys[field];
       return `
-        <div class="ddddocr-keyword-group" data-chip-field="${field}">
-          <div class="ddddocr-keyword-header">
-            <div class="ddddocr-row-label">${t(keys.titleKey)}</div>
-            <div class="ddddocr-keyword-actions">
-              <span class="ddddocr-keyword-subtitle">${t('settings.keywords.builtinDeletable')}</span>
-              <button class="ddddocr-chip-reset" data-chip-field="${field}">${t('settings.keywords.resetDefault')}</button>
+        <div class="Mieru-keyword-group" data-chip-field="${field}">
+          <div class="Mieru-keyword-header">
+            <div class="Mieru-row-label">${t(keys.titleKey)}</div>
+            <div class="Mieru-keyword-actions">
+              <span class="Mieru-keyword-subtitle">${t('settings.keywords.builtinDeletable')}</span>
+              <button class="Mieru-chip-reset" data-chip-field="${field}">${t('settings.keywords.resetDefault')}</button>
             </div>
           </div>
-          <div class="ddddocr-chip-list" id="ddddocr-${field}-list"></div>
-          <div class="ddddocr-chip-input-row">
-            <input type="text" class="ddddocr-chip-input" id="ddddocr-${field}-input" placeholder="${t(keys.placeholderKey)}">
+          <div class="Mieru-chip-list" id="Mieru-${field}-list"></div>
+          <div class="Mieru-chip-input-row">
+            <input type="text" class="Mieru-chip-input" id="Mieru-${field}-input" placeholder="${t(keys.placeholderKey)}">
           </div>
-          <div class="ddddocr-hint">${t(keys.hintKey)}</div>
+          <div class="Mieru-hint">${t(keys.hintKey)}</div>
         </div>
       `;
     }).join('');
@@ -1877,7 +1878,7 @@ export class SettingsUI {
   }
 
   private renderChipList(field: ChipFieldKey, config: OCRConfig): void {
-    const list = this.container?.querySelector(`#ddddocr-${field}-list`);
+    const list = this.container?.querySelector(`#Mieru-${field}-list`);
     if (!list) return;
 
     const builtinItems = this.getEnabledBuiltinKeywords(field, config).map((value) => ({ value, kind: 'builtin' as const }));
@@ -1885,15 +1886,15 @@ export class SettingsUI {
     const items = [...builtinItems, ...customItems];
 
     if (items.length === 0) {
-      list.innerHTML = `<div class="ddddocr-chip-empty">${t('settings.keywords.empty')}</div>`;
+      list.innerHTML = `<div class="Mieru-chip-empty">${t('settings.keywords.empty')}</div>`;
       return;
     }
 
     list.innerHTML = items.map((item) => `
-      <span class="ddddocr-chip-item ${item.kind}">
-        <span class="ddddocr-chip-text">${escapeHtml(item.value)}</span>
-        <span class="ddddocr-chip-meta">${item.kind === 'builtin' ? t('settings.keywords.builtin') : t('settings.keywords.custom')}</span>
-        <button type="button" class="ddddocr-chip-remove" data-chip-field="${field}" data-chip-kind="${item.kind}" data-chip-value="${escapeHtml(item.value)}">×</button>
+      <span class="Mieru-chip-item ${item.kind}">
+        <span class="Mieru-chip-text">${escapeHtml(item.value)}</span>
+        <span class="Mieru-chip-meta">${item.kind === 'builtin' ? t('settings.keywords.builtin') : t('settings.keywords.custom')}</span>
+        <button type="button" class="Mieru-chip-remove" data-chip-field="${field}" data-chip-kind="${item.kind}" data-chip-value="${escapeHtml(item.value)}">×</button>
       </span>
     `).join('');
   }
@@ -1908,7 +1909,7 @@ export class SettingsUI {
 
     // Enter key to add keywords
     (Object.keys(this.CHIP_META) as ChipFieldKey[]).forEach((field) => {
-      const input = this.container?.querySelector(`#ddddocr-${field}-input`) as HTMLInputElement | null;
+      const input = this.container?.querySelector(`#Mieru-${field}-input`) as HTMLInputElement | null;
       input?.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter') return;
         event.preventDefault();
@@ -1935,7 +1936,7 @@ export class SettingsUI {
     });
 
     // Click delegation for remove and reset buttons
-    this.container.querySelector('#ddddocr-keyword-chip-groups')?.addEventListener('click', (event) => {
+    this.container.querySelector('#Mieru-keyword-chip-groups')?.addEventListener('click', (event) => {
       this.handleChipClick(event);
     });
   }
@@ -1944,7 +1945,7 @@ export class SettingsUI {
     const target = event.target as HTMLElement;
 
     // Handle remove button
-    const removeBtn = target.closest('.ddddocr-chip-remove') as HTMLElement | null;
+    const removeBtn = target.closest('.Mieru-chip-remove') as HTMLElement | null;
     if (removeBtn) {
       const field = removeBtn.dataset.chipField as ChipFieldKey;
       const kind = removeBtn.dataset.chipKind as 'builtin' | 'custom';
@@ -1965,7 +1966,7 @@ export class SettingsUI {
     }
 
     // Handle reset button
-    const resetBtn = target.closest('.ddddocr-chip-reset') as HTMLElement | null;
+    const resetBtn = target.closest('.Mieru-chip-reset') as HTMLElement | null;
     if (resetBtn) {
       const field = resetBtn.dataset.chipField as ChipFieldKey;
       saveConfig({

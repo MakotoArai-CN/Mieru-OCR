@@ -282,6 +282,8 @@ async function selectCaptcha(): Promise<void> {
           info: response.info,
           fullUrl: response.fullUrl,
           urlPattern: response.urlPattern,
+          frameSelector: response.frameSelector,
+          frameUrl: response.frameUrl,
           enabled: true,
         },
       });

@@ -63,6 +63,14 @@ export function isWhitelisted(): boolean {
 
 export function shouldExecuteScript(): boolean {
   const config = getConfig();
+  // 用户脚本 @match *://*/* 会被注入进所有 iframe；除非用户开启「深度扫描」，
+  // 否则子框架直接退出，避免广告 / 分析 iframe 中的无谓加载和重复识别。
+  const isTopFrame = (() => {
+    try { return window.top === window; } catch { return false; }
+  })();
+  if (!isTopFrame && !(config as any).deepScan) {
+    return false;
+  }
   if (config.enableWhitelist) {
     if (!config.whitelist || config.whitelist.length === 0) {
       return false;

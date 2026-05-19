@@ -122,6 +122,7 @@ function cacheElements(): void {
   elements.imageContextMenuEnabled = document.getElementById('imageContextMenuEnabled');
   elements.imageContextMenuAutoFill = document.getElementById('imageContextMenuAutoFill');
   elements.preserveFocus = document.getElementById('preserveFocus');
+  elements.deepScan = document.getElementById('deepScan');
   elements.autoSubmit = document.getElementById('autoSubmit');
   elements.autoCheckAgreement = document.getElementById('autoCheckAgreement');
   elements.captchaSelector = document.getElementById('captchaSelector');
@@ -487,6 +488,7 @@ async function loadSettings(): Promise<void> {
   (elements.imageContextMenuEnabled as HTMLInputElement).checked = Boolean(settings.imageContextMenuEnabled);
   (elements.imageContextMenuAutoFill as HTMLInputElement).checked = settings.imageContextMenuAutoFill !== false;
   (elements.preserveFocus as HTMLInputElement).checked = Boolean(settings.preserveFocus);
+  (elements.deepScan as HTMLInputElement).checked = Boolean(settings.deepScan);
   (elements.autoSubmit as HTMLInputElement).checked = Boolean(settings.autoSubmit);
   (elements.autoCheckAgreement as HTMLInputElement).checked = settings.autoCheckAgreement !== false;
   (elements.captchaSelector as HTMLInputElement).value = settings.captchaSelector || '';
@@ -650,6 +652,7 @@ async function saveGeneralSettings(): Promise<void> {
   settings.imageContextMenuEnabled = (elements.imageContextMenuEnabled as HTMLInputElement).checked;
   settings.imageContextMenuAutoFill = (elements.imageContextMenuAutoFill as HTMLInputElement).checked;
   settings.preserveFocus = (elements.preserveFocus as HTMLInputElement).checked;
+  settings.deepScan = (elements.deepScan as HTMLInputElement).checked;
   settings.autoSubmit = (elements.autoSubmit as HTMLInputElement).checked;
   settings.autoCheckAgreement = (elements.autoCheckAgreement as HTMLInputElement).checked;
   settings.captchaSelector = (elements.captchaSelector as HTMLInputElement).value.trim();
@@ -855,13 +858,13 @@ async function exportRules(): Promise<void> {
     urlPattern: rule.urlPattern,
   }));
 
-  downloadJson(exportData, 'ddddocr-rules.json');
+  downloadJson(exportData, 'Mieru-rules.json');
 }
 
 async function exportConfig(): Promise<void> {
   try {
     const result = await browser.storage.local.get(['settings', 'siteRules', 'recognitionStats']);
-    downloadJson(normalizeConfigData(result), 'ddddocr-config.json');
+    downloadJson(normalizeConfigData(result), 'Mieru-config.json');
   } catch {
     showToast(t('config.exportFailed'), 'error');
   }
@@ -918,7 +921,7 @@ async function exportDiagnosticReport(): Promise<void> {
       },
     );
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `ddddocr-diag-${stamp}.json`;
+    const filename = `Mieru-diag-${stamp}.json`;
     downloadReport(report, filename);
     const count = report.logs?.length ?? 0;
     setDiagStatus(t('diag.exported', filename, String(count)));

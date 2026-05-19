@@ -4,7 +4,7 @@ import type { ExtensionSettings } from '@core/types';
 import { autoUpdateSubscriptions } from '../subscription-manager';
 import { BUILTIN_MODEL_ID, getActiveModelId, getModelData } from '../model-store';
 
-const SUBSCRIPTION_ALARM_NAME = 'ddddocr-subscription-update';
+const SUBSCRIPTION_ALARM_NAME = 'Mieru-subscription-update';
 
 type OcrEngineStatus = 'ready' | 'initializing' | 'fault';
 
@@ -153,7 +153,7 @@ browser.runtime.onInstalled.addListener((details: any) => {
   syncImageContextMenu();
 });
 
-const CONTEXT_MENU_ID_FF = 'ddddocr-recognize-image';
+const CONTEXT_MENU_ID_FF = 'Mieru-recognize-image';
 
 async function syncImageContextMenu(): Promise<void> {
   const ctxApi = (browser as any).contextMenus || (browser as any).menus;
@@ -188,10 +188,15 @@ if (ctxApiFF?.onClicked) {
     if (info.menuItemId !== CONTEXT_MENU_ID_FF) return;
     if (!info.srcUrl || !tab?.id) return;
     try {
+      // 见 service-worker.ts 同样修复：info.frameId 指向 iframe 时需要显式 frameId 发送
+      const sendOptions: any = {};
+      if (typeof info.frameId === 'number') {
+        sendOptions.frameId = info.frameId;
+      }
       await browser.tabs.sendMessage(tab.id, {
         action: 'recognizeImageBySrc',
         srcUrl: info.srcUrl,
-      });
+      }, sendOptions);
     } catch (e) {
       console.warn('[Background Firefox] 发送右键识别消息失败:', e);
     }
@@ -592,6 +597,7 @@ function getDefaultSettings(): ExtensionSettings {
     imageContextMenuEnabled: false,
     imageContextMenuAutoFill: true,
     preserveFocus: false,
+    deepScan: false,
   };
 }
 

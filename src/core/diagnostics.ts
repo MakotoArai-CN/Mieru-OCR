@@ -22,7 +22,7 @@ const MAX_ENTRIES = 200;
 const MAX_MSG_LEN = 300;
 const FLUSH_DEBOUNCE_MS = 1000;
 const BUFFER_KEY_PREFIX = 'ddddocr_diag_log_';
-const KNOWN_CONTEXTS = ['sw', 'content', 'options', 'popup', 'offscreen', 'userscript'] as const;
+const KNOWN_CONTEXTS = ['sw', 'content', 'subframe', 'options', 'popup', 'offscreen', 'userscript'] as const;
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type DiagContext = (typeof KNOWN_CONTEXTS)[number] | 'unknown';
@@ -56,6 +56,10 @@ function detectContext(): DiagContext {
     if (href.includes('popup')) return cachedCtx = 'popup';
     if (href.includes('offscreen')) return cachedCtx = 'offscreen';
     if (typeof (globalThis as any).GM_getValue === 'function') return cachedCtx = 'userscript';
+    // content script：区分顶层 vs 子框架，独立 200 条 buffer 防止互相覆盖
+    try {
+      if (window.top !== window) return cachedCtx = 'subframe';
+    } catch { return cachedCtx = 'subframe'; }
     return cachedCtx = 'content';
   }
   return cachedCtx = 'unknown';
@@ -260,7 +264,7 @@ export interface ReportOptions {
 }
 
 export interface DiagnosticReport {
-  schema: 'ddddocr-diag-v1';
+  schema: 'Mieru-diag-v1';
   generatedAt: string;
   app: { name: string; version: string; target: ReportTarget };
   env?: {
@@ -291,7 +295,7 @@ export interface ReportContributors {
 
 export async function buildReport(opts: ReportOptions, c: ReportContributors): Promise<DiagnosticReport> {
   const report: DiagnosticReport = {
-    schema: 'ddddocr-diag-v1',
+    schema: 'Mieru-diag-v1',
     generatedAt: new Date().toISOString(),
     app: { name: c.appName, version: c.appVersion, target: c.target },
     counts: { logs: 0, truncatedLogs: false },
@@ -349,7 +353,7 @@ export function downloadReport(report: DiagnosticReport, filename?: string): voi
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename || `ddddocr-diag-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  a.download = filename || `Mieru-diag-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();

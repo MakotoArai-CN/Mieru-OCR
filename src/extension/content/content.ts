@@ -6,6 +6,12 @@ import { CONSTANTS, Logger } from '@core/config';
 import type { SiteRule } from '@core/types';
 import { initLocale, t } from '@core/i18n';
 
+/** 当前 content.js 是否运行在顶层文档。`all_frames:true` 后 sub-frame 也会注入本脚本，
+ *  通过这个开关 + deepScan 设置决定是否启用拾取桥接 / 早退。 */
+const IS_TOP_FRAME: boolean = (() => {
+  try { return window.top === window; } catch { return false; }
+})();
+
 let debugMode = false;
 let contextInvalidated = false;
 const detector = new CaptchaDetector();
@@ -35,6 +41,7 @@ let captchaSelector = '';
 let inputSelector = '';
 let submitSelector = '';
 let siteBlacklist: string[] = [];
+let deepScan = false;
 
 let guessedElements: GuessedElement[] = [];
 let guessMode: 'captcha' | 'input' | null = null;
@@ -211,6 +218,7 @@ async function initSettings(): Promise<void> {
       autoCalculate = !!response.settings.autoCalculate;
       autoCheckAgreement = response.settings.autoCheckAgreement !== false;
       preserveFocus = !!response.settings.preserveFocus;
+      deepScan = !!response.settings.deepScan;
       calculateRules = response.settings.calculateRules || [];
       agreementSelectors = response.settings.agreementSelectors || [];
       captchaSelector = response.settings.captchaSelector || '';
@@ -234,8 +242,30 @@ async function initSettings(): Promise<void> {
 
 async function init(): Promise<void> {
   await initSettings();
-  Logger.info('内容脚本已加载', { url: getFullUrl(), hostname: location.hostname });
+
+  // 子框架启动门控：未启用「深度扫描」时直接退出，避免在广告 / 分析 iframe 中徒增开销。
+  if (!IS_TOP_FRAME && !deepScan) {
+    return;
+  }
+
+  Logger.info('内容脚本已加载', {
+    url: getFullUrl(),
+    hostname: location.hostname,
+    topFrame: IS_TOP_FRAME,
+    deepScan,
+  });
+
+  // 跨框架 picker 桥接 + 子框架 host-info 握手：deepScan 开启后才装载
+  if (deepScan) {
+    installFrameBridge();
+    if (!IS_TOP_FRAME) {
+      // 子框架向父框架询问其 hostname，用于匹配存在父页面下的接力规则
+      requestParentHostInfo();
+    }
+  }
+
   chrome.runtime.onMessage.addListener(handleMessage);
+
   setTimeout(async () => {
     if (isBlacklisted()) {
       Logger.info('当前站点在黑名单中，跳过自动识别');
@@ -245,7 +275,7 @@ async function init(): Promise<void> {
     scanPage();
     startAutoDetector();
     checkAgreementBoxes();
-  }, 800);
+  }, IS_TOP_FRAME ? 800 : 1200); // 子框架延后一点，给 host-info 握手留时间
 }
 
 function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response: any) => void): boolean {
@@ -303,7 +333,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
     return;
   }
   try {
-    Logger.info('右键识别请求:', srcUrl);
+    Logger.info('右键识别请求:', srcUrl, { topFrame: IS_TOP_FRAME });
     let imgEl: HTMLImageElement | null = null;
     for (const img of Array.from(document.querySelectorAll('img'))) {
       if (img instanceof HTMLImageElement && (img.src === srcUrl || img.currentSrc === srcUrl)) {
@@ -334,7 +364,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
     });
     if (!response?.success) {
       Logger.warn('右键识别失败:', response?.error);
-      showContextMenuToast({ kind: 'error', errorMessage: response?.error || t('content.unknownError') });
+      reportContextResult({ kind: 'error', errorMessage: response?.error || t('content.unknownError') });
       sendResponse({ success: false, error: response?.error });
       return;
     }
@@ -348,19 +378,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
     }
     Logger.info('右键识别结果:', resultText);
 
-    // Always copy to clipboard — never-fail recovery path.
-    let copied = false;
-    try {
-      await navigator.clipboard.writeText(resultText);
-      copied = true;
-    } catch (e) {
-      Logger.warn('剪贴板写入失败:', e);
-    }
-
-    // Optionally also fill nearest input.
-    // 注意：这里直接用 autoFill.fill()，不走 fillInputAndMaybeSubmit —— 后者会被全局
-    // autoFillEnabled 总闸卡掉。但右键是用户主动操作，应只听 imageContextMenuAutoFill
-    // 这一开关，否则会出现「我开了右键填充却没反应」的疑惑。
+    // Optionally also fill nearest input — 在 sub-frame 时仍在本地填，因为输入框就在这个 frame 里
     let filled = false;
     let fillSkipReason: 'no-input' | 'fill-error' | null = null;
     if (imageContextMenuAutoFill) {
@@ -369,7 +387,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
       if (!inputEl) inputEl = queryInputElementBySelector(inputSelector);
       if (!inputEl) {
         fillSkipReason = 'no-input';
-        Logger.info('右键识别：未找到可填入的输入框（已复制到剪贴板，用户可手动粘贴）');
+        Logger.info('右键识别：未找到可填入的输入框');
       } else {
         try {
           await autoFill.fill(inputEl, resultText, {
@@ -389,19 +407,76 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
       }
     }
 
-    showContextMenuToast({
+    // toast 与剪贴板写入交给顶层框架处理（sub-frame 里 toast 显示在小窗口里看不清，
+    // 且 iframe 通常受 Permissions Policy 限制无法访问 clipboard API）
+    reportContextResult({
       result: resultText,
       filled,
-      copied,
       fillSkipReason,
       autoFillEnabled: imageContextMenuAutoFill,
     });
-    sendResponse({ success: true, text: resultText, filled, copied });
+    sendResponse({ success: true, text: resultText, filled });
   } catch (e) {
-    Logger.error('右键识别出错:', e);
-    showContextMenuToast({ kind: 'error', errorMessage: (e as Error).message });
+    Logger.error('右键识别异常:', e);
+    reportContextResult({ kind: 'error', errorMessage: (e as Error).message });
     sendResponse({ success: false, error: (e as Error).message });
   }
+}
+
+/** Sub-frame 转发右键识别结果到顶层 frame，由顶层完成剪贴板写入与 toast 展示。
+ *  顶层 frame 直接走本地路径（剪贴板 + toast）。 */
+function reportContextResult(
+  payload: { kind: 'error'; errorMessage: string }
+    | { result: string; filled: boolean; fillSkipReason: 'no-input' | 'fill-error' | null; autoFillEnabled: boolean }
+): void {
+  if (IS_TOP_FRAME) {
+    // 顶层：原地剪贴板 + toast
+    deliverContextResult(payload);
+    return;
+  }
+  if (!deepScan) {
+    // 没开 deepScan：sub-frame 兜底原地处理（与旧行为一致）
+    deliverContextResult(payload);
+    return;
+  }
+  // deepScan 开启：让顶层接管，避免 iframe 内 toast 被裁切 + clipboard 被 Permissions Policy 拒绝
+  try {
+    window.top?.postMessage({
+      _mieru: MIERU_MSG_NS,
+      type: 'ctx-result',
+      payload,
+    }, '*');
+    Logger.info('[deepScan] 右键识别结果转发到顶层', { kind: (payload as any).kind || 'ok' });
+  } catch (e) {
+    Logger.warn('[deepScan] 转发右键结果失败，回退到本地展示', e);
+    deliverContextResult(payload);
+  }
+}
+
+/** 真正在当前 frame 完成剪贴板 + toast。被顶层 frame 直接调用，或被旧版回退路径调用。 */
+async function deliverContextResult(
+  payload: { kind: 'error'; errorMessage: string }
+    | { result: string; filled: boolean; fillSkipReason: 'no-input' | 'fill-error' | null; autoFillEnabled: boolean }
+): Promise<void> {
+  if ((payload as any).kind === 'error') {
+    showContextMenuToast(payload as any);
+    return;
+  }
+  const ok = payload as { result: string; filled: boolean; fillSkipReason: 'no-input' | 'fill-error' | null; autoFillEnabled: boolean };
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(ok.result);
+    copied = true;
+  } catch (e) {
+    Logger.warn('剪贴板写入失败:', e);
+  }
+  showContextMenuToast({
+    result: ok.result,
+    filled: ok.filled,
+    copied,
+    fillSkipReason: ok.fillSkipReason,
+    autoFillEnabled: ok.autoFillEnabled,
+  });
 }
 
 /** Lightweight non-blocking toast for right-click results.
@@ -422,7 +497,7 @@ type ContextToastInput =
 
 function showContextMenuToast(input: ContextToastInput): void {
   try {
-    const id = 'ddddocr-ctx-toast';
+    const id = 'Mieru-ctx-toast';
     const old = document.getElementById(id);
     if (old) old.remove();
 
@@ -513,10 +588,27 @@ async function checkAndApplySiteRule(): Promise<void> {
     Logger.debug('站点规则:', rules);
     const currentUrl = getFullUrl();
     const currentHostname = location.hostname;
+
+    // 顶层：用 currentHostname 匹配；子框架（deepScan）：同时考虑 parentHostname
+    // —— 父页面下的接力规则会以 parentHostname 为键，frameSelector 标记落在哪个 iframe
+    const candidateHostnames = new Set<string>([currentHostname]);
+    if (!IS_TOP_FRAME && parentHostname) {
+      candidateHostnames.add(parentHostname);
+    }
+
     let matchedRule: (SiteRule & { hostname: string }) | null = null;
     for (const key of Object.keys(rules)) {
       const rule = rules[key];
       if (!rule.enabled) continue;
+
+      // 接力规则（带 frameSelector）的归属判定：
+      // - 顶层（IS_TOP_FRAME=true）跳过 —— 这些规则在 iframe 内才能命中元素
+      // - 子框架：只有当 rule.frameUrl 与 location.href 同源/同 hostname 时才认领
+      if (rule.frameSelector) {
+        if (IS_TOP_FRAME) continue;
+        if (!frameUrlMatchesSelf(rule.frameUrl)) continue;
+      }
+
       if (rule.fullUrl && currentUrl === rule.fullUrl) {
         matchedRule = rule;
         Logger.debug('匹配完整URL规则:', rule);
@@ -527,9 +619,11 @@ async function checkAndApplySiteRule(): Promise<void> {
         Logger.debug('匹配URL模式规则:', rule);
         break;
       }
-      if (rule.hostname === currentHostname && !rule.fullUrl && !rule.urlPattern) {
+      // hostname 命中：候选 hostname 之一即可（顶层用自身、子框架可叠加父）
+      if (candidateHostnames.has(rule.hostname) && !rule.fullUrl && !rule.urlPattern) {
         matchedRule = rule;
-        Logger.debug('匹配主机名规则:', rule);
+        Logger.debug('匹配主机名规则:', { rule, viaParent: rule.hostname === parentHostname });
+        // hostname 通配仅做兜底，继续看是否有更精确（fullUrl/urlPattern）命中
       }
     }
     if (matchedRule) {
@@ -545,7 +639,11 @@ async function checkAndApplySiteRule(): Promise<void> {
         customCaptchaElement = element;
         customInputElement = inputEl;
         currentCaptcha = buildCaptchaFromElement(element, 'rule-selected', inputEl);
-        Logger.info('应用站点规则, 验证码元素:', currentCaptcha.elementInfo);
+        Logger.info('应用站点规则, 验证码元素:', {
+          ...currentCaptcha.elementInfo,
+          viaFrameRule: !!matchedRule.frameSelector,
+          topFrame: IS_TOP_FRAME,
+        });
         detector.highlight(currentCaptcha);
         setTimeout(() => detector.unhighlight(currentCaptcha!), 1200);
         if (autoSolveOnRuleEnabled) {
@@ -557,6 +655,23 @@ async function checkAndApplySiteRule(): Promise<void> {
     }
   } catch (error) {
     Logger.error('检查网站规则失败:', error);
+  }
+}
+
+/** 判断当前 sub-frame 的 URL 是否匹配规则采集时的 frameUrl。
+ *  容忍 query/fragment 差异，仅比较 origin + pathname（更严的话改 origin 即可）。 */
+function frameUrlMatchesSelf(frameUrl: string | undefined): boolean {
+  if (!frameUrl) return true; // 无 frameUrl → 不限制
+  try {
+    const a = new URL(frameUrl);
+    const b = new URL(location.href);
+    if (a.origin !== b.origin) return false;
+    // 路径完全相同 → 强匹配
+    if (a.pathname === b.pathname) return true;
+    // 路径前缀匹配（处理动态片段）：要求至少同一目录
+    return b.pathname.startsWith(a.pathname.replace(/[^/]+$/, ''));
+  } catch {
+    return false;
   }
 }
 
@@ -747,21 +862,43 @@ async function handleFill(text: string, options: any, sendResponse: (response: a
   }
 }
 
-function handleGetStatus(sendResponse: (response: any) => void): void {
+async function handleGetStatus(sendResponse: (response: any) => void): Promise<void> {
   const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.getDetectedCaptchas();
   const resolvedInput = customInputElement || queryInputElementBySelector(inputSelector) || currentCaptcha?.inputElement;
+
+  // 深度扫描：顶层框架查询当前 hostname 是否已存在带 frameSelector 的接力规则。
+  // 如果存在，popup 应该当作"已配置"处理，而不是继续催用户选取——元素其实在 iframe 里。
+  let hasFrameRule = false;
+  if (IS_TOP_FRAME && deepScan) {
+    try {
+      const rulesResponse = await chrome.runtime.sendMessage({ action: 'getSiteRules' });
+      const rules: Record<string, any> = rulesResponse.success ? (rulesResponse.rules || {}) : {};
+      const currentHostname = location.hostname;
+      const currentUrl = getFullUrl();
+      hasFrameRule = Object.values(rules).some((r: any) => {
+        if (!r || !r.enabled || !r.frameSelector) return false;
+        if (r.fullUrl) return r.fullUrl === currentUrl;
+        if (r.urlPattern) return currentUrl.startsWith(r.urlPattern);
+        return r.hostname === currentHostname;
+      });
+    } catch (e) {
+      Logger.warn('[deepScan] 查询接力规则失败', e);
+    }
+  }
+
   const status = {
     success: true,
     isProcessing: isProcessing(),
     captchaCount: captchas.length,
-    hasCaptcha: captchas.length > 0 || !!customCaptchaElement,
+    hasCaptcha: captchas.length > 0 || !!customCaptchaElement || hasFrameRule,
     currentCaptcha: currentCaptcha
       ? { id: currentCaptcha.id, type: currentCaptcha.type, confidence: currentCaptcha.confidence }
       : null,
     autoDetectEnabled,
-    hasCustomInput: !!customInputElement,
-    hasCustomCaptcha: !!customCaptchaElement,
-    isReady: !!(customCaptchaElement || captchas.length > 0) && !!resolvedInput,
+    hasCustomInput: !!customInputElement || hasFrameRule,
+    hasCustomCaptcha: !!customCaptchaElement || hasFrameRule,
+    hasFrameRule,
+    isReady: hasFrameRule || (!!(customCaptchaElement || captchas.length > 0) && !!resolvedInput),
   };
   Logger.debug('状态查询:', status);
   sendResponse(status);
@@ -774,6 +911,24 @@ function handleStartPicker(sendResponse: (response: any) => void): void {
       return;
     }
     if (result.success) {
+      // 跨框架接力结果：result.element 来自子文档，顶层不可直接操作；只回传 selector/frame 信息让 popup 存规则
+      if (result.frameSelector) {
+        Logger.info('[deepScan] 接力规则保存', {
+          frameSelector: result.frameSelector,
+          innerSelector: result.selector,
+        });
+        sendResponse({
+          success: true,
+          selector: result.selector,
+          frameSelector: result.frameSelector,
+          frameUrl: result.frameUrl,
+          info: result.info,
+          hostname: location.hostname,
+          fullUrl: getFullUrl(),
+          urlPattern: getUrlPattern(),
+        });
+        return;
+      }
       customCaptchaElement = normalizeCaptchaElement(result.element);
       if (!customCaptchaElement) {
         sendResponse({ success: false, error: t('picker.selectCaptcha') });
@@ -802,6 +957,24 @@ function handleStartInputPicker(sendResponse: (response: any) => void): void {
   initElementPicker('input', async (result) => {
     if (result.cancelled) {
       sendResponse({ success: false, cancelled: true });
+      return;
+    }
+    // 跨框架接力的输入框：无法在顶层直接持有 input element，只传递 selector
+    if (result.success && result.frameSelector) {
+      Logger.info('[deepScan] 接力输入框规则保存', {
+        frameSelector: result.frameSelector,
+        innerSelector: result.selector,
+      });
+      sendResponse({
+        success: true,
+        selector: result.selector,
+        frameSelector: result.frameSelector,
+        frameUrl: result.frameUrl,
+        info: result.info,
+        hostname: location.hostname,
+        fullUrl: getFullUrl(),
+        urlPattern: getUrlPattern(),
+      });
       return;
     }
     if (result.success && result.element instanceof HTMLInputElement) {
@@ -892,8 +1065,8 @@ function clearGuessMode(): void {
 function showGuessTooltip(mode: 'captcha' | 'input'): void {
   hideGuessTooltip();
   const tooltip = document.createElement('div');
-  tooltip.id = 'ddddocr-guess-tooltip';
-  tooltip.className = 'ddddocr-guessed-tooltip';
+  tooltip.id = 'Mieru-guess-tooltip';
+  tooltip.className = 'Mieru-guessed-tooltip';
   tooltip.textContent = mode === 'captcha'
     ? t('picker.guessCaptcha')
     : t('picker.guessInput');
@@ -902,7 +1075,7 @@ function showGuessTooltip(mode: 'captcha' | 'input'): void {
 }
 
 function hideGuessTooltip(): void {
-  const tooltip = document.getElementById('ddddocr-guess-tooltip');
+  const tooltip = document.getElementById('Mieru-guess-tooltip');
   if (tooltip) {
     tooltip.remove();
   }
@@ -978,7 +1151,7 @@ function handleTriggerAuto(sendResponse: (response: any) => void): void {
 }
 
 async function showCaptchaPreview(imageData: string, captcha: DetectedCaptcha): Promise<void> {
-  const existing = document.getElementById('ddddocr-preview');
+  const existing = document.getElementById('Mieru-preview');
   if (existing) existing.remove();
   const settingsResponse = await chrome.runtime.sendMessage({ action: 'getSettings' });
   const theme = settingsResponse.settings?.theme || 'auto';
@@ -996,7 +1169,7 @@ async function showCaptchaPreview(imageData: string, captcha: DetectedCaptcha): 
     border: isDark ? '#27272a' : '#e4e4e7',
   };
   const overlay = document.createElement('div');
-  overlay.id = 'ddddocr-preview';
+  overlay.id = 'Mieru-preview';
   overlay.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:999999;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;`;
   const dialog = document.createElement('div');
   dialog.style.cssText = `background:${colors.bg};padding:24px;border-radius:16px;max-width:500px;color:${colors.text};border:1px solid ${colors.border};`;
@@ -1298,16 +1471,226 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
   }
 }
 
+// ============================================================================
+// 深度扫描 · 跨框架 picker 桥接
+// ----------------------------------------------------------------------------
+// 协议（所有消息携带 `_mieru: 1` 作为命名空间标识，避免拦截无关 postMessage）：
+//
+//   父 → 子：{ _mieru:1, type:'enter-picker', mode:'captcha'|'input', requestId }
+//   子 → 父：{ _mieru:1, type:'picker-result', requestId, selector, info }
+//   子 → 父：{ _mieru:1, type:'picker-cancelled', requestId }
+//
+//   子 → 父：{ _mieru:1, type:'request-host-info' }
+//   父 → 子：{ _mieru:1, type:'host-info', hostname }
+//
+// 安全：子框架只接受来自 `window.parent` 的请求；父框架只接受来自当前正在接力
+//      的 iframe.contentWindow 的回包（按 requestId 关联）。
+// ============================================================================
+
+const MIERU_MSG_NS = 1; // 协议标识
+
+interface PendingFrameRelay {
+  requestId: string;
+  iframe: HTMLIFrameElement;
+  mode: 'captcha' | 'input';
+  callback: (result: any) => void;
+  cleanup: () => void;
+}
+
+let pendingFrameRelay: PendingFrameRelay | null = null;
+
+/** 子框架持有的父页面 hostname（通过 host-info 握手获取）。
+ *  顶层文档场景下保持 null。用于匹配存储在父页面 hostname 下、带 frameUrl 的接力规则。 */
+let parentHostname: string | null = null;
+
+function installFrameBridge(): void {
+  window.addEventListener('message', onFrameBridgeMessage);
+  Logger.info('[deepScan] frame bridge installed', { topFrame: IS_TOP_FRAME });
+}
+
+/** 子框架启动时请求父框架 hostname。失败回退到 document.referrer 的 hostname。 */
+function requestParentHostInfo(): void {
+  // 首选 postMessage 握手（同源 / 跨源均可）；超时则回退 document.referrer
+  try {
+    window.parent.postMessage({ _mieru: MIERU_MSG_NS, type: 'request-host-info' }, '*');
+    Logger.info('[deepScan] 子框架请求父 hostname');
+  } catch (e) {
+    Logger.warn('[deepScan] postMessage(request-host-info) 失败', e);
+  }
+  // 兜底：1.5s 内若仍未拿到 parentHostname，用 document.referrer 推断
+  setTimeout(() => {
+    if (parentHostname) return;
+    try {
+      if (document.referrer) {
+        parentHostname = new URL(document.referrer).hostname;
+        Logger.info('[deepScan] parent host-info 握手超时，回退到 referrer', { parentHostname });
+      }
+    } catch { /* ignore */ }
+  }, 1500);
+}
+
+function onFrameBridgeMessage(event: MessageEvent): void {
+  const data = event.data;
+  if (!data || data._mieru !== MIERU_MSG_NS) return;
+
+  if (!IS_TOP_FRAME) {
+    // 子框架：只响应来自 window.parent 的请求
+    try {
+      if (event.source !== window.parent) return;
+    } catch { return; }
+    if (data.type === 'enter-picker') {
+      handleSubframePickerRequest(event.source as Window, data);
+    } else if (data.type === 'host-info' && typeof data.hostname === 'string') {
+      const isNew = parentHostname !== data.hostname;
+      parentHostname = data.hostname;
+      Logger.info('[deepScan] 子框架收到父 hostname', { parentHostname });
+      // 父 hostname 可能比 init() 中的 checkAndApplySiteRule 晚到 —— 补一次重试
+      if (isNew && !customCaptchaElement) {
+        Logger.debug('[deepScan] parent hostname 到达，重试规则匹配');
+        checkAndApplySiteRule();
+      }
+    }
+    return;
+  }
+
+  // 顶层框架：响应子框架的 host-info 请求
+  if (data.type === 'request-host-info') {
+    try {
+      (event.source as Window).postMessage({
+        _mieru: MIERU_MSG_NS, type: 'host-info', hostname: location.hostname,
+      }, '*');
+      Logger.debug('[deepScan] 顶层回复 host-info', { hostname: location.hostname });
+    } catch (e) {
+      Logger.warn('[deepScan] 回复 host-info 失败', e);
+    }
+    return;
+  }
+
+  // 顶层框架：接收子框架转发的右键识别结果，原地完成剪贴板写入与 toast 展示
+  if (data.type === 'ctx-result' && data.payload) {
+    Logger.info('[deepScan] 顶层收到子框架右键识别结果', { kind: data.payload.kind || 'ok' });
+    deliverContextResult(data.payload);
+    return;
+  }
+
+  // 顶层框架：等待正在接力的子框架回包
+  if (!pendingFrameRelay) return;
+  if (event.source !== pendingFrameRelay.iframe.contentWindow) return;
+  if (data.requestId !== pendingFrameRelay.requestId) return;
+
+  if (data.type === 'picker-result') {
+    Logger.info('[deepScan] 顶层收到子框架 picker 结果', {
+      mode: pendingFrameRelay.mode,
+      innerSelector: data.selector,
+    });
+    const frameSelector = detector.generateSelector(pendingFrameRelay.iframe);
+    const frameUrl = (() => {
+      try { return pendingFrameRelay.iframe.src || ''; } catch { return ''; }
+    })();
+    const relay = pendingFrameRelay;
+    pendingFrameRelay = null;
+    // element 来自子框架文档，无法跨域返回；调用方需自行用 frameSelector + selector 二次查找
+    relay.callback({
+      success: true,
+      selector: data.selector,
+      frameSelector,
+      frameUrl,
+      info: data.info,
+    });
+  } else if (data.type === 'picker-cancelled') {
+    Logger.info('[deepScan] 子框架取消 picker', { mode: pendingFrameRelay.mode });
+    const relay = pendingFrameRelay;
+    pendingFrameRelay = null;
+    relay.callback({ cancelled: true });
+  }
+}
+
+function handleSubframePickerRequest(parent: Window, req: any): void {
+  const mode: 'captcha' | 'input' = req.mode === 'input' ? 'input' : 'captcha';
+  const requestId: string = String(req.requestId || '');
+  Logger.info('[deepScan] 子框架进入 picker', { mode, requestId, url: getFullUrl() });
+  initElementPicker(mode, (result) => {
+    try {
+      if (result.cancelled) {
+        parent.postMessage({ _mieru: MIERU_MSG_NS, type: 'picker-cancelled', requestId }, '*');
+        Logger.info('[deepScan] 子框架回包：取消', { requestId });
+      } else if (result.success) {
+        parent.postMessage({
+          _mieru: MIERU_MSG_NS,
+          type: 'picker-result',
+          requestId,
+          selector: result.selector,
+          info: result.info,
+        }, '*');
+        Logger.info('[deepScan] 子框架回包：结果', { requestId, selector: result.selector });
+      }
+    } catch (e) {
+      Logger.warn('[deepScan] 子框架回包失败', e);
+    }
+  });
+}
+
+/** 在顶层 picker 中转发到指定 iframe。会先 cleanup 调用者，再启动接力。 */
+function startFrameRelay(
+  iframe: HTMLIFrameElement,
+  mode: 'captcha' | 'input',
+  pickerCleanup: () => void,
+  callback: (result: any) => void,
+): boolean {
+  if (!iframe.contentWindow) {
+    Logger.warn('[deepScan] iframe 没有 contentWindow，无法接力（可能 sandbox 限制）');
+    return false;
+  }
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const cancelTimer = setTimeout(() => {
+    if (pendingFrameRelay?.requestId === requestId) {
+      Logger.warn('[deepScan] 子框架接力超时（10s 内未收到回包），可能子框架未启用 deepScan 或被沙箱阻断');
+      pendingFrameRelay = null;
+      callback({ cancelled: true, error: 'frame-relay-timeout' });
+    }
+  }, 10000);
+
+  pendingFrameRelay = {
+    requestId,
+    iframe,
+    mode,
+    callback: (result) => {
+      clearTimeout(cancelTimer);
+      callback(result);
+    },
+    cleanup: pickerCleanup,
+  };
+
+  try {
+    iframe.contentWindow.postMessage({
+      _mieru: MIERU_MSG_NS,
+      type: 'enter-picker',
+      mode,
+      requestId,
+    }, '*');
+    Logger.info('[deepScan] 顶层发起子框架接力', { requestId, mode, frameUrl: iframe.src });
+    pickerCleanup();
+    return true;
+  } catch (e) {
+    Logger.warn('[deepScan] 向子框架发送 postMessage 失败', e);
+    clearTimeout(cancelTimer);
+    pendingFrameRelay = null;
+    return false;
+  }
+}
+
 function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) => void): void {
   let isActive = true;
   let hoveredElement: Element | null = null;
+  // 深度扫描模式下，命中的 iframe 元素（用于点击转发）
+  let hoveredIframe: HTMLIFrameElement | null = null;
   const overlay = document.createElement('div');
-  overlay.id = 'ddddocr-picker-overlay';
+  overlay.id = 'Mieru-picker-overlay';
   overlay.style.cssText = 'position:fixed;pointer-events:none;border:3px solid #6366f1;background:rgba(99,102,241,0.15);z-index:999998;display:none;border-radius:4px;';
   document.body.appendChild(overlay);
   const tooltipText = mode === 'captcha' ? t('picker.selectCaptcha') : t('picker.selectInput');
   const tooltip = document.createElement('div');
-  tooltip.id = 'ddddocr-picker-tooltip';
+  tooltip.id = 'Mieru-picker-tooltip';
   tooltip.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;padding:12px 24px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;z-index:999999;box-shadow:0 4px 20px rgba(0,0,0,0.5);display:flex;align-items:center;gap:16px;border:1px solid #6366f1;';
   tooltip.innerHTML = `<span>${tooltipText}</span><span id="picker-info" style="color:#a1a1aa;font-size:12px;"></span><button id="picker-cancel" style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;">${t('picker.cancel')}</button>`;
   document.body.appendChild(tooltip);
@@ -1323,6 +1706,28 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
     if (!isActive) return;
     const element = document.elementFromPoint(e.clientX, e.clientY);
     if (!element || element.id.includes('ddddocr')) return;
+
+    // 深度扫描：顶层 picker 命中 iframe 时，直接高亮整块 iframe，等待用户点击触发接力
+    if (IS_TOP_FRAME && deepScan && element.tagName === 'IFRAME') {
+      hoveredIframe = element as HTMLIFrameElement;
+      hoveredElement = null;
+      const rect = element.getBoundingClientRect();
+      overlay.style.display = 'block';
+      overlay.style.borderColor = '#f59e0b';
+      overlay.style.background = 'rgba(245,158,11,0.15)';
+      overlay.style.top = rect.top + 'px';
+      overlay.style.left = rect.left + 'px';
+      overlay.style.width = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
+      const infoEl = document.getElementById('picker-info');
+      if (infoEl) infoEl.textContent = t('picker.iframeHint');
+      return;
+    }
+
+    hoveredIframe = null;
+    overlay.style.borderColor = '#6366f1';
+    overlay.style.background = 'rgba(99,102,241,0.15)';
+
     let target: Element | null = null;
     if (mode === 'captcha') {
       if (['IMG', 'CANVAS', 'SVG'].includes(element.tagName)) {
@@ -1363,6 +1768,19 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
     if (!isActive) return;
     e.preventDefault();
     e.stopPropagation();
+
+    // 深度扫描：点击落在 iframe 上 → 启动跨框架接力
+    if (IS_TOP_FRAME && deepScan && hoveredIframe) {
+      const ok = startFrameRelay(hoveredIframe, mode, cleanup, callback);
+      if (!ok) {
+        // 接力失败时 picker 不退出，提示用户重新选
+        const infoEl = document.getElementById('picker-info');
+        if (infoEl) infoEl.textContent = t('picker.iframeRelayFailed');
+        hoveredIframe = null;
+      }
+      return;
+    }
+
     if (hoveredElement) {
       const selector = detector.generateSelector(hoveredElement);
       const rect = hoveredElement.getBoundingClientRect();
