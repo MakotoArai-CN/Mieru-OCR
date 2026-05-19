@@ -72,7 +72,7 @@ let cachedStorage: AsyncKV | null | undefined;
 function getStorage(): AsyncKV | null {
   if (cachedStorage !== undefined) return cachedStorage;
   try {
-    const c = (globalThis as any).chrome;
+    const c = (globalThis as any).browser;
     if (c?.storage?.local) {
       cachedStorage = {
         get: (k) => c.storage.local.get(k).then((r: any) => r[k]),
@@ -82,7 +82,7 @@ function getStorage(): AsyncKV | null {
     }
   } catch { /* fall through */ }
   try {
-    const b = (globalThis as any).browser;
+    const b = (globalThis as any).chrome;
     if (b?.storage?.local) {
       cachedStorage = {
         get: (k) => b.storage.local.get(k).then((r: any) => r[k]),

@@ -18,18 +18,17 @@ let cachedStorage: any = null;
 
 function getStorage(): any {
   if (cachedStorage) return cachedStorage;
-  // chrome first — this module is bundled into both Chrome MV3 (offscreen/background/options) and
-  // Firefox MV2 builds. In Chrome contexts `browser` is occasionally polyfilled by other extensions
-  // as a Proxy that throws on property access, so wrap each probe in try/catch.
+  // Prefer Firefox's Promise-based browser.storage in MV2 builds, then fall back to chrome.storage
+  // for Chromium. Wrap each probe in try/catch because some contexts expose throwing proxies.
   try {
-    if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
-      cachedStorage = chrome.storage.local;
+    if (typeof browser !== 'undefined' && browser?.storage?.local) {
+      cachedStorage = browser.storage.local;
       return cachedStorage;
     }
   } catch { /* fall through */ }
   try {
-    if (typeof browser !== 'undefined' && browser?.storage?.local) {
-      cachedStorage = browser.storage.local;
+    if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
+      cachedStorage = chrome.storage.local;
       return cachedStorage;
     }
   } catch { /* fall through */ }
