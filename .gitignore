@@ -6,3 +6,4 @@ LLM*
 .vscode/
 benchmark*
 experiments/
+.playwright-mcp/

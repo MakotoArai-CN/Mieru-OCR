@@ -53,6 +53,7 @@
     {
       "resources": [
         "common.onnx",
+        "common_det.onnx",
         "charsets.json",
         "offscreen.html",
         "icons/*",

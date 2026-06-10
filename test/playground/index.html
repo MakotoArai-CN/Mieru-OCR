@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mieru-OCR 交互验证码标准测试台</title>
+<style>
+  :root { --bg:#f5f5f7; --card:#fff; --line:#e4e4e7; --pri:#4A90E2; --ok:#10b981; --err:#ef4444; --warn:#f59e0b; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, "PingFang SC", sans-serif; margin:0; padding:24px; background:var(--bg); color:#1a1a2e; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:#71717a; font-size:13px; margin-bottom:20px; }
+  .grid { display:grid; grid-template-columns:1fr; gap:18px; max-width:920px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+  .card h2 { font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:999px; background:#eef; color:#446; font-weight:600; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:12px; }
+  button { padding:8px 16px; border:none; border-radius:8px; background:var(--pri); color:#fff; cursor:pointer; font-size:13px; }
+  button.sec { background:#e8f0fe; color:var(--pri); }
+  button:hover { filter:brightness(1.05); }
+  .log { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:11.5px; background:#0f0f1a; color:#cdd; padding:12px; border-radius:8px; max-height:220px; overflow:auto; white-space:pre-wrap; margin-top:12px; line-height:1.5; }
+  .log .ok { color:#34d399; } .log .err { color:#f87171; } .log .warn { color:#fbbf24; } .log .dim { color:#71717a; }
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-top:12px; }
+  .metric { background:#f8fbff; border:1px solid var(--line); border-radius:8px; padding:10px; text-align:center; }
+  .metric .v { font-size:20px; font-weight:700; color:var(--pri); }
+  .metric .k { font-size:11px; color:#71717a; margin-top:2px; }
+
+  /* ── GeeTest 同款滑块 DOM 结构（class 名对齐生产，便于检测命中） ── */
+  .geetest_slider { position:relative; width:320px; margin:8px 0; }
+  .geetest_canvas_bg { display:block; border-radius:8px; }
+  .geetest_canvas_slice { position:absolute; top:0; left:0; }
+  .geetest_slider_track { position:relative; width:320px; height:40px; background:#eef0f3; border-radius:20px; margin-top:12px; }
+  .geetest_slider_track .tip { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#9aa; font-size:13px; pointer-events:none; }
+  .geetest_slider_button { position:absolute; top:0; left:0; width:40px; height:40px; background:#fff; border:1px solid var(--line); border-radius:50%; box-shadow:0 0 6px rgba(0,0,0,.15); cursor:grab; display:flex; align-items:center; justify-content:center; color:var(--pri); user-select:none; }
+  .geetest_slider_button.active { cursor:grabbing; }
+  .geetest_fill { position:absolute; top:0; left:0; height:100%; background:rgba(74,144,226,.25); border-radius:20px; pointer-events:none; }
+
+  /* ── 文字点选 ── */
+  .point-captcha { width:300px; }
+  .cs-prompt { font-size:13px; color:#52525b; margin:4px 0 8px; }
+  .cs-prompt b { color:var(--pri); font-size:18px; letter-spacing:6px; margin-left:4px; }
+  .cs-canvas-wrap { position:relative; width:300px; }
+  #csCanvas { display:block; border-radius:8px; border:1px solid var(--line); cursor:pointer; }
+  .cs-marker { position:absolute; width:24px; height:24px; margin:-12px 0 0 -12px; border:2px solid #ff3b30; border-radius:50%; pointer-events:none; color:#fff; background:rgba(255,59,48,.85); font-size:12px; text-align:center; line-height:22px; font-weight:700; box-shadow:0 0 0 2px #fff; }
+
+  /* ── CF 人机验证 ── */
+  .cf-note { font-size:12px; line-height:1.6; color:#856404; background:#fff8e6; border-left:4px solid var(--warn); padding:10px 12px; border-radius:6px; margin-bottom:12px; }
+  .cf-note b { color:#b45309; }
+  .cf-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+  .cf-real { min-height:70px; padding:10px; border:1px dashed var(--line); border-radius:8px; margin-bottom:10px; }
+  .cf-mock { width:100%; height:430px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  @media (max-width:760px){ .cf-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+  <h1>Mieru-OCR 交互式验证码标准测试台</h1>
+  <div class="sub">用项目真实的 <code>CaptchaDetector</code> + <code>slide-detector</code> + 各 solver，对生产同款结构的验证码做检测/求解回归。所有交互辅助默认关闭，此页直接调用底层模块以便测试。</div>
+
+  <div class="grid">
+    <!-- ── 滑块拖拽 ── -->
+    <section class="card" id="sliderCard">
+      <h2>① 滑块拖拽 <span class="badge">GeeTest 同款 DOM</span></h2>
+      <div class="geetest_slider" id="gtSlider">
+        <canvas class="geetest_canvas_bg" id="gtBg" width="320" height="160"></canvas>
+        <canvas class="geetest_canvas_slice" id="gtSlice" width="60" height="160"></canvas>
+        <div class="geetest_slider_track">
+          <div class="geetest_fill" id="gtFill"></div>
+          <div class="tip">向右拖动滑块完成拼图</div>
+          <div class="geetest_slider_button" id="gtBtn">⇢</div>
+        </div>
+      </div>
+      <div class="row">
+        <button id="sliderRegen" class="sec">重新生成（随机缺口）</button>
+        <button id="sliderDetect" class="sec">检测（CaptchaDetector）</button>
+        <button id="sliderSolve">自动求解（slideMatch + 拖拽）</button>
+        <button id="sliderSelftest" class="sec">自测 30 次（缺口检测准确率）</button>
+      </div>
+      <div class="metrics" id="sliderMetrics"></div>
+      <div class="log" id="sliderLog"></div>
+    </section>
+
+    <!-- ── 文字点选 ── -->
+    <section class="card" id="csCard">
+      <h2>② 文字点选 <span class="badge">common_det 检测 + OCR 端到端</span></h2>
+      <div class="point-captcha" id="csContainer">
+        <div class="cs-prompt">请依次点击：<b id="csPrompt">— — —</b></div>
+        <div class="cs-canvas-wrap" id="csWrap">
+          <canvas id="csCanvas" width="300" height="200"></canvas>
+        </div>
+      </div>
+      <div class="row">
+        <button id="csRegen" class="sec">重新生成（随机字 + 乱序）</button>
+        <button id="csDetect" class="sec">检测（CaptchaDetector）</button>
+        <button id="csSolve">自动求解（检测 + OCR + 点击）</button>
+        <button id="csSelftest" class="sec">自测 10 次（端到端通过率）</button>
+      </div>
+      <div class="metrics" id="csMetrics"></div>
+      <div class="log" id="csLog"></div>
+    </section>
+
+    <!-- ── CF 人机验证（辅助点击，非绕过）── -->
+    <section class="card" id="cfCard">
+      <h2>③ CF 人机验证 <span class="badge">辅助点击（非绕过）</span></h2>
+      <div class="cf-note">
+        ⚠️ <b>诚实边界</b>：Turnstile 在跨域 iframe（challenges.cloudflare.com）内运行，合成 click 的
+        <code>isTrusted=false</code>，且 CF 另有网络层（JA3/HTTP2/IP 信誉）与行为层指纹，客户端<b>无法绕过</b>。
+        本扩展只做：顶层「滚动 + 高亮」提示用户亲自点击；CF iframe 内尽力点击（多半被拒，如实记录）。<br>
+        左：真实 Turnstile（官方测试 sitekey）验证 <code>detectTurnstile()</code> 命中 + 跨域边界；
+        右：本地行为评分 mock，演示「瞬时合成点击 vs 自然轨迹」的评分差异（为何合成点击行为层也过不了）。
+      </div>
+      <div class="cf-grid">
+        <div>
+          <div class="cf-real" id="cfReal">
+            <div class="cf-turnstile" data-sitekey="1x00000000000000000000AA"></div>
+          </div>
+          <div class="row">
+            <button id="cfDetect" class="sec">检测 Turnstile（detectTurnstile）</button>
+            <button id="cfAssist" class="sec">辅助（顶层滚动 + 高亮）</button>
+          </div>
+        </div>
+        <iframe class="cf-mock" id="cfMock" src="/experiments/cloudflare-checkbox.html" title="CF 行为评分 mock"></iframe>
+      </div>
+      <div class="log" id="cfLog"></div>
+    </section>
+  </div>
+
+  <!-- 真实生产库：onnxruntime-web（UMD，挂 window.ort），供 OCREngine / DetectionEngine 使用。 -->
+  <script src="/node_modules/onnxruntime-web/dist/ort.min.js"></script>
+  <!-- 真实 Cloudflare Turnstile（官方测试 sitekey 可在任意域名/localhost 使用）。加载失败不影响其它区。 -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <script type="module" src="./playground.bundle.js"></script>
+</body>
+</html>

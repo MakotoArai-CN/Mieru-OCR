@@ -77,6 +77,10 @@ export interface SiteRule {
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
+  /** 验证码类型。缺省 = 文本/图片 OCR（向后兼容旧规则）；
+   *  'slider' = 滑块拖拽，命中后走 solveSlider；'click-select' = 文字点选，走 solveClickSelect。
+   *  交互类仍受 enableSliderPuzzleAssist / enableClickSelectAssist 等全局开关 gate。 */
+  subType?: 'slider' | 'click-select';
   /** 当目标元素位于子 iframe 内时，记录顶层文档中定位到该 iframe 的 selector。
    *  自动应用规则时：sub-frame 自己用 selector 命中元素；top-frame 用 frameSelector 命中 iframe。 */
   frameSelector?: string;

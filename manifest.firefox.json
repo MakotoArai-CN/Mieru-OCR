@@ -56,6 +56,7 @@
   ],
   "web_accessible_resources": [
     "common.onnx",
+    "common_det.onnx",
     "charsets.json",
     "icons/*",
     "ort-wasm-simd.wasm",

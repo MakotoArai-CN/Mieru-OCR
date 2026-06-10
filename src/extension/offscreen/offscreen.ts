@@ -1,4 +1,6 @@
 import { OCREngine } from '@core/ocr-engine';
+import { DetectionEngine } from '@core/detection-engine';
+import { labelBoxesWithEngines, decodeDataURLToImage } from '@core/interaction/click-select-solver';
 import { BUILTIN_MODEL_ID, BUNDLED_MODELS, getBundledModel, getModelData, isBundledModelId } from '../model-store';
 
 /**
@@ -139,6 +141,47 @@ async function getActiveEngine(): Promise<{ engine: OCREngine; modelId: string }
   }
 }
 
+/**
+ * Detection engine (ddddocr common_det.onnx, YOLOX), lazily built and kept for
+ * the offscreen document's lifetime. Used to find character boxes for
+ * click-select captchas. Threads are left at the OCR engine's setting (1) — see
+ * DetectionEngineOptions.numThreads. The model is a fixed bundled asset, not an
+ * uploadable model, so we fetch it directly via getURL.
+ */
+const DETECTION_MODEL_FILE = 'common_det.onnx';
+let detectionEngine: DetectionEngine | null = null;
+let detectionEngineInit: Promise<DetectionEngine> | null = null;
+
+async function getDetectionEngine(): Promise<DetectionEngine> {
+  if (detectionEngine) return detectionEngine;
+  if (detectionEngineInit) return detectionEngineInit;
+
+  detectionEngineInit = (async () => {
+    const ort = getOrtGlobal();
+    if (!ort) throw new Error('ort.min.js 未加载或全局 ort 不存在');
+    configureOrt(ort);
+    const engine = new DetectionEngine({
+      getModel: async () => {
+        const res = await fetch(chrome.runtime.getURL(DETECTION_MODEL_FILE));
+        if (!res.ok) throw new Error(`检测模型 ${DETECTION_MODEL_FILE} 加载失败 (HTTP ${res.status})`);
+        return { model: await res.arrayBuffer() };
+      },
+      getOrt: async () => ort,
+      wasmPaths: chrome.runtime.getURL('/'),
+    });
+    await engine.init();
+    detectionEngine = engine;
+    return engine;
+  })();
+
+  try {
+    return await detectionEngineInit;
+  } catch (e) {
+    detectionEngineInit = null; // allow retry on next call
+    throw e;
+  }
+}
+
 /** Listen for storage changes to invalidate cached engines */
 if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes: any, areaName: string) => {
@@ -157,6 +200,10 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: a
   }
   if (message?.action === 'offscreen:recognize') {
     handleRecognize(message, sendResponse);
+    return true;
+  }
+  if (message?.action === 'offscreen:detect-text') {
+    handleDetectText(message, sendResponse);
     return true;
   }
   if (message?.action === 'offscreen:invalidate-model') {
@@ -184,6 +231,31 @@ async function handleRecognize(message: any, sendResponse: (response: any) => vo
       return;
     }
     sendResponse({ success: false, error: '缺少图像数据' });
+  } catch (error) {
+    sendResponse({ success: false, error: (error as Error).message });
+  }
+}
+
+/**
+ * Detect + label character boxes for a click-select captcha.
+ * message.imageData is a PNG dataURL of the captcha's main image (encoded by the
+ * content script from its ImageLike). We decode it, run the detection engine to
+ * find boxes, then OCR-label each box with the currently active OCR engine.
+ * Returns boxes in the captcha image's own pixel coordinate system.
+ */
+async function handleDetectText(message: any, sendResponse: (response: any) => void) {
+  try {
+    if (!message.imageData) {
+      sendResponse({ success: false, error: '缺少图像数据' });
+      return;
+    }
+    const startTime = Date.now();
+    const image = await decodeDataURLToImage(message.imageData);
+    const det = await getDetectionEngine();
+    const { engine: ocr } = await getActiveEngine();
+    const boxes = await labelBoxesWithEngines(image, det, ocr);
+    const elapsed = Date.now() - startTime;
+    sendResponse({ success: true, boxes, elapsed });
   } catch (error) {
     sendResponse({ success: false, error: (error as Error).message });
   }

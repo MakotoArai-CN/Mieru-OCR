@@ -8,6 +8,7 @@
     "build:extension": "vite build --config vite.config.browser.ts",
     "build:firefox": "vite build --config vite.config.firefox.ts",
     "build:all": "bun run build && bun run build:extension && bun run build:firefox",
+    "build:playground": "bun build ./test/playground/playground.ts --outfile ./test/playground/playground.bundle.js --target browser",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {

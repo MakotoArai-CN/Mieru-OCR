@@ -279,6 +279,7 @@ async function selectCaptcha(): Promise<void> {
         hostname: response.hostname,
         rule: {
           selector: response.selector,
+          subType: response.subType, // picker 内切换的类型：slider / click-select / undefined(文本)
           info: response.info,
           fullUrl: response.fullUrl,
           urlPattern: response.urlPattern,
@@ -289,6 +290,16 @@ async function selectCaptcha(): Promise<void> {
       });
 
       showToast(t('popup.captchaRuleSaved'), 'success');
+
+      // 交互式（滑块/点选）规则：对应辅助开关未开时提示去设置开启，否则命中也不会自动求解。
+      if (response.subType) {
+        const settings = (await chrome.storage.local.get('settings')).settings || {};
+        const assistOn = response.subType === 'slider'
+          ? (settings.enableSliderPuzzleAssist || settings.enableSingleSliderAssist)
+          : settings.enableClickSelectAssist;
+        if (!assistOn) showToast(t('popup.assistOffHint'), 'info');
+      }
+
       updateReadyStatus();
     }
 
@@ -396,13 +407,14 @@ function setStatus(status: string, text: string): void {
   elements.statusText!.textContent = text;
 }
 
-function showToast(message: string, type: 'success' | 'error'): void {
+function showToast(message: string, type: 'success' | 'error' | 'info' = 'success'): void {
   elements.toast!.className = `toast ${type}`;
-  elements.toastIcon!.textContent = type === 'success' ? '✓' : '✕';
+  elements.toastIcon!.textContent = type === 'success' ? '✓' : type === 'info' ? 'ℹ' : '✕';
   elements.toastMessage!.textContent = message;
   elements.toast!.classList.remove('hidden');
 
-  setTimeout(() => elements.toast!.classList.add('hidden'), 2500);
+  // info 类提示停留更久，便于用户读完去开开关
+  setTimeout(() => elements.toast!.classList.add('hidden'), type === 'info' ? 4500 : 2500);
 }
 
 document.addEventListener('DOMContentLoaded', init);

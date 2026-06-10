@@ -123,6 +123,10 @@ function cacheElements(): void {
   elements.imageContextMenuAutoFill = document.getElementById('imageContextMenuAutoFill');
   elements.preserveFocus = document.getElementById('preserveFocus');
   elements.deepScan = document.getElementById('deepScan');
+  elements.enableSliderPuzzleAssist = document.getElementById('enableSliderPuzzleAssist');
+  elements.enableSingleSliderAssist = document.getElementById('enableSingleSliderAssist');
+  elements.enableClickSelectAssist = document.getElementById('enableClickSelectAssist');
+  elements.enableInteractiveCaptchaAssist = document.getElementById('enableInteractiveCaptchaAssist');
   elements.autoSubmit = document.getElementById('autoSubmit');
   elements.autoCheckAgreement = document.getElementById('autoCheckAgreement');
   elements.captchaSelector = document.getElementById('captchaSelector');
@@ -489,6 +493,10 @@ async function loadSettings(): Promise<void> {
   (elements.imageContextMenuAutoFill as HTMLInputElement).checked = settings.imageContextMenuAutoFill !== false;
   (elements.preserveFocus as HTMLInputElement).checked = Boolean(settings.preserveFocus);
   (elements.deepScan as HTMLInputElement).checked = Boolean(settings.deepScan);
+  (elements.enableSliderPuzzleAssist as HTMLInputElement).checked = Boolean(settings.enableSliderPuzzleAssist);
+  (elements.enableSingleSliderAssist as HTMLInputElement).checked = Boolean(settings.enableSingleSliderAssist);
+  (elements.enableClickSelectAssist as HTMLInputElement).checked = Boolean(settings.enableClickSelectAssist);
+  (elements.enableInteractiveCaptchaAssist as HTMLInputElement).checked = Boolean(settings.enableInteractiveCaptchaAssist);
   (elements.autoSubmit as HTMLInputElement).checked = Boolean(settings.autoSubmit);
   (elements.autoCheckAgreement as HTMLInputElement).checked = settings.autoCheckAgreement !== false;
   (elements.captchaSelector as HTMLInputElement).value = settings.captchaSelector || '';
@@ -653,6 +661,10 @@ async function saveGeneralSettings(): Promise<void> {
   settings.imageContextMenuAutoFill = (elements.imageContextMenuAutoFill as HTMLInputElement).checked;
   settings.preserveFocus = (elements.preserveFocus as HTMLInputElement).checked;
   settings.deepScan = (elements.deepScan as HTMLInputElement).checked;
+  settings.enableSliderPuzzleAssist = (elements.enableSliderPuzzleAssist as HTMLInputElement).checked;
+  settings.enableSingleSliderAssist = (elements.enableSingleSliderAssist as HTMLInputElement).checked;
+  settings.enableClickSelectAssist = (elements.enableClickSelectAssist as HTMLInputElement).checked;
+  settings.enableInteractiveCaptchaAssist = (elements.enableInteractiveCaptchaAssist as HTMLInputElement).checked;
   settings.autoSubmit = (elements.autoSubmit as HTMLInputElement).checked;
   settings.autoCheckAgreement = (elements.autoCheckAgreement as HTMLInputElement).checked;
   settings.captchaSelector = (elements.captchaSelector as HTMLInputElement).value.trim();

@@ -1,5 +1,7 @@
 declare const browser: any;
 import { OCREngine } from '@core/ocr-engine';
+import { DetectionEngine } from '@core/detection-engine';
+import { labelBoxesWithEngines, decodeDataURLToImage } from '@core/interaction/click-select-solver';
 import type { ExtensionSettings } from '@core/types';
 import { autoUpdateSubscriptions } from '../subscription-manager';
 import { BUILTIN_MODEL_ID, getActiveModelId, getModelData } from '../model-store';
@@ -138,6 +140,44 @@ async function getOCREngine(): Promise<OCREngine> {
   }
 }
 
+/**
+ * Detection engine (ddddocr common_det.onnx, YOLOX), lazily built in this
+ * background page. MV2 has no offscreen document, so detection + OCR labeling
+ * both run here. Threads stay at the OCR engine's setting (1) — see
+ * DetectionEngineOptions.numThreads. The model is a fixed bundled asset.
+ */
+const DETECTION_MODEL_FILE = 'common_det.onnx';
+let detectionEngine: DetectionEngine | null = null;
+let detectionEngineInit: Promise<DetectionEngine> | null = null;
+
+async function getDetectionEngine(): Promise<DetectionEngine> {
+  if (detectionEngine) return detectionEngine;
+  if (detectionEngineInit) return detectionEngineInit;
+
+  detectionEngineInit = (async () => {
+    const ort = await loadOrt();
+    const engine = new DetectionEngine({
+      getModel: async () => {
+        const res = await fetch(browser.runtime.getURL(DETECTION_MODEL_FILE));
+        if (!res.ok) throw new Error(`检测模型 ${DETECTION_MODEL_FILE} 加载失败 (HTTP ${res.status})`);
+        return { model: await res.arrayBuffer() };
+      },
+      getOrt: async () => ort,
+      wasmPaths: browser.runtime.getURL('/'),
+    });
+    await engine.init();
+    detectionEngine = engine;
+    return engine;
+  })();
+
+  try {
+    return await detectionEngineInit;
+  } catch (e) {
+    detectionEngineInit = null; // allow retry
+    throw e;
+  }
+}
+
 browser.runtime.onInstalled.addListener((details: any) => {
   console.log('[Background Firefox] 扩展安装/更新:', details.reason);
   if (details.reason === 'install') {
@@ -258,6 +298,9 @@ async function handleMessage(
       case 'recognizeCaptcha':
         await handleRecognize(message, sendResponse);
         break;
+      case 'detectText':
+        await handleDetectText(message, sendResponse);
+        break;
       case 'getSettings':
         await handleGetSettings(sendResponse);
         break;
@@ -350,6 +393,33 @@ async function handleRecognize(
     setOcrStatus('fault', (error as Error).message);
     console.error('[Background Firefox] 识别异常:', error);
     sendResponse({ success: false, error: (error as Error).message, elapsed });
+  }
+}
+
+/**
+ * Click-select text detection (MV2, in-page). Decodes the captcha image dataURL,
+ * runs detection + per-box OCR labeling, returns boxes in the image's pixel
+ * coordinate system. Mirrors the Chrome offscreen handler, but runs here since
+ * Firefox MV2 has no offscreen document.
+ */
+async function handleDetectText(
+  message: any,
+  sendResponse: (response: any) => void
+): Promise<void> {
+  try {
+    if (!message.imageData) {
+      sendResponse({ success: false, error: '缺少图像数据' });
+      return;
+    }
+    const startTime = Date.now();
+    const image = await decodeDataURLToImage(message.imageData);
+    const det = await getDetectionEngine();
+    const ocr = await getOCREngine();
+    const boxes = await labelBoxesWithEngines(image, det, ocr);
+    sendResponse({ success: true, boxes, elapsed: Date.now() - startTime });
+  } catch (error) {
+    console.error('[Background Firefox] 文字检测异常:', error);
+    sendResponse({ success: false, error: (error as Error).message });
   }
 }
 
@@ -590,8 +660,8 @@ function getDefaultSettings(): ExtensionSettings {
     disabledInputExcludeKeywords: [],
     enableInteractiveCaptchaAssist: false,
     enableInteractiveCaptchaDebugOverlay: false,
-    enableSliderPuzzleAssist: true,
-    enableSingleSliderAssist: true,
+    enableSliderPuzzleAssist: false,
+    enableSingleSliderAssist: false,
     enableClickSelectAssist: false,
     siteBlacklist: [],
     imageContextMenuEnabled: false,

@@ -3,10 +3,14 @@ import { AutoFill } from '@core/auto-fill';
 import { CONSTANTS, Logger } from '@core/config';
 import { Calculator } from '@core/calculator';
 import { CaptchaDetector, type DetectedCaptcha, type GuessedElement } from '@core/captcha-detector';
+import { solveSlider } from '@core/interaction/slider-solver';
+import { solveClickSelect, labelBoxesWithEngines } from '@core/interaction/click-select-solver';
+import { assistCloudflare, isCloudflareFrame, detectTurnstile } from '@core/interaction/cloudflare';
+import { DetectionEngine } from '@core/detection-engine';
 import { EventEmitter, type OCREvents, type OCRConfig, type SiteRule } from '@core/types';
 import { initLocale, setLocale, t } from '@core/i18n';
 import type { Locale } from '@core/i18n';
-import { loadModel, clearModelCache } from './model-loader';
+import { loadModel, loadDetModel, clearModelCache } from './model-loader';
 import { setupWASMCache, clearWASMCache } from './wasm-cache';
 import { SettingsUI } from './settings-ui';
 import { LoadingIndicator } from './loading-indicator';
@@ -30,6 +34,9 @@ function isMobileDevice(): boolean {
 
 class DdddOCR {
   private engine: OCREngine;
+  /** 文字点选用的检测引擎，懒加载（仅在开启点选辅助且首次遇到点选验证码时构建）。 */
+  private detEngine: DetectionEngine | null = null;
+  private detEngineInit: Promise<DetectionEngine> | null = null;
 
   constructor() {
     this.engine = new OCREngine({
@@ -45,6 +52,34 @@ class DdddOCR {
 
   async recognize(input: string | Blob | HTMLImageElement) {
     return this.engine.recognize(input);
+  }
+
+  /** 暴露底层 OCR 引擎，供点选求解器逐框识别字符。 */
+  getOCREngine(): OCREngine {
+    return this.engine;
+  }
+
+  /** 懒加载检测引擎；下载 common_det.onnx（首次较慢）并初始化会话。 */
+  async getDetectionEngine(): Promise<DetectionEngine> {
+    if (this.detEngine) return this.detEngine;
+    if (this.detEngineInit) return this.detEngineInit;
+
+    this.detEngineInit = (async () => {
+      const engine = new DetectionEngine({
+        getModel: loadDetModel,
+        wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/',
+      });
+      await engine.init();
+      this.detEngine = engine;
+      return engine;
+    })();
+
+    try {
+      return await this.detEngineInit;
+    } catch (e) {
+      this.detEngineInit = null; // 允许重试
+      throw e;
+    }
   }
 }
 
@@ -62,6 +97,15 @@ class AutoDetector {
   private processedElements = new WeakMap<Element, string>();
   private customCaptchaElement: Element | null = null;
   private customInputElement: HTMLInputElement | null = null;
+  /** 已尝试求解的交互式验证码容器（滑块等），避免每个扫描周期重复拖拽。 */
+  private solvedInteractive = new WeakSet<Element>();
+  /**
+   * 交互式验证码求解冷却表。容器多为普通 div，hasElementChanged 恒为 true，
+   * 失败会每轮扫描重试 → 日志刷屏 + CPU 空转 + 观感"卡"。失败后设短冷却退避。
+   */
+  private interactiveCooldown = new WeakMap<Element, number>();
+  /** CF Turnstile 辅助是否已触发（每 frame 一次；assist-manual 模式会定时复位以便重复提示）。 */
+  private cfAssisted = false;
 
   constructor(ocr: DdddOCR, eventEmitter?: EventEmitter<OCREvents>) {
     this.ocr = ocr;
@@ -233,6 +277,7 @@ class AutoDetector {
 
   private startIntervalCheck(): void {
     this.checkInterval = window.setInterval(() => {
+      void this.maybeAssistCloudflare();
       const captchas = this.detector.scan();
       if (!captchas || captchas.length === 0) return;
       for (const c of captchas) {
@@ -242,6 +287,31 @@ class AutoDetector {
         }
       }
     }, CONSTANTS.AUTO_DETECT_INTERVAL);
+  }
+
+  /**
+   * Cloudflare Turnstile 辅助（受 enableInteractiveCaptchaAssist 控制，默认关闭）。
+   * 只在顶层/普通 frame 做「滚动到可视 + 高亮」提示用户亲自点击——不在 CF 跨域 iframe
+   * 内自动合成点击（isTrusted=false 不会通过，且像 bot 行为反伤评分）。每 frame 触发一次，
+   * assist-manual 模式一段时间后复位以便重复提示。
+   */
+  private async maybeAssistCloudflare(): Promise<void> {
+    const config = getConfig();
+    if (!config.enableInteractiveCaptchaAssist) return;
+    if (this.cfAssisted) return;
+    if (isCloudflareFrame()) return;            // 不在 CF iframe 内自动点击
+    if (detectTurnstile().length === 0) return; // 顶层无 Turnstile 部件则跳过
+    this.cfAssisted = true;
+    try {
+      const res = await assistCloudflare({ onLog: (m) => Logger.info('[cloudflare]', m) });
+      Logger.info('CF 辅助结果:', res);
+      if (res.mode === 'assist-manual') {
+        window.setTimeout(() => { this.cfAssisted = false; }, 8000);
+      }
+    } catch (e) {
+      Logger.warn('CF 辅助异常:', e);
+      this.cfAssisted = false;
+    }
   }
 
   private detectExistingCaptchas(triggerRecognize: boolean): void {
@@ -517,6 +587,32 @@ class AutoDetector {
   }
 
   private processDetectedCaptcha(captcha: DetectedCaptcha): void {
+    // 交互式验证码（滑块）：走辅助拖拽而非 OCR 填充。仅在用户开启对应开关后启用。
+    if (captcha.subType === 'slider') {
+      const config = getConfig();
+      if (!config.enableSliderPuzzleAssist && !config.enableSingleSliderAssist) {
+        Logger.debug('检测到滑块，但滑块辅助开关未开启，跳过');
+        return;
+      }
+      if (this.solvedInteractive.has(captcha.element)) return;
+      if (this.isInteractiveCoolingDown(captcha.element)) return;
+      void this.solveSliderCaptcha(captcha);
+      return;
+    }
+    // 文字点选：端到端求解（检测模型 common_det + OCR 标字 + 贝塞尔轨迹逐个点击）。
+    // 与扩展不同，userscript 同一页面内同时持有两个引擎，直接本地编排即可。
+    if (captcha.subType === 'click-select') {
+      const config = getConfig();
+      if (!config.enableClickSelectAssist) {
+        Logger.debug('检测到文字点选，但点选辅助开关未开启，跳过');
+        return;
+      }
+      if (this.solvedInteractive.has(captcha.element)) return;
+      if (this.isInteractiveCoolingDown(captcha.element)) return;
+      void this.solveClickSelectCaptcha(captcha);
+      return;
+    }
+
     const input = captcha.inputElement || this.detector.findRelatedInput(captcha.element);
     if (!input) return;
     if (captcha.type === 'image') {
@@ -528,6 +624,74 @@ class AutoDetector {
           this.recognizeAndFillBlob(canvas, blob, input);
         }
       }, 'image/png');
+    }
+  }
+
+  private async solveSliderCaptcha(captcha: DetectedCaptcha): Promise<void> {
+    if (this.processingElements.has(captcha.element)) return;
+    this.processingElements.add(captcha.element);
+    const startTime = Date.now();
+    try {
+      this.eventEmitter?.emit('recognize:start', { element: captcha.element });
+      const res = await solveSlider(captcha, { onLog: (m) => Logger.info('[slider]', m) });
+      if (res.success) {
+        Logger.info('滑块辅助拖拽完成:', res);
+        this.solvedInteractive.add(captcha.element);
+        this.markElementProcessed(captcha.element);
+        statsManager.record(window.location.hostname, Date.now() - startTime);
+      } else {
+        Logger.warn('滑块辅助未执行:', res.reason ?? res);
+      }
+      this.setInteractiveCooldown(captcha.element, res.success);
+    } catch (error) {
+      Logger.error('滑块辅助异常:', error);
+      this.setInteractiveCooldown(captcha.element, false);
+      this.eventEmitter?.emit('recognize:error', { element: captcha.element, error: error as Error });
+    } finally {
+      this.processingElements.delete(captcha.element);
+    }
+  }
+
+  /** 交互式求解冷却：成功 30s、失败 8s 退避，避免对同一容器每轮扫描重试。 */
+  private isInteractiveCoolingDown(el: Element): boolean {
+    const until = this.interactiveCooldown.get(el);
+    return until !== undefined && Date.now() < until;
+  }
+  private setInteractiveCooldown(el: Element, ok: boolean): void {
+    this.interactiveCooldown.set(el, Date.now() + (ok ? 30000 : 8000));
+  }
+
+  /**
+   * 文字点选端到端求解：懒加载检测引擎 → 题序解析 → det 检测 + OCR 标字 → 按序贝塞尔点击。
+   * 首次会下载 common_det.onnx（数 MB），失败则记录并跳过，不影响普通 OCR。
+   */
+  private async solveClickSelectCaptcha(captcha: DetectedCaptcha): Promise<void> {
+    if (this.processingElements.has(captcha.element)) return;
+    this.processingElements.add(captcha.element);
+    const startTime = Date.now();
+    try {
+      this.eventEmitter?.emit('recognize:start', { element: captcha.element });
+      const det = await this.ocr.getDetectionEngine();
+      const ocrEngine = this.ocr.getOCREngine();
+      const res = await solveClickSelect(captcha, {
+        labelBoxes: (img) => labelBoxesWithEngines(img, det, ocrEngine),
+        onLog: (m) => Logger.info('[click-select]', m),
+      });
+      if (res.success) {
+        Logger.info('文字点选辅助点击完成:', res);
+        this.solvedInteractive.add(captcha.element);
+        this.markElementProcessed(captcha.element);
+        statsManager.record(window.location.hostname, Date.now() - startTime);
+      } else {
+        Logger.warn('文字点选辅助未执行:', res.reason ?? res);
+      }
+      this.setInteractiveCooldown(captcha.element, res.success);
+    } catch (error) {
+      Logger.error('文字点选辅助异常:', error);
+      this.setInteractiveCooldown(captcha.element, false);
+      this.eventEmitter?.emit('recognize:error', { element: captcha.element, error: error as Error });
+    } finally {
+      this.processingElements.delete(captcha.element);
     }
   }
 

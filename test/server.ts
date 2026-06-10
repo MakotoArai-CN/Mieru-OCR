@@ -26,6 +26,7 @@ const MIME: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js':   'application/javascript; charset=utf-8',
+  '.mjs':  'application/javascript; charset=utf-8',
   '.css':  'text/css; charset=utf-8',
   '.svg':  'image/svg+xml',
   '.png':  'image/png',
@@ -33,6 +34,8 @@ const MIME: Record<string, string> = {
   '.ico':  'image/x-icon',
   '.txt':  'text/plain; charset=utf-8',
   '.md':   'text/markdown; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.onnx': 'application/octet-stream',
 };
 
 const CORS_HEADERS = {
@@ -54,6 +57,26 @@ function safeJoin(root: string, urlPath: string): string | null {
   // 防止 path traversal: 解析后路径必须仍在根目录内
   if (!full.startsWith(root)) return null;
   return full;
+}
+
+/**
+ * playground 需要仓库里的真实模型（public/*.onnx、charsets.json）和真实 ort 运行时
+ * （node_modules/onnxruntime-web/dist/*）。这些文件不在 test/ 根下，故对白名单前缀
+ * 额外允许从仓库根目录提供——仅这两个前缀，避免暴露 .git / 源码等其它内容。
+ */
+const REPO_ROOT = resolve(__dirname, '..');
+const REPO_ROOT_ALLOW = ['public/', 'node_modules/onnxruntime-web/'];
+
+function resolveServablePath(pathname: string): string | null {
+  const underTest = safeJoin(__dirname, pathname);
+  if (underTest && existsSync(underTest) && statSync(underTest).isFile()) return underTest;
+
+  const cleaned = decodeURIComponent(pathname.split('?')[0].split('#')[0]).replace(/^\/+/, '');
+  if (REPO_ROOT_ALLOW.some((p) => cleaned.startsWith(p))) {
+    const full = resolve(REPO_ROOT, cleaned);
+    if (full.startsWith(REPO_ROOT) && existsSync(full) && statSync(full).isFile()) return full;
+  }
+  return null;
 }
 
 function logRequest(method: string, url: string, status: number): void {
@@ -79,11 +102,12 @@ const server = Bun.serve({
       return new Response('Method Not Allowed', { status: 405, headers: CORS_HEADERS });
     }
 
-    // 根路径默认 index.html
+    // 根路径默认 index.html；任意以 / 结尾的目录路径也回落到其 index.html
     if (pathname === '/' || pathname === '') pathname = '/index.html';
+    else if (pathname.endsWith('/')) pathname += 'index.html';
 
-    const filePath = safeJoin(__dirname, pathname);
-    if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) {
+    const filePath = resolveServablePath(pathname);
+    if (!filePath) {
       logRequest(req.method, pathname, 404);
       return new Response('Not Found', { status: 404, headers: CORS_HEADERS });
     }

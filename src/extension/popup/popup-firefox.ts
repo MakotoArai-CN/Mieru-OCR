@@ -268,6 +268,14 @@ const response = await safeSendMessage(tab.id, tab.url, { action: 'startPicker' 
 if (response?.success) {
 hasCustomCaptcha = true;
 showToast(t('popup.selectionMode'), 'success');
+// 交互式（滑块/点选）规则：对应辅助开关未开时提示去设置开启
+if (response.subType) {
+const settings = (await browser.storage.local.get('settings')).settings || {};
+const assistOn = response.subType === 'slider'
+? (settings.enableSliderPuzzleAssist || settings.enableSingleSliderAssist)
+: settings.enableClickSelectAssist;
+if (!assistOn) showToast(t('popup.assistOffHint'), 'info');
+}
 updateReadyStatus();
 }
 window.close();
@@ -380,12 +388,12 @@ elements.statusIndicator!.className = `status-indicator status-${status}`;
 elements.statusText!.textContent = text;
 }
 
-function showToast(message: string, type: 'success' | 'error'): void {
+function showToast(message: string, type: 'success' | 'error' | 'info' = 'success'): void {
 elements.toast!.className = `toast ${type}`;
-elements.toastIcon!.textContent = type === 'success' ? '✓' : '✕';
+elements.toastIcon!.textContent = type === 'success' ? '✓' : type === 'info' ? 'ℹ' : '✕';
 elements.toastMessage!.textContent = message;
 elements.toast!.classList.remove('hidden');
-setTimeout(() => elements.toast!.classList.add('hidden'), 2500);
+setTimeout(() => elements.toast!.classList.add('hidden'), type === 'info' ? 4500 : 2500);
 }
 
 document.addEventListener('DOMContentLoaded', init);

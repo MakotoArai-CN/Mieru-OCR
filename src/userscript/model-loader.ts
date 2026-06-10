@@ -4,6 +4,7 @@ import type { CachedModel, OCRConfig } from '@core/types';
 
 const CACHE_KEY = 'ddddocr_model_cache';
 const UPLOADED_MODEL_KEY = 'ddddocr_uploaded_model';
+const DET_MODEL_KEY = 'ddddocr_det_model_cache';
 const CONFIG_KEY = 'ddddocr_config';
 const DB_VERSION = 2;
 
@@ -149,6 +150,71 @@ export class ModelCache {
             request.onsuccess = () => resolve();
         });
     }
+
+    /** 取缓存的检测模型（仅 buffer，无 charsets）。过期或版本不符返回 null。 */
+    async getDet(): Promise<ArrayBuffer | null> {
+        if (!this.db) await this.init();
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.get(DET_MODEL_KEY);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                const cached = request.result as CachedModel | undefined;
+                if (!cached) {
+                    resolve(null);
+                    return;
+                }
+                if (Date.now() - cached.timestamp > CONSTANTS.CACHE_DURATION) {
+                    this.deleteDet();
+                    resolve(null);
+                    return;
+                }
+                if (cached.version !== CONSTANTS.MODEL_VERSION) {
+                    this.deleteDet();
+                    resolve(null);
+                    return;
+                }
+                resolve(cached.model);
+            };
+        });
+    }
+
+    /** 缓存检测模型 buffer。 */
+    async setDet(model: ArrayBuffer): Promise<void> {
+        if (!this.db) await this.init();
+
+        const cached: CachedModel = {
+            model,
+            charsets: [],
+            timestamp: Date.now(),
+            version: CONSTANTS.MODEL_VERSION,
+        };
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.put(cached, DET_MODEL_KEY);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve();
+        });
+    }
+
+    async deleteDet(): Promise<void> {
+        if (!this.db) await this.init();
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.delete(DET_MODEL_KEY);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve();
+        });
+    }
 }
 
 function downloadFile(url: string, timeout = 30000): Promise<ArrayBuffer> {
@@ -272,6 +338,47 @@ export async function clearModelCache(): Promise<void> {
     const cache = new ModelCache();
     await cache.delete();
     console.log('🗑️ 模型缓存已清除');
+}
+
+/**
+ * 加载文字点选用的目标检测模型（common_det.onnx）。仅在用户开启点选辅助后调用。
+ * 复用 OCR 模型的 GitHub 镜像 + IndexedDB 缓存逻辑，但只缓存 buffer（无 charsets）。
+ */
+export async function loadDetModel(): Promise<{ model: ArrayBuffer }> {
+    const cache = new ModelCache();
+
+    const cached = await cache.getDet();
+    if (cached) {
+        console.log('✅ 使用缓存的检测模型');
+        return { model: cached };
+    }
+
+    console.log('📥 开始下载检测模型 (common_det.onnx)');
+
+    let model: ArrayBuffer | null = null;
+    for (let i = 0; i < CONSTANTS.GITHUB_MIRRORS.length; i++) {
+        const mirror = CONSTANTS.GITHUB_MIRRORS[i];
+        try {
+            console.log(`🌐 检测模型镜像 [${i + 1}/${CONSTANTS.GITHUB_MIRRORS.length}]: ${mirror}`);
+            model = await downloadFile(buildURL(mirror, CONSTANTS.DET_MODEL_PATH), 60000);
+            console.log(`✅ 检测模型下载成功 (${(model.byteLength / 1024 / 1024).toFixed(2)} MB)`);
+            break;
+        } catch (error) {
+            console.warn(`❌ 检测模型镜像 ${i + 1} 失败`, error);
+            if (i === CONSTANTS.GITHUB_MIRRORS.length - 1) {
+                throw new Error(t('model.allMirrorsFailed'));
+            }
+        }
+    }
+
+    if (!model) {
+        throw new Error(t('model.downloadFailed'));
+    }
+
+    await cache.setDet(model);
+    console.log('💾 检测模型已缓存');
+
+    return { model };
 }
 
 export async function saveUploadedModel(modelFile: File, charsetsFile: File): Promise<void> {

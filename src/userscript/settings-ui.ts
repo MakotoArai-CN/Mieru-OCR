@@ -781,6 +781,10 @@ export class SettingsUI {
             ${this.renderSwitchRow('autoSolveOnRule', t('settings.autoSolveOnRule'), t('settings.autoSolveOnRule.hint'), config.autoSolveOnRule ?? true)}
             ${this.renderSwitchRow('preserveFocus', t('settings.preserveFocus'), t('settings.preserveFocus.hint'), config.preserveFocus ?? false)}
             ${this.renderSwitchRow('deepScan', t('settings.deepScan'), t('settings.deepScan.hint'), (config as any).deepScan ?? false)}
+            ${this.renderSwitchRow('enableSliderPuzzleAssist', t('settings.sliderPuzzleAssist'), t('settings.sliderPuzzleAssist.hint'), config.enableSliderPuzzleAssist ?? false)}
+            ${this.renderSwitchRow('enableSingleSliderAssist', t('settings.singleSliderAssist'), t('settings.singleSliderAssist.hint'), config.enableSingleSliderAssist ?? false)}
+            ${this.renderSwitchRow('enableClickSelectAssist', t('settings.clickSelectAssist'), t('settings.clickSelectAssist.hint'), config.enableClickSelectAssist ?? false)}
+            ${this.renderSwitchRow('enableInteractiveCaptchaAssist', t('settings.interactiveCaptchaAssist'), t('settings.interactiveCaptchaAssist.hint'), config.enableInteractiveCaptchaAssist ?? false)}
             ${this.renderSwitchRow('debugMode', t('settings.debugMode'), t('settings.debugMode.hint'), config.debugMode)}
           </div>
           <div class="Mieru-card">

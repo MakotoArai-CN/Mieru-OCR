@@ -33,37 +33,52 @@ async function ensureOffscreenDocument(): Promise<void> {
     throw new Error('chrome.offscreen API 不可用');
   }
 
+  // 已有在途的创建流程 → 复用，避免并发调用各自再触发一次 createDocument。
   if (offscreenCreating) {
     await offscreenCreating;
     await waitForOffscreenReady();
     return;
   }
 
-  const getContexts = (chrome.runtime as any).getContexts;
-  if (typeof getContexts === 'function') {
-    try {
-      const existing = await getContexts({
-        contextTypes: ['OFFSCREEN_DOCUMENT'],
-      });
-      if (Array.isArray(existing) && existing.length > 0) {
-        await waitForOffscreenReady();
-        return;
+  // 同步占位：把「检查是否已存在 + 创建」整体作为一个 promise 同步赋给 offscreenCreating。
+  // 这样在内部 await getContexts / createDocument 期间到来的并发调用会命中上面的 if 分支、
+  // 复用同一个 promise，而不会两个调用都走到 createDocument →
+  // "Only a single offscreen document may be created."（用户报告的报错根因）。
+  offscreenCreating = (async () => {
+    const getContexts = (chrome.runtime as any).getContexts;
+    if (typeof getContexts === 'function') {
+      try {
+        const existing = await getContexts({
+          contextTypes: ['OFFSCREEN_DOCUMENT'],
+        });
+        if (Array.isArray(existing) && existing.length > 0) {
+          return; // 已存在，直接复用
+        }
+      } catch (e) {
+        console.warn('[Service Worker] getContexts 失败:', e);
       }
-    } catch (e) {
-      console.warn('[Service Worker] getContexts 失败:', e);
     }
-  }
-
-  offscreenCreating = offscreenApi.createDocument({
-    url: OFFSCREEN_URL,
-    reasons: ['DOM_SCRAPING'],
-    justification: 'Run OCR inference with onnxruntime-web',
-  });
+    try {
+      await offscreenApi.createDocument({
+        url: OFFSCREEN_URL,
+        reasons: ['DOM_SCRAPING'],
+        justification: 'Run OCR inference with onnxruntime-web',
+      });
+      console.log('[Service Worker] Offscreen document 已创建');
+    } catch (e: any) {
+      // 兜底：极端 race 或上一个 SW 会话残留文档时，createDocument 会抛 "Only a single..."，
+      // 此时文档其实已存在，视为成功；其他错误照常抛出。
+      if (!/single offscreen document/i.test(String(e?.message || e))) {
+        throw e;
+      }
+      console.log('[Service Worker] Offscreen document 已存在（忽略重复创建）');
+    }
+  })();
 
   try {
     await offscreenCreating;
-    console.log('[Service Worker] Offscreen document 已创建');
   } finally {
+    // 创建流程结束后清空，下次调用重新经 getContexts 校验（可感知文档被关闭的情况）。
     offscreenCreating = null;
   }
 
@@ -256,6 +271,10 @@ async function handleMessage(
         await handleRecognize(message, sendResponse);
         break;
 
+      case 'detectText':
+        await handleDetectText(message, sendResponse);
+        break;
+
       case 'getSettings':
         await handleGetSettings(sendResponse);
         break;
@@ -372,6 +391,29 @@ async function handleRecognize(
     setOcrStatus('fault', (error as Error).message);
     console.error('[Service Worker] 识别异常:', error);
     sendResponse({ success: false, error: (error as Error).message, elapsed });
+  }
+}
+
+/**
+ * Route a click-select text-detection request to the offscreen document.
+ * message.imageData is a PNG dataURL of the captcha image; offscreen runs
+ * detection + per-box OCR and returns labeled boxes. Mirrors handleRecognize's
+ * offscreen round-trip.
+ */
+async function handleDetectText(
+  message: any,
+  sendResponse: (response: any) => void
+): Promise<void> {
+  try {
+    await ensureOffscreenDocument();
+    const resp = await chrome.runtime.sendMessage({
+      action: 'offscreen:detect-text',
+      imageData: message.imageData,
+    });
+    sendResponse(resp || { success: false, error: 'offscreen 无响应' });
+  } catch (error) {
+    console.error('[Service Worker] 文字检测异常:', error);
+    sendResponse({ success: false, error: (error as Error).message });
   }
 }
 
@@ -638,8 +680,8 @@ function getDefaultSettings(): ExtensionSettings {
     disabledInputExcludeKeywords: [],
     enableInteractiveCaptchaAssist: false,
     enableInteractiveCaptchaDebugOverlay: false,
-    enableSliderPuzzleAssist: true,
-    enableSingleSliderAssist: true,
+    enableSliderPuzzleAssist: false,
+    enableSingleSliderAssist: false,
     enableClickSelectAssist: false,
     siteBlacklist: [],
     imageContextMenuEnabled: false,

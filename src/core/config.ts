@@ -7,6 +7,8 @@ export const CONSTANTS = {
   MODEL_BRANCH: 'main',
   MODEL_PATH: 'public/common.onnx',
   CHARSETS_PATH: 'public/charsets.json',
+  /** ddddocr 原生目标检测模型（文字点选用，YOLOX 风格）。仅在用户开启点选辅助时下载。 */
+  DET_MODEL_PATH: 'public/common_det.onnx',
   WASM_VERSION: '1.17.0',
   CACHE_DURATION: 30 * 24 * 60 * 60 * 1000,
   CAPTCHA_KEYWORDS: [
@@ -123,10 +125,11 @@ export const DEFAULT_CONFIG: OCRConfig = {
   disabledExcludePatterns: [],
   disabledAgreementKeywords: [],
   disabledInputExcludeKeywords: [],
+  // 交互式验证码辅助（滑块/点选/CF）一律默认关闭，仅在用户主动开启后启用。
   enableInteractiveCaptchaAssist: false,
   enableInteractiveCaptchaDebugOverlay: false,
-  enableSliderPuzzleAssist: true,
-  enableSingleSliderAssist: true,
+  enableSliderPuzzleAssist: false,
+  enableSingleSliderAssist: false,
   enableClickSelectAssist: false,
   enableNotification: true,
   autoSubmit: false,

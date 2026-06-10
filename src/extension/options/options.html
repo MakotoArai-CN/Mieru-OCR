@@ -196,6 +196,50 @@
 
           <div class="form-group switch-group">
             <div class="switch-label">
+              <label data-i18n="settings.sliderPuzzleAssist">滑块拼图辅助（实验性）</label>
+              <span class="hint" data-i18n="settings.sliderPuzzleAssist.hint">默认关闭。开启后对拼图缺口类滑块自动识别缺口并模拟人类轨迹拖拽。仅对普通滑块有效，无法绕过带行为风控的高级滑块（如 GeeTest 行为层）。</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enableSliderPuzzleAssist">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label data-i18n="settings.singleSliderAssist">单滑块到底辅助（实验性）</label>
+              <span class="hint" data-i18n="settings.singleSliderAssist.hint">默认关闭。开启后对"拖到最右"型滑块自动拖到底。</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enableSingleSliderAssist">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label data-i18n="settings.clickSelectAssist">文字点选辅助（实验性）</label>
+              <span class="hint" data-i18n="settings.clickSelectAssist.hint">默认关闭。开启后对文字点选类验证码做检测+识别+按序点击。需要下载目标检测模型，准确率受字体风格影响。</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enableClickSelectAssist">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
+              <label data-i18n="settings.interactiveCaptchaAssist">CF / 复选框人机验证辅助（实验性）</label>
+              <span class="hint" data-i18n="settings.interactiveCaptchaAssist.hint">默认关闭。开启后对 Cloudflare Turnstile / 复选框类验证生成自然鼠标轨迹并辅助点击。这是辅助点击不是绕过——仅当浏览器自身指纹/IP 本就干净时可能通过，不保证成功。</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enableInteractiveCaptchaAssist">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-label">
               <label data-i18n="settings.autoSubmit">自动提交表单</label>
               <span class="hint" data-i18n="settings.autoSubmit.hint">填充后自动提交（谨慎使用，验证码识别准确率并不是100%）</span>
             </div>

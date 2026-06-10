@@ -2,6 +2,10 @@ import './content.css';
 import { CaptchaDetector, type DetectedCaptcha, type GuessedElement } from '@core/captcha-detector';
 import { AutoFill } from '@core/auto-fill';
 import { Calculator } from '@core/calculator';
+import { solveSlider } from '@core/interaction/slider-solver';
+import { solveClickSelect, type LabeledBox } from '@core/interaction/click-select-solver';
+import { assistCloudflare, isCloudflareFrame, detectTurnstile } from '@core/interaction/cloudflare';
+import type { ImageLike } from '@core/slide-detector';
 import { CONSTANTS, Logger } from '@core/config';
 import type { SiteRule } from '@core/types';
 import { initLocale, t } from '@core/i18n';
@@ -20,6 +24,9 @@ const autoFill = new AutoFill();
 let currentCaptcha: DetectedCaptcha | null = null;
 let customInputElement: HTMLInputElement | null = null;
 let customCaptchaElement: Element | null = null;
+/** 当 customCaptchaElement 是交互式（来自带 subType 的规则）时记录类型，
+ *  让 tryAutoSolveOnce 重建 captcha 时保留 subType 并走对应 solver，而非误当 OCR。 */
+let customCaptchaSubType: 'slider' | 'click-select' | null = null;
 
 const processingElements = new Set<string>();
 
@@ -43,6 +50,12 @@ let submitSelector = '';
 let siteBlacklist: string[] = [];
 let deepScan = false;
 
+// 交互式验证码辅助开关——一律默认关闭，仅用户在设置里开启后才启用。
+let enableSliderPuzzleAssist = false;
+let enableSingleSliderAssist = false;
+let enableClickSelectAssist = false;
+let enableInteractiveCaptchaAssist = false;
+
 let guessedElements: GuessedElement[] = [];
 let guessMode: 'captcha' | 'input' | null = null;
 let guessClickHandler: ((e: MouseEvent) => void) | null = null;
@@ -60,6 +73,22 @@ function startProcessing(id: string): boolean {
 }
 function stopProcessing(id: string): void {
   processingElements.delete(id);
+}
+
+/**
+ * 交互式验证码（滑块/点选）求解的冷却表。容器多为普通 div，getElementHash 返回空串，
+ * hasElementChanged 恒为 true，会导致每次扫描都重试——失败时日志刷屏、CPU 空转、观感"卡"。
+ * 求解后（无论成败）记录时间戳，冷却期内不再对同一容器重试。成功用长冷却，失败用短冷却。
+ */
+const interactiveCooldown = new WeakMap<Element, number>();
+const INTERACTIVE_COOLDOWN_OK_MS = 30000;   // 成功后 30s 内不重试
+const INTERACTIVE_COOLDOWN_FAIL_MS = 8000;  // 失败后 8s 退避再试
+function isInteractiveCoolingDown(el: Element): boolean {
+  const until = interactiveCooldown.get(el);
+  return until !== undefined && Date.now() < until;
+}
+function setInteractiveCooldown(el: Element, ok: boolean): void {
+  interactiveCooldown.set(el, Date.now() + (ok ? INTERACTIVE_COOLDOWN_OK_MS : INTERACTIVE_COOLDOWN_FAIL_MS));
 }
 
 function normalizeCaptchaElement(el: Element | null): Element | null {
@@ -219,6 +248,11 @@ async function initSettings(): Promise<void> {
       autoCheckAgreement = response.settings.autoCheckAgreement !== false;
       preserveFocus = !!response.settings.preserveFocus;
       deepScan = !!response.settings.deepScan;
+      // 交互辅助开关：缺省 undefined → false，确保默认关闭。
+      enableSliderPuzzleAssist = !!response.settings.enableSliderPuzzleAssist;
+      enableSingleSliderAssist = !!response.settings.enableSingleSliderAssist;
+      enableClickSelectAssist = !!response.settings.enableClickSelectAssist;
+      enableInteractiveCaptchaAssist = !!response.settings.enableInteractiveCaptchaAssist;
       calculateRules = response.settings.calculateRules || [];
       agreementSelectors = response.settings.agreementSelectors || [];
       captchaSelector = response.settings.captchaSelector || '';
@@ -627,6 +661,35 @@ async function checkAndApplySiteRule(): Promise<void> {
       }
     }
     if (matchedRule) {
+      // 交互式规则（滑块/点选）：目标是「容器」，不能 normalizeCaptchaElement（会下钻成内部 canvas）。
+      // 用 detector 重建带 subType 的 DetectedCaptcha，交给 internalRecognizeAndFill 的 subType 分支求解。
+      if (matchedRule.subType === 'slider' || matchedRule.subType === 'click-select') {
+        const container = document.querySelector(matchedRule.selector);
+        if (container) {
+          const interactive = detector.buildInteractiveCaptcha(container, matchedRule.subType, 'rule');
+          if (interactive) {
+            customCaptchaElement = container;
+            customCaptchaSubType = matchedRule.subType;
+            currentCaptcha = interactive;
+            Logger.info('应用站点规则（交互式）:', {
+              subType: matchedRule.subType,
+              ...interactive.elementInfo,
+              viaFrameRule: !!matchedRule.frameSelector,
+              topFrame: IS_TOP_FRAME,
+            });
+            detector.highlight(currentCaptcha);
+            setTimeout(() => detector.unhighlight(currentCaptcha!), 1200);
+            if (autoSolveOnRuleEnabled) {
+              setTimeout(() => tryAutoSolveOnce(), 500);
+            }
+          } else {
+            Logger.warn('交互式规则容器内无 canvas/img:', matchedRule.selector);
+          }
+        } else {
+          Logger.warn('规则选择器未匹配到元素:', matchedRule.selector);
+        }
+        return;
+      }
       const element = normalizeCaptchaElement(document.querySelector(matchedRule.selector));
       if (element) {
         let inputEl: HTMLInputElement | null = null;
@@ -910,46 +973,80 @@ function handleStartPicker(sendResponse: (response: any) => void): void {
       sendResponse({ success: false, cancelled: true });
       return;
     }
-    if (result.success) {
-      // 跨框架接力结果：result.element 来自子文档，顶层不可直接操作；只回传 selector/frame 信息让 popup 存规则
-      if (result.frameSelector) {
-        Logger.info('[deepScan] 接力规则保存', {
-          frameSelector: result.frameSelector,
-          innerSelector: result.selector,
-        });
-        sendResponse({
-          success: true,
-          selector: result.selector,
-          frameSelector: result.frameSelector,
-          frameUrl: result.frameUrl,
-          info: result.info,
-          hostname: location.hostname,
-          fullUrl: getFullUrl(),
-          urlPattern: getUrlPattern(),
-        });
-        return;
-      }
-      customCaptchaElement = normalizeCaptchaElement(result.element);
-      if (!customCaptchaElement) {
+    if (!result.success) {
+      sendResponse({ success: false });
+      return;
+    }
+    // picker 内可切换类型：result.mode 为 captcha（文本 OCR）/ slider / click-select。
+    const subType: 'slider' | 'click-select' | undefined =
+      result.mode === 'slider' ? 'slider' : result.mode === 'click-select' ? 'click-select' : undefined;
+
+    // 跨框架接力结果：result.element 来自子文档，顶层不可直接操作；只回传 selector/frame 信息让 popup 存规则
+    if (result.frameSelector) {
+      Logger.info('[deepScan] 接力规则保存', {
+        frameSelector: result.frameSelector,
+        innerSelector: result.selector,
+        subType,
+      });
+      sendResponse({
+        success: true,
+        subType,
+        selector: result.selector,
+        frameSelector: result.frameSelector,
+        frameUrl: result.frameUrl,
+        info: result.info,
+        hostname: location.hostname,
+        fullUrl: getFullUrl(),
+        urlPattern: getUrlPattern(),
+      });
+      return;
+    }
+
+    // 交互式（滑块 / 点选）：result.element 已是容器，不能 normalizeCaptchaElement。
+    if (subType) {
+      const interactive = detector.buildInteractiveCaptcha(result.element, subType, 'manual');
+      if (!interactive) {
         sendResponse({ success: false, error: t('picker.selectCaptcha') });
         return;
       }
-      currentCaptcha = buildCaptchaFromElement(customCaptchaElement, 'manual-selected', resolveInputElementForCaptcha(customCaptchaElement));
-      Logger.info('手动选择验证码元素:', result.selector);
-      if (!customInputElement && !queryInputElementBySelector(inputSelector)) {
-        startGuessMode('input', customCaptchaElement);
-      } else {
-        await saveAndRecognize(result.selector);
-      }
+      customCaptchaElement = result.element;
+      customCaptchaSubType = subType;
+      currentCaptcha = interactive;
+      Logger.info(`手动选择${subType === 'slider' ? '滑块' : '点选'}容器:`, result.selector);
       sendResponse({
         success: true,
+        subType,
         selector: result.selector,
         info: result.info,
         hostname: location.hostname,
         fullUrl: getFullUrl(),
         urlPattern: getUrlPattern(),
       });
+      return;
     }
+
+    // 文本 / 图片 OCR：维持原逻辑。
+    customCaptchaElement = normalizeCaptchaElement(result.element);
+    customCaptchaSubType = null;
+    if (!customCaptchaElement) {
+      sendResponse({ success: false, error: t('picker.selectCaptcha') });
+      return;
+    }
+    currentCaptcha = buildCaptchaFromElement(customCaptchaElement, 'manual-selected', resolveInputElementForCaptcha(customCaptchaElement));
+    Logger.info('手动选择验证码元素:', result.selector);
+    if (!customInputElement && !queryInputElementBySelector(inputSelector)) {
+      startGuessMode('input', customCaptchaElement);
+    } else {
+      await saveAndRecognize(result.selector);
+    }
+    sendResponse({
+      success: true,
+      selector: result.selector,
+      info: result.info,
+      hostname: location.hostname,
+      fullUrl: getFullUrl(),
+      urlPattern: getUrlPattern(),
+    });
   });
 }
 
@@ -1333,6 +1430,7 @@ function startAutoDetector(): void {
   });
   intervalTimer = window.setInterval(() => {
     if (!guardContext()) return;
+    void maybeAssistCloudflare();
     const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.scan();
     if (!captchas || captchas.length === 0) return;
     let changed = false;
@@ -1345,6 +1443,32 @@ function startAutoDetector(): void {
     if (changed) scheduleAutoSolve();
     checkAgreementBoxes();
   }, CONSTANTS.AUTO_DETECT_INTERVAL);
+}
+
+/**
+ * Cloudflare Turnstile 辅助（受 enableInteractiveCaptchaAssist 控制，默认关闭）。
+ * 自动路径**只在顶层/普通 frame** 做「滚动到可视 + 高亮」提示用户亲自点击——
+ * 不在 CF 的跨域 iframe 内自动合成点击（isTrusted=false 不会通过，且像 bot 行为，反伤评分）。
+ * 每个 frame 仅触发一次；高亮型提示一段时间后允许再次触发。
+ */
+let cfAssisted = false;
+async function maybeAssistCloudflare(): Promise<void> {
+  if (!enableInteractiveCaptchaAssist) return;
+  if (cfAssisted) return;
+  if (isCloudflareFrame()) return;            // 不在 CF iframe 内自动点击
+  if (detectTurnstile().length === 0) return; // 顶层无 Turnstile 部件则跳过
+  cfAssisted = true;
+  try {
+    const res = await assistCloudflare({ onLog: (m) => Logger.info('[cloudflare]', m) });
+    Logger.info('CF 辅助结果:', res);
+    if (res.mode === 'assist-manual') {
+      // 允许后续重新提示（用户可能滚走又回来 / 新 widget 出现）
+      window.setTimeout(() => { cfAssisted = false; }, 8000);
+    }
+  } catch (e) {
+    Logger.warn('CF 辅助异常:', e);
+    cfAssisted = false;
+  }
 }
 
 function scheduleAgreementCheck(): void {
@@ -1390,6 +1514,15 @@ function tryAutoSolveOnce(): void {
   const fixedInput = queryInputElementBySelector(inputSelector);
 
   if (customCaptchaElement) {
+    // 交互式自定义验证码（来自带 subType 的规则）：重建带 subType 的 captcha，
+    // 不要求关联输入框，交给 internalRecognizeAndFill 的 subType 分支（受辅助开关 gate）。
+    if (customCaptchaSubType) {
+      if (detector.hasElementChanged(customCaptchaElement) && !isInteractiveCoolingDown(customCaptchaElement)) {
+        const captcha = detector.buildInteractiveCaptcha(customCaptchaElement, customCaptchaSubType, 'custom');
+        if (captcha) internalRecognizeAndFill(captcha);
+      }
+      return;
+    }
     const inputEl = customInputElement || fixedInput || detector.findRelatedInput(customCaptchaElement);
     if (!inputEl) return;
     if (detector.hasElementChanged(customCaptchaElement)) {
@@ -1404,6 +1537,18 @@ function tryAutoSolveOnce(): void {
 
   const captchasToProcess: DetectedCaptcha[] = [];
   for (const captcha of captchas) {
+    // 交互式验证码（滑块/点选）不需要关联输入框；按各自开关 gate，默认关闭则跳过。
+    if (captcha.subType === 'slider' || captcha.subType === 'click-select') {
+      const assistOn = captcha.subType === 'slider'
+        ? (enableSliderPuzzleAssist || enableSingleSliderAssist)
+        : enableClickSelectAssist;
+      if (!assistOn) continue;
+      if (isInteractiveCoolingDown(captcha.element)) continue;
+      if (!detector.hasElementChanged(captcha.element)) continue;
+      if (isElementProcessing(captcha.id)) continue;
+      captchasToProcess.push(captcha);
+      continue;
+    }
     const inputEl = customInputElement || fixedInput || captcha.inputElement || detector.findRelatedInput(captcha.element);
     if (!inputEl) continue;
     if (!detector.hasElementChanged(captcha.element)) continue;
@@ -1418,6 +1563,28 @@ function tryAutoSolveOnce(): void {
   }
 }
 
+/**
+ * 把主图像素编码成 PNG dataURL。content script 与 offscreen 之间用 chrome.runtime
+ * 消息通信（JSON 序列化，不能直接传 TypedArray），故点选求解需要的像素以 dataURL 过桥。
+ */
+function imageLikeToDataURL(image: ImageLike): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('无法创建 2d 上下文');
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+  return canvas.toDataURL();
+}
+
+/** 点选求解的 labelBoxes 回调：把主图送到 offscreen 做检测 + OCR 标字，拿回标注框。 */
+async function labelBoxesViaBackground(image: ImageLike): Promise<LabeledBox[]> {
+  const imageData = imageLikeToDataURL(image);
+  const resp = await chrome.runtime.sendMessage({ action: 'detectText', imageData });
+  if (!resp?.success) throw new Error(resp?.error || '文字检测失败');
+  return (resp.boxes || []) as LabeledBox[];
+}
+
 async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void> {
   if (!guardContext()) return;
   if (!startProcessing(captcha.id)) return;
@@ -1425,6 +1592,55 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
   const startTime = Date.now();
   Logger.time('internalRecognizeAndFill');
   try {
+    // 交互式验证码（滑块）：走辅助拖拽而非 OCR 填充。仅在用户开启对应开关后启用。
+    if (captcha.subType === 'slider') {
+      if (!enableSliderPuzzleAssist && !enableSingleSliderAssist) {
+        Logger.debug('检测到滑块，但滑块辅助开关未开启，跳过');
+        return;
+      }
+      try {
+        detector.highlight(captcha);
+        await waitForReady(captcha);
+        const res = await solveSlider(captcha, { onLog: (m) => Logger.info('[slider]', m) });
+        if (res.success) {
+          Logger.info('滑块辅助拖拽完成:', res);
+          detector.markElementProcessed(captcha.element);
+        } else {
+          Logger.warn('滑块辅助未执行:', res.reason, res);
+        }
+        setInteractiveCooldown(captcha.element, res.success);
+      } finally {
+        try { detector.unhighlight(captcha); } catch { }
+      }
+      return;
+    }
+    // 文字点选：端到端求解（检测模型 + OCR + 轨迹点击）。模型推理走 offscreen，
+    // 本端只负责把主图像素编码成 dataURL 送过去、拿回标注框后做坐标换算与点击。
+    if (captcha.subType === 'click-select') {
+      if (!enableClickSelectAssist) {
+        Logger.debug('检测到文字点选，但点选辅助开关未开启，跳过');
+        return;
+      }
+      try {
+        detector.highlight(captcha);
+        await waitForReady(captcha);
+        const res = await solveClickSelect(captcha, {
+          labelBoxes: labelBoxesViaBackground,
+          onLog: (m) => Logger.info('[click-select]', m),
+        });
+        if (res.success) {
+          Logger.info('文字点选辅助点击完成:', res);
+          detector.markElementProcessed(captcha.element);
+        } else {
+          Logger.warn('文字点选辅助未执行:', res.reason, res);
+        }
+        setInteractiveCooldown(captcha.element, res.success);
+      } finally {
+        try { detector.unhighlight(captcha); } catch { }
+      }
+      return;
+    }
+
     detector.highlight(captcha);
     await waitForReady(captcha);
     const imageData = await detector.captureImage(captcha);
@@ -1492,7 +1708,7 @@ const MIERU_MSG_NS = 1; // 协议标识
 interface PendingFrameRelay {
   requestId: string;
   iframe: HTMLIFrameElement;
-  mode: 'captcha' | 'input';
+  mode: 'captcha' | 'input' | 'slider' | 'click-select';
   callback: (result: any) => void;
   cleanup: () => void;
 }
@@ -1606,7 +1822,11 @@ function onFrameBridgeMessage(event: MessageEvent): void {
 }
 
 function handleSubframePickerRequest(parent: Window, req: any): void {
-  const mode: 'captcha' | 'input' = req.mode === 'input' ? 'input' : 'captcha';
+  const mode: 'captcha' | 'input' | 'slider' | 'click-select' =
+    req.mode === 'input' ? 'input'
+    : req.mode === 'slider' ? 'slider'
+    : req.mode === 'click-select' ? 'click-select'
+    : 'captcha';
   const requestId: string = String(req.requestId || '');
   Logger.info('[deepScan] 子框架进入 picker', { mode, requestId, url: getFullUrl() });
   initElementPicker(mode, (result) => {
@@ -1633,7 +1853,7 @@ function handleSubframePickerRequest(parent: Window, req: any): void {
 /** 在顶层 picker 中转发到指定 iframe。会先 cleanup 调用者，再启动接力。 */
 function startFrameRelay(
   iframe: HTMLIFrameElement,
-  mode: 'captcha' | 'input',
+  mode: 'captcha' | 'input' | 'slider' | 'click-select',
   pickerCleanup: () => void,
   callback: (result: any) => void,
 ): boolean {
@@ -1679,21 +1899,73 @@ function startFrameRelay(
   }
 }
 
-function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) => void): void {
+/**
+ * 滑块/点选 picker 的容器选择：从 hover 元素找到真正的「验证码容器」。
+ * 关键词命中可能落在 canvas/img 本身（如 GeeTest 的 canvas 也带 geetest_* 类），
+ * 必须跳过像素面、climb 到含 canvas/img 的非像素面祖先容器。
+ */
+function pickInteractiveContainer(element: Element, mode: 'slider' | 'click-select'): Element {
+  const SURFACE = new Set(['IMG', 'CANVAS', 'SVG']);
+  const kw = mode === 'slider' ? CONSTANTS.SLIDER_KEYWORDS : CONSTANTS.CLICK_SELECT_KEYWORDS;
+  // 1) 关键词容器：closest 命中后，若落在像素面上则继续向上找非像素面祖先
+  try {
+    const sel = kw.map((k) => `[class*="${k}" i],[id*="${k}" i],[data-captcha-type*="${k}" i]`).join(',');
+    let hit: Element | null = element.closest(sel);
+    while (hit && SURFACE.has(hit.tagName)) {
+      hit = hit.parentElement ? hit.parentElement.closest(sel) : null;
+    }
+    if (hit && hit.querySelector('canvas, img')) return hit;
+  } catch { /* 选择器不支持时忽略 */ }
+  // 2) 向上找最近的、内部含 canvas/img 的非像素面容器
+  let cur: Element | null = SURFACE.has(element.tagName) ? element.parentElement : element;
+  while (cur && cur !== document.body) {
+    if (!SURFACE.has(cur.tagName) && cur.querySelector('canvas, img')) return cur;
+    cur = cur.parentElement;
+  }
+  // 3) 兜底：hover 元素的父级（避免直接返回 canvas 本身）
+  return SURFACE.has(element.tagName) && element.parentElement ? element.parentElement : element;
+}
+
+function initElementPicker(mode: 'captcha' | 'input' | 'slider' | 'click-select', callback: (result: any) => void): void {
   let isActive = true;
   let hoveredElement: Element | null = null;
   // 深度扫描模式下，命中的 iframe 元素（用于点击转发）
   let hoveredIframe: HTMLIFrameElement | null = null;
+  // 验证码类 picker（captcha/slider/click-select）支持在框选时切换类型，故 mode 可变；
+  // input picker 不显示切换、mode 固定。
+  let curMode: 'captcha' | 'input' | 'slider' | 'click-select' = mode;
+  const showTypeToggle = mode !== 'input';
+  const isInteractiveMode = () => curMode === 'slider' || curMode === 'click-select';
   const overlay = document.createElement('div');
   overlay.id = 'Mieru-picker-overlay';
   overlay.style.cssText = 'position:fixed;pointer-events:none;border:3px solid #6366f1;background:rgba(99,102,241,0.15);z-index:999998;display:none;border-radius:4px;';
   document.body.appendChild(overlay);
-  const tooltipText = mode === 'captcha' ? t('picker.selectCaptcha') : t('picker.selectInput');
+  const tooltipTextFor = (m: typeof curMode): string => m === 'captcha' ? t('picker.selectCaptcha')
+    : m === 'slider' ? t('picker.selectSlider')
+    : m === 'click-select' ? t('picker.selectClickSelect')
+    : t('picker.selectInput');
   const tooltip = document.createElement('div');
   tooltip.id = 'Mieru-picker-tooltip';
-  tooltip.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;padding:12px 24px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;z-index:999999;box-shadow:0 4px 20px rgba(0,0,0,0.5);display:flex;align-items:center;gap:16px;border:1px solid #6366f1;';
-  tooltip.innerHTML = `<span>${tooltipText}</span><span id="picker-info" style="color:#a1a1aa;font-size:12px;"></span><button id="picker-cancel" style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;">${t('picker.cancel')}</button>`;
+  tooltip.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;padding:12px 24px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;z-index:999999;box-shadow:0 4px 20px rgba(0,0,0,0.5);display:flex;align-items:center;gap:12px;border:1px solid #6366f1;flex-wrap:wrap;max-width:90vw;';
+  // 类型切换分段控件（仅验证码类 picker 显示）。三个段：文本 OCR / 滑块 / 点选。
+  const toggleHtml = showTypeToggle
+    ? `<span id="picker-type-toggle" style="display:inline-flex;border:1px solid #6366f1;border-radius:8px;overflow:hidden;">
+         <button data-type="captcha" class="picker-type-btn" style="background:#6366f1;color:#fff;border:none;padding:5px 10px;cursor:pointer;font-size:12px;">${t('picker.typeText')}</button>
+         <button data-type="slider" class="picker-type-btn" style="background:transparent;color:#a1a1aa;border:none;padding:5px 10px;cursor:pointer;font-size:12px;">${t('picker.typeSlider')}</button>
+         <button data-type="click-select" class="picker-type-btn" style="background:transparent;color:#a1a1aa;border:none;padding:5px 10px;cursor:pointer;font-size:12px;">${t('picker.typeClickSelect')}</button>
+       </span>`
+    : '';
+  tooltip.innerHTML = `<span id="picker-title">${tooltipTextFor(curMode)}</span>${toggleHtml}<span id="picker-info" style="color:#a1a1aa;font-size:12px;"></span><button id="picker-cancel" style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;">${t('picker.cancel')}</button>`;
   document.body.appendChild(tooltip);
+  function updateTypeToggleUI(): void {
+    const title = document.getElementById('picker-title');
+    if (title) title.textContent = tooltipTextFor(curMode);
+    tooltip.querySelectorAll<HTMLButtonElement>('.picker-type-btn').forEach((b) => {
+      const active = b.dataset.type === curMode;
+      b.style.background = active ? '#6366f1' : 'transparent';
+      b.style.color = active ? '#fff' : '#a1a1aa';
+    });
+  }
   function cleanup(): void {
     isActive = false;
     document.removeEventListener('mousemove', handleMouseMove, true);
@@ -1729,7 +2001,7 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
     overlay.style.background = 'rgba(99,102,241,0.15)';
 
     let target: Element | null = null;
-    if (mode === 'captcha') {
+    if (curMode === 'captcha') {
       if (['IMG', 'CANVAS', 'SVG'].includes(element.tagName)) {
         target = element;
       } else if (element instanceof HTMLElement && element.style.backgroundImage) {
@@ -1737,6 +2009,10 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
       } else {
         target = element.querySelector('img, canvas, svg') || element.closest('img, canvas, svg');
       }
+    } else if (isInteractiveMode()) {
+      // 滑块 / 点选：选「容器」而非内部 canvas/img。关键词命中可能落在 canvas 本身
+      // （如 GeeTest 的 canvas 也带 geetest_* 类），需跳过像素面、climb 到真正的容器。
+      target = pickInteractiveContainer(element, curMode as 'slider' | 'click-select');
     } else {
       if (element.tagName === 'INPUT') {
         target = element;
@@ -1766,12 +2042,17 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
   }
   function handleClick(e: MouseEvent): void {
     if (!isActive) return;
+    // 点击类型切换按钮：切 curMode、不当作选择目标（由 toggle 自己的 listener 处理）。
+    const tgt = e.target as Element;
+    if (tgt && (tgt.closest('#picker-type-toggle') || tgt.id === 'picker-cancel')) {
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
 
     // 深度扫描：点击落在 iframe 上 → 启动跨框架接力
     if (IS_TOP_FRAME && deepScan && hoveredIframe) {
-      const ok = startFrameRelay(hoveredIframe, mode, cleanup, callback);
+      const ok = startFrameRelay(hoveredIframe, curMode, cleanup, callback);
       if (!ok) {
         // 接力失败时 picker 不退出，提示用户重新选
         const infoEl = document.getElementById('picker-info');
@@ -1787,6 +2068,7 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
       cleanup();
       callback({
         success: true,
+        mode: curMode,
         element: hoveredElement,
         selector,
         info: {
@@ -1809,6 +2091,17 @@ function initElementPicker(mode: 'captcha' | 'input', callback: (result: any) =>
   document.getElementById('picker-cancel')!.addEventListener('click', () => {
     cleanup();
     callback({ cancelled: true });
+  });
+  // 类型切换：点段按钮切 curMode，清掉当前 hover 高亮（不同类型的 target 解析不同）。
+  tooltip.querySelectorAll<HTMLButtonElement>('.picker-type-btn').forEach((b) => {
+    b.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      curMode = (b.dataset.type as typeof curMode) || 'captcha';
+      hoveredElement = null;
+      overlay.style.display = 'none';
+      updateTypeToggleUI();
+    });
   });
   document.addEventListener('mousemove', handleMouseMove, true);
   document.addEventListener('click', handleClick, true);

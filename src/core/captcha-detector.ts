@@ -16,6 +16,11 @@ export interface DetectedCaptcha {
    * is the actual pixel surface the OCR pipeline samples from.
    */
   innerCanvas?: HTMLCanvasElement | HTMLImageElement;
+  /** Slider 子类型专用：滑块小图（拼图块），区别于 innerCanvas（带缺口的背景图）。
+   *  缺口检测需要「背景图 + 小图」两张做模板匹配。 */
+  sliderPiece?: HTMLCanvasElement | HTMLImageElement;
+  /** Slider 子类型专用：用户实际拖拽的手柄/滑钮元素（拖拽事件派发目标）。 */
+  sliderHandle?: HTMLElement;
   element: Element;
   rect: DOMRect;
   confidence: number;
@@ -257,6 +262,13 @@ export class CaptchaDetector {
         inputElement: this.findRelatedInput(el),
         elementInfo: this.extractCaptchaInfo(el),
       };
+      if (kind === 'slider') {
+        const parts = this.findSliderParts(el, innerEl);
+        // 缺口检测需要背景图：背景应是容器内最大的那张，innerEl 取到的可能是小图，做一次纠正
+        if (parts.background) captcha.innerCanvas = parts.background;
+        if (parts.piece) captcha.sliderPiece = parts.piece;
+        if (parts.handle) captcha.sliderHandle = parts.handle;
+      }
       this.detectedCaptchas.push(captcha);
       Logger.debug(`检测到交互式验证码 (${kind}):`, captcha.elementInfo);
     };
@@ -295,6 +307,120 @@ export class CaptchaDetector {
         });
       }
     }
+  }
+
+  /**
+   * 在滑块容器内定位三要素：背景缺口图、滑块小图、拖拽手柄。纯启发式，
+   * 覆盖常见结构（GeeTest、开源滑块库）。拿不到的项返回 undefined，由 solver 兜底。
+   */
+  private findSliderParts(
+    container: Element,
+    fallbackInner: HTMLCanvasElement | HTMLImageElement,
+  ): {
+    background?: HTMLCanvasElement | HTMLImageElement;
+    piece?: HTMLCanvasElement | HTMLImageElement;
+    handle?: HTMLElement;
+  } {
+    const surfaces = Array.from(
+      container.querySelectorAll('canvas, img'),
+    ) as (HTMLCanvasElement | HTMLImageElement)[];
+    const visible = surfaces.filter((s) => {
+      const r = s.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+    const area = (s: Element): number => {
+      const r = s.getBoundingClientRect();
+      return r.width * r.height;
+    };
+
+    let background: HTMLCanvasElement | HTMLImageElement | undefined;
+    let piece: HTMLCanvasElement | HTMLImageElement | undefined;
+    if (visible.length >= 2) {
+      const sorted = [...visible].sort((a, b) => area(b) - area(a));
+      background = sorted[0];
+      // 小图：明显小于背景且宽高比接近 1（拼图块通常近方形）
+      piece =
+        sorted.slice(1).find((s) => {
+          const r = s.getBoundingClientRect();
+          const ratio = r.width / Math.max(1, r.height);
+          return area(s) < area(background!) * 0.6 && ratio > 0.4 && ratio < 2.5;
+        }) || sorted[1];
+    } else if (visible.length === 1) {
+      background = visible[0];
+    } else {
+      background = fallbackInner;
+    }
+
+    return { background, piece, handle: this.findSliderHandle(container) };
+  }
+
+  /** 在容器内定位拖拽手柄：关键词 → draggable → cursor 样式，取最靠左的合理候选。 */
+  private findSliderHandle(container: Element): HTMLElement | undefined {
+    const KW = [
+      'handle', 'slider-btn', 'sliderbtn', 'btn_slide', 'slide-btn', 'drag',
+      'knob', 'thumb', 'gt_slider_knob', 'gt_slider', 'nc_iconfont', 'control',
+    ];
+    let candidates: HTMLElement[] = [];
+    try {
+      const sel = KW.map((k) => `[class*="${k}" i],[id*="${k}" i]`).join(',');
+      candidates = Array.from(container.querySelectorAll<HTMLElement>(sel));
+    } catch {
+      /* selector 不支持时忽略 */
+    }
+    candidates.push(...Array.from(container.querySelectorAll<HTMLElement>('[draggable="true"]')));
+    if (candidates.length === 0 && typeof getComputedStyle === 'function') {
+      Array.from(container.querySelectorAll<HTMLElement>('*')).forEach((e) => {
+        const cur = getComputedStyle(e).cursor;
+        if (cur === 'grab' || cur === 'move') {
+          const r = e.getBoundingClientRect();
+          if (r.width > 10 && r.width < 90 && r.height > 10) candidates.push(e);
+        }
+      });
+    }
+    const visible = candidates.filter((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.width < 140;
+    });
+    if (visible.length === 0) return undefined;
+    visible.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    return visible[0];
+  }
+
+  /**
+   * 从「用户手动选中的容器」构造一个交互式 DetectedCaptcha（滑块 / 文字点选）。
+   * 与 scanInteractiveContainers 共用 findSliderParts，但入口是已知容器、已知 subType，
+   * 不做关键词猜测——用于 picker 手选 / 规则命中后按 subType 直接求解。
+   * 拿不到内部 canvas/img 时返回 null（交互验证码必须有像素面可读）。
+   */
+  buildInteractiveCaptcha(
+    container: Element,
+    subType: 'slider' | 'click-select',
+    idSuffix: string | number = 0,
+  ): DetectedCaptcha | null {
+    const innerEl = container.querySelector('canvas, img') as
+      | HTMLCanvasElement
+      | HTMLImageElement
+      | null;
+    if (!innerEl) return null;
+    const rect = container.getBoundingClientRect();
+    const captcha: DetectedCaptcha = {
+      id: `captcha-${subType}-${idSuffix}`,
+      type: 'canvas',
+      subType,
+      element: container,
+      innerCanvas: innerEl,
+      rect,
+      confidence: 100,
+      inputElement: this.findRelatedInput(container),
+      elementInfo: this.extractCaptchaInfo(container),
+    };
+    if (subType === 'slider') {
+      const parts = this.findSliderParts(container, innerEl);
+      if (parts.background) captcha.innerCanvas = parts.background;
+      if (parts.piece) captcha.sliderPiece = parts.piece;
+      if (parts.handle) captcha.sliderHandle = parts.handle;
+    }
+    return captcha;
   }
 
   private extractCaptchaInfo(element: Element): CaptchaElementInfo {

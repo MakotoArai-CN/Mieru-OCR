@@ -18,7 +18,13 @@ export class AutoFill {
         : null;
 
       if (!preserveFocus) {
-        inputElement.focus();
+        // preventScroll: 仅为填充而聚焦输入框，绝不移动视口。否则页面有列表/可懒加载时，
+        // 每轮自动扫描都会把视口强行拉到验证码输入框处，用户手动滚回也会被再次拉走。
+        try {
+          inputElement.focus({ preventScroll: true });
+        } catch {
+          inputElement.focus();
+        }
       }
       this.clearInputValue(inputElement);
 

@@ -104,6 +104,16 @@ function copyPublicAssets() {
         console.warn('charsets.json not found in public/, skipping...');
       }
 
+      // ddddocr 目标检测模型（文字点选用）。缺省时跳过——点选辅助默认关闭，
+      // 缺模型不影响其它功能；用户开启点选后才需要它。
+      const detModelPath = resolve(publicDir, 'common_det.onnx');
+      if (existsSync(detModelPath)) {
+        copyFileSync(detModelPath, resolve(distDir, 'common_det.onnx'));
+        console.log('Copied common_det.onnx');
+      } else {
+        console.warn('common_det.onnx not found in public/, click-select assist will be unavailable');
+      }
+
       // Extra bundled models — paired model+charsets files. Skipped silently if absent.
       // const extraBundled = [
       // ];

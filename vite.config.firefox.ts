@@ -97,6 +97,15 @@ function copyFirefoxAssets() {
         console.log('Copied charsets.json');
       }
 
+      // ddddocr 目标检测模型（文字点选用）。缺省时跳过——点选辅助默认关闭。
+      const detModelPath = resolve(publicDir, 'common_det.onnx');
+      if (existsSync(detModelPath)) {
+        copyFileSync(detModelPath, resolve(distDir, 'common_det.onnx'));
+        console.log('Copied common_det.onnx');
+      } else {
+        console.warn('common_det.onnx not found in public/, click-select assist will be unavailable');
+      }
+
       // const extraBundled = [
       //   ['common_small.onnx', 'charsets_small.json'],
       //   ['model_extreme_v6.onnx', 'charsets_extreme_v6.json'],
