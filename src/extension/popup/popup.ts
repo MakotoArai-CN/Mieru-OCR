@@ -1,3 +1,4 @@
+import { showConfirm } from '../ui/modal';
 import { initLocale, t, translatePage } from '@core/i18n';
 
 let currentCaptcha: any = null;
@@ -334,10 +335,29 @@ async function selectInput(): Promise<void> {
 }
 
 async function clearCustomInput(): Promise<void> {
-  elements.inputSection?.classList.add('hidden');
-  hasCustomInput = false;
-  showToast(t('popup.inputCleared'), 'success');
-  updateReadyStatus();
+  try {
+    const ok = await showConfirm({
+      title: t('popup.clearInput'),
+      message: t('popup.clearInputConfirm'),
+      confirmText: t('stats.clearConfirmBtn'),
+      cancelText: t('common.cancel'),
+    });
+    if (!ok) return;
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !tab.url) throw new Error(t('popup.tabError'));
+
+    // 关键：必须通知 content script 真正解除绑定。此前只改 popup 本地状态，
+    // content 侧 customInputElement 仍指向旧输入框，自动填充会继续写进去。
+    await safeSendMessage(tab.id, tab.url, { action: 'clearCustomInput' });
+
+    elements.inputSection?.classList.add('hidden');
+    hasCustomInput = false;
+    showToast(t('popup.inputCleared'), 'success');
+    await loadStatus();
+  } catch (error) {
+    showToast((error as Error).message || t('popup.clearFailed'), 'error');
+  }
 }
 
 async function copyResult(): Promise<void> {

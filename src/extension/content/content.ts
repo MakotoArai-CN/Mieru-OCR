@@ -402,10 +402,27 @@ function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendR
     case 'recognizeImageBySrc':
       handleRecognizeImageBySrc(message.srcUrl, sendResponse);
       return true;
+    case 'clearCustomInput':
+      handleClearCustomInput(sendResponse);
+      return true;
     default:
       sendResponse({ success: false, error: t('content.unknownAction') });
   }
   return false;
+}
+
+/**
+ * 清除用户手动指定的输入框。popup 的「清除自定义输入」必须走到这里——否则只是
+ * 隐藏了 popup 上的 UI，content 侧仍指向旧输入框，自动填充会继续写进去。
+ */
+function handleClearCustomInput(sendResponse: (response: any) => void): void {
+  const old = customInputElement;
+  customInputElement = null;
+  if (currentCaptcha && currentCaptcha.inputElement === old) {
+    currentCaptcha.inputElement = null;
+  }
+  clearGuessMode();
+  sendResponse({ success: true });
 }
 
 /**
