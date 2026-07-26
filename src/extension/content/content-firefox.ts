@@ -1427,8 +1427,12 @@ function tryAutoSolveOnce(): void {
     return;
   }
 
-  if (customCaptchaElement && (customInputElement || fixedInput)) {
-    const inputEl = customInputElement || fixedInput!;
+  if (customCaptchaElement) {
+    // 兜底用 findRelatedInput 就近查找：规则只给了验证码元素、没给 inputSelector，
+    // 用户也没手动指定输入框时，此前会整块跳过并落到下面的通用 scan 分支——那条
+    // 路径产出的 captcha.id 来自 scan 而非 'custom'，会丢失 customRuleKey 关联。
+    const inputEl = customInputElement || fixedInput || detector.findRelatedInput(customCaptchaElement);
+    if (!inputEl) return;
     if (detector.hasElementChanged(customCaptchaElement)) {
       const captcha = buildCaptchaFromElement(customCaptchaElement, 'custom', inputEl);
       internalRecognizeAndFill(captcha);
