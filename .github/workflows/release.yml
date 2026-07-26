@@ -81,6 +81,10 @@ jobs:
           jq --arg v "$MANIFEST_VERSION" '.version = $v' manifest.firefox.json > tmp.json && mv tmp.json manifest.firefox.json
           echo "Synced package version $VERSION and manifest version $MANIFEST_VERSION"
 
+      # 类型检查放在构建之前：构建产物一旦上传就是发布物，类型错误必须在此拦下。
+      - name: Type check
+        run: bun run type-check
+
       - name: Build userscript
         run: bun run build
 
@@ -95,25 +99,33 @@ jobs:
           VERSION="${{ needs.get-version.outputs.version }}"
           mkdir -p release-assets
 
+          # 三个产物缺任何一个都必须让流水线失败——此前用 if 静默跳过，
+          # 结果是发布一个缺资产的 release 而不报错。
           # Userscript
-          if [ -f dist/userscript/Mieru-OCR.user.js ]; then
-            cp dist/userscript/Mieru-OCR.user.js "release-assets/Mieru-OCR-v${VERSION}.user.js"
-            echo "Collected userscript"
+          if [ ! -f dist/userscript/Mieru-OCR.user.js ]; then
+            echo "::error::缺少 userscript 产物 dist/userscript/Mieru-OCR.user.js"
+            exit 1
           fi
+          cp dist/userscript/Mieru-OCR.user.js "release-assets/Mieru-OCR-v${VERSION}.user.js"
+          echo "Collected userscript"
 
           # Chrome extension zip
           CHROME_ZIP=$(find dist/ -name "Mieru-OCR-v*.zip" -type f | head -1)
-          if [ -n "$CHROME_ZIP" ]; then
-            cp "$CHROME_ZIP" "release-assets/Mieru-OCR-chrome-v${VERSION}.zip"
-            echo "Collected Chrome extension"
+          if [ -z "$CHROME_ZIP" ]; then
+            echo "::error::缺少 Chrome 扩展 zip（dist/Mieru-OCR-v*.zip）"
+            exit 1
           fi
+          cp "$CHROME_ZIP" "release-assets/Mieru-OCR-chrome-v${VERSION}.zip"
+          echo "Collected Chrome extension"
 
           # Firefox extension zip
           FIREFOX_ZIP=$(find dist/ -name "Mieru-OCR-firefox-v*.zip" -type f | head -1)
-          if [ -n "$FIREFOX_ZIP" ]; then
-            cp "$FIREFOX_ZIP" "release-assets/Mieru-OCR-firefox-v${VERSION}.zip"
-            echo "Collected Firefox extension"
+          if [ -z "$FIREFOX_ZIP" ]; then
+            echo "::error::缺少 Firefox 扩展 zip（dist/Mieru-OCR-firefox-v*.zip）"
+            exit 1
           fi
+          cp "$FIREFOX_ZIP" "release-assets/Mieru-OCR-firefox-v${VERSION}.zip"
+          echo "Collected Firefox extension"
 
           ls -la release-assets/
 
