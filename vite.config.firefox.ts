@@ -55,7 +55,7 @@ function copyDirRecursive(srcDir: string, destDir: string): void {
   }
 }
 
-async function bundleContentScript(distDir: string, entryPath: string): Promise<void> {
+async function bundleContentScript(distDir: string, entryPath: string, isFirefox = true): Promise<void> {
   const esbuild = await import('esbuild');
   await esbuild.build({
     entryPoints: [entryPath],
@@ -68,6 +68,10 @@ async function bundleContentScript(distDir: string, entryPath: string): Promise<
     allowOverwrite: true,
     legalComments: 'none',
     logLevel: 'silent',
+    // 这道 esbuild 编译独立于 vite，不继承其 define——必须在此单独注入，
+    // 否则 content script 运行时抛 __FIREFOX__ is not defined，且因为
+    // logLevel: 'silent' 构建期不会有任何警告。
+    define: { __FIREFOX__: String(isFirefox) },
   });
 }
 
@@ -224,6 +228,11 @@ function copyFirefoxAssets() {
 
 export default defineConfig({
   customLogger: makeQuietLogger(),
+  // 平台判定用构建期常量，便于 tree-shaking 掉 MV3 专有分支。
+  // 注意 content script 走 bundleContentScript 的 esbuild 二次编译，需在那里单独 define。
+  define: {
+    __FIREFOX__: 'true',
+  },
   resolve: {
     alias: {
       '@core': resolve(__dirname, 'src/core'),

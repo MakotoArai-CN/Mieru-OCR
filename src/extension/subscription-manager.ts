@@ -11,43 +11,7 @@ import { getDetModelMeta, clearDetModel } from './model-store';
 
 const SUBSCRIPTIONS_KEY = 'subscriptions';
 
-declare const chrome: any;
-declare const browser: any;
-
-let cachedStorage: any = null;
-
-// Lazy storage shim — defers global access until first use. Prefer Firefox's Promise-based
-// browser.storage in Firefox builds, then fall back to chrome.storage for Chromium.
-function getStorage(): any {
-  if (cachedStorage) return cachedStorage;
-  try {
-    if (typeof browser !== 'undefined' && browser?.storage?.local) {
-      cachedStorage = browser.storage.local;
-      return cachedStorage;
-    }
-  } catch { /* fall through */ }
-  try {
-    if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
-      cachedStorage = chrome.storage.local;
-      return cachedStorage;
-    }
-  } catch { /* fall through */ }
-  const diag = {
-    hasChrome: typeof chrome !== 'undefined',
-    hasBrowser: typeof browser !== 'undefined',
-    chromeStorage: typeof chrome !== 'undefined' && !!(chrome as any)?.storage,
-  };
-  throw new Error('No browser storage available; diag=' + JSON.stringify(diag));
-}
-
-const storage = {
-  get(key: string | string[]): Promise<any> {
-    return getStorage().get(key);
-  },
-  set(items: Record<string, any>): Promise<void> {
-    return getStorage().set(items);
-  },
-};
+import { storage } from './platform';
 
 /**
  * 用 fetch() 实现拉取（扩展有 host_permissions: <all_urls>）

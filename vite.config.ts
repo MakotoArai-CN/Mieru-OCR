@@ -27,6 +27,10 @@ const BUILDATE = new Date().toLocaleString();
 const iconData = readFileSync(resolve(__dirname, 'icons/icon-48.png')).toString('base64');
 
 export default defineConfig({
+  // 用户脚本不走扩展 API，但 @core 是三端共享的，保留该常量以防 core 里出现平台分支。
+  define: {
+    __FIREFOX__: 'false',
+  },
   resolve: {
     alias: {
       '@core': resolve(__dirname, 'src/core'),

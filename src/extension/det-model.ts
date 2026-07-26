@@ -17,27 +17,7 @@ import { CONSTANTS } from '@core/config';
 import { verifyIntegrity } from '@core/integrity';
 import type { DetModelSpec, Subscription } from '@core/subscription';
 import { getDetModelData, getDetModelMeta, saveDetModel, type DetModelMeta } from './model-store';
-
-declare const chrome: any;
-declare const browser: any;
-
-let cachedStorage: any = null;
-function getStorage(): any {
-  if (cachedStorage) return cachedStorage;
-  try {
-    if (typeof browser !== 'undefined' && browser?.storage?.local) {
-      cachedStorage = browser.storage.local;
-      return cachedStorage;
-    }
-  } catch { /* fall through */ }
-  try {
-    if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
-      cachedStorage = chrome.storage.local;
-      return cachedStorage;
-    }
-  } catch { /* fall through */ }
-  throw new Error('No browser storage available');
-}
+import { getStorage } from './platform';
 
 async function getSettings(): Promise<any> {
   const r = await getStorage().get('settings');
