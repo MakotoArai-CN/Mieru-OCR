@@ -7,30 +7,82 @@
 | 文件 | 作用 |
 |------|------|
 | `server.ts` | 基于 Bun 的极简 HTTP 服务器，端口 `8765`（可改），CORS 全开 |
-| `subscription.json` | 测试用规则包，覆盖 8 类规则（触发关键词 / 排除 / 协议 / 输入排除 / 协议选择器 / 黑名单 / 站点规则 / 计算规则） |
+| `subscription.json` | 测试用规则包：OCR 关键词类 + **滑块/点选 siteRules** + **detModel 本地直链** |
 | `index.html` | 配套测试页：展示订阅 URL、回归清单、每类规则的可视化测试用例（包含订阅前后预期差异） |
+| `playground/` | 交互验证码标准测试台（GeeTest 同款滑块 + 文字点选 + CF mock） |
+| `fixtures/common_det.onnx` | 本地点选检测模型（订阅 `detModel.url` / playground 加载） |
+| `interaction-selftest.ts` | 无浏览器自测：订阅字段 + 滑块缺口 + det/OCR 识别 |
 
 ## 启动
 
 ```bash
 # 默认端口 8765
-bun test-subscription-service/server.ts
+bun test/server.ts
+# 或
+bun run test:subscription-server
 
 # 自定义端口
-bun test-subscription-service/server.ts 9000
+bun test/server.ts 9000
 # 或
-PORT=9000 bun test-subscription-service/server.ts
+PORT=9000 bun test/server.ts
 ```
 
 启动后控制台会打印可访问 URL（本机 / 局域网）。
 
+### 准备 det 模型（文字点选）
+
+1.2.3 起 `common_det.onnx` 不再放在 `public/`。本地测试文件在：
+
+```bash
+# 若 test/fixtures/common_det.onnx 不存在，从已有产物拷贝：
+mkdir -p test/fixtures
+cp dist/userscript/common_det.onnx test/fixtures/common_det.onnx
+# 该 .onnx 已被 .gitignore，不要提交进仓库
+```
+
+订阅包 `detModel.url` 指向 `http://localhost:8765/fixtures/common_det.onnx`。
+
+### 无浏览器识别自测
+
+```bash
+bun run test:interaction
+# 可选：bun test/interaction-selftest.ts --slider-n 40 --click-n 10
+```
+
+覆盖：订阅字段校验（slider/click-select/detModel）→ 滑块缺口 slideMatch → det+OCR 点选标注。
+
 ## 使用流程
+
+### A. OCR 关键词订阅回归
 
 1. 启动本服务（见上）。
 2. 浏览器打开 `http://localhost:8765/` —— 测试页会显示订阅 URL。
 3. 复制 `http://localhost:8765/subscription.json`，粘贴到 **扩展设置 → 订阅规则 → 添加订阅**。
 4. 保存后扩展会立刻拉取并合并规则。回到测试页，**回归清单**与每个测试卡片下方的实时状态会显示当前命中情况。
 5. 测试完成后，到扩展订阅列表里删除本订阅 —— 扩展会自动回滚由本订阅引入的所有规则。
+
+### B. 滑块 / 点选（规则驱动）
+
+1.2.3 起交互式验证码**只走站点规则**，不再盲扫。测试包已内置 playground 规则：
+
+| key | subType | selector | 匹配 URL |
+|-----|---------|----------|----------|
+| `slider@localhost-playground` | slider | `#gtSlider` | `http://localhost:8765/playground/` prefix |
+| `slider@localhost-playground-pop` | slider | `.my-verify-box` | 同上 |
+| `click@localhost-playground` | click-select | `#csContainer` | 同上 |
+
+步骤：
+
+1. `bun run build:extension`，加载 `dist/extension/`。
+2. `bun run build:playground`（改过 playground 源码时）。
+3. `bun run test:subscription-server`。
+4. 扩展 **设置 → 订阅规则** 添加 `http://localhost:8765/subscription.json`。
+5. 打开 `http://localhost:8765/playground/`。
+6. 确认 **命中规则自动求解**（`autoSolveOnRule`）开启；打开调试模式看控制台：
+   - `匹配URL规则` / `应用站点规则（交互式）` → 规则命中
+   - `缺口候选` / `拖拽轨迹` → 滑块在跑
+   - `点选检测模型未就绪` → 检查 `detModel` / fixtures 是否可访问
+7. 也可不装扩展，直接在 playground 点「检测 / 自动求解 / 自测」调用核心模块。
 
 ## 端点
 
@@ -49,9 +101,11 @@ PORT=9000 bun test-subscription-service/server.ts
 | ③ 协议关键词 | `agreementKeywords` | 复选框附近文本含「订阅测试协议」，订阅 + 自动勾选协议后被勾选 |
 | ④ 输入排除 | `inputExcludeKeywords` | `placeholder="subtest-special-code ..."` 的输入框，订阅后不应被回填 |
 | ⑤ 协议选择器 | `agreementSelectors` | `#sub-test-agreement` 与 `.sub-test-agreement-by-class input`，订阅后被勾选 |
-| ⑥ 站点规则 | `siteRules` | 在 `localhost` / `127.0.0.1` 域上命中 `#sub-test-site-rule-captcha` |
+| ⑥ 站点规则 (OCR) | `siteRules` | 在 `localhost` / `127.0.0.1` 域上命中 `#sub-test-site-rule-captcha` |
 | ⑦ 站点黑名单 | `siteBlacklist` | 写入扩展黑名单，需到「扩展设置 → 黑名单」目视核对 |
 | ⑧ 计算规则 | `calculateRules` | 写入扩展计算规则，需到「扩展设置 → 计算规则」目视核对 |
+| ⑨ 滑块规则 | `siteRules` + `subType:slider` | playground `#gtSlider` / `.my-verify-box` 自动求解 |
+| ⑩ 点选规则 | `siteRules` + `subType:click-select` + `detModel` | playground `#csContainer`；模型从 `/fixtures/common_det.onnx` 拉取 |
 
 ## 注意
 

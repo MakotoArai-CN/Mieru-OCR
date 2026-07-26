@@ -21,9 +21,16 @@ import {
   validateModelFiles,
   truncateName,
   type ModelMeta,
+  getDetModelMeta,
+  saveDetModel,
+  clearDetModel,
+  validateDetModelFile,
 } from '../model-store';
+import { forceDownloadDefaultDetModel } from '../det-model';
 import { showConfirm } from '../ui/modal';
 import { buildReport, downloadReport, clearLogs } from '@core/diagnostics';
+import { initDiagAnalysisUI } from './diag-analysis-ui';
+import type { AiConfig } from '@core/diag-ai';
 
 interface CalculateRule {
   pattern: string;
@@ -43,6 +50,13 @@ interface SiteRule {
   enabled: boolean;
   createdAt?: number;
   updatedAt?: number;
+  subType?: 'slider' | 'click-select';
+  urlMatch?: 'origin-path' | 'prefix' | 'exact' | 'hostname';
+  matchQuery?: string[];
+  solveDelayMs?: number;
+  retryMs?: number;
+  maxWaitMs?: number;
+  dragProfile?: 'fast' | 'normal' | 'cautious';
 }
 
 type ChipFieldKey = 'customIncludeKeywords' | 'customExcludePatterns' | 'customAgreementKeywords' | 'customInputExcludeKeywords';
@@ -109,6 +123,14 @@ async function init(): Promise<void> {
   await loadStats();
   await loadSubscriptions();
   await loadModelsSection();
+  await loadDetModelSection();
+  initDiagAnalysisUI({
+    buildCurrentReport: buildCurrentDiagReport,
+    getAiConfig: async () => { try { return (await browser.storage.local.get('diagAiConfig'))?.diagAiConfig || null; } catch { return null; } },
+    setAiConfig: async (c: AiConfig) => { await browser.storage.local.set({ diagAiConfig: c }); },
+    confirm: (msg: string) => showConfirm({ message: msg }),
+    toast: (m: string, ty: 'success' | 'error') => showToast(m, ty),
+  });
   displayVersion();
 }
 
@@ -176,6 +198,12 @@ function bindEvents(): void {
   document.getElementById('btn-upload-model')?.addEventListener('click', () => { void handleUploadModel(); });
   bindFilePickerDisplay('new-model-file', 'new-model-file-name');
   bindFilePickerDisplay('new-charsets-file', 'new-charsets-file-name');
+  // 文字点选检测模型
+  bindFilePickerDisplay('det-model-file', 'det-model-file-name');
+  document.getElementById('btn-upload-det-model')?.addEventListener('click', () => { void handleUploadDetModel(); });
+  document.getElementById('btn-download-det-model')?.addEventListener('click', () => { void handleDownloadDetModel(); });
+  document.getElementById('btn-clear-det-model')?.addEventListener('click', () => { void handleClearDetModel(); });
+  document.getElementById('det-model-preference')?.addEventListener('change', () => { void handleDetModelPreferenceChange(); });
   document.getElementById('btn-export-config')?.addEventListener('click', () => { void exportConfig(); });
   document.getElementById('btn-import-config')?.addEventListener('click', () => triggerImport('config'));
   document.getElementById('btn-reset-all')?.addEventListener('click', () => { void resetAll(); });
@@ -713,6 +741,7 @@ async function loadRules(): Promise<void> {
           <div class="rule-hostname">${escapeHtml(displayKey)}</div>
           <div class="rule-selector">${escapeHtml(selectorDisplay)}</div>
           ${rule.fullUrl ? `<div class="rule-badge">${t('rules.fullUrlMatch')}</div>` : ''}
+          ${rule.subType ? `<div class="rule-badge">${rule.subType === 'slider' ? '滑块' : '文字点选'}</div>` : ''}
         </div>
         <div class="rule-actions">
           <button class="btn btn-secondary btn-sm btn-edit-rule" data-key="${escapeHtml(key)}">${t('common.edit')}</button>
@@ -761,7 +790,13 @@ async function editRule(key: string): Promise<void> {
   (elements.editRuleOriginalKey as HTMLInputElement).value = key;
   (elements.editRuleSelector as HTMLInputElement).value = rule.selector || '';
   (elements.editRuleInput as HTMLInputElement).value = rule.inputSelector || '';
-  (elements.editRuleUrl as HTMLInputElement).value = rule.fullUrl || '';
+  (elements.editRuleUrl as HTMLInputElement).value = rule.fullUrl || rule.urlPattern || '';
+  setVal('edit-rule-urlmatch', rule.urlMatch || '');
+  setVal('edit-rule-matchquery', Array.isArray(rule.matchQuery) ? rule.matchQuery.join(',') : '');
+  setVal('edit-rule-solvedelay', rule.solveDelayMs != null ? String(rule.solveDelayMs) : '');
+  setVal('edit-rule-retry', rule.retryMs != null ? String(rule.retryMs) : '');
+  setVal('edit-rule-maxwait', rule.maxWaitMs != null ? String(rule.maxWaitMs) : '');
+  setVal('edit-rule-dragprofile', rule.dragProfile || '');
 
   switchSection('rules');
   const editCard = (elements.editRuleKey as HTMLInputElement | null)?.closest('.card');
@@ -773,7 +808,13 @@ async function saveEditRule(): Promise<void> {
   const originalKey = (elements.editRuleOriginalKey as HTMLInputElement).value;
   const selector = (elements.editRuleSelector as HTMLInputElement).value.trim();
   const inputSelector = (elements.editRuleInput as HTMLInputElement).value.trim();
-  const fullUrl = (elements.editRuleUrl as HTMLInputElement).value.trim();
+  const url = (elements.editRuleUrl as HTMLInputElement).value.trim();
+  const urlMatch = getVal('edit-rule-urlmatch');
+  const matchQueryRaw = getVal('edit-rule-matchquery');
+  const dragProfile = getVal('edit-rule-dragprofile');
+  const solveDelayMs = getNum('edit-rule-solvedelay');
+  const retryMs = getNum('edit-rule-retry');
+  const maxWaitMs = getNum('edit-rule-maxwait');
 
   if (!selector) {
     showToast(t('rules.selectorRequired'), 'error');
@@ -789,11 +830,22 @@ async function saveEditRule(): Promise<void> {
   }
   const oldRule = rules[originalKey] || {};
 
+  const matchQuery = matchQueryRaw
+    ? matchQueryRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
   const newRule: SiteRule = {
     ...oldRule,
     selector,
     inputSelector: inputSelector || undefined,
-    fullUrl: fullUrl || undefined,
+    urlPattern: url || undefined,
+    fullUrl: undefined,
+    urlMatch: (urlMatch || (url ? 'origin-path' : undefined)) as SiteRule['urlMatch'],
+    matchQuery,
+    solveDelayMs,
+    retryMs,
+    maxWaitMs,
+    dragProfile: (dragProfile || undefined) as SiteRule['dragProfile'],
     enabled: true,
     updatedAt: Date.now(),
   };
@@ -809,6 +861,24 @@ async function saveEditRule(): Promise<void> {
   showToast(t('rules.updated'), 'success');
 }
 
+/** 取输入框字符串值（trim），不存在返回空串。 */
+function getVal(id: string): string {
+  const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+  return el ? String(el.value).trim() : '';
+}
+/** 取数字输入值；空或非法返回 undefined。 */
+function getNum(id: string): number | undefined {
+  const v = getVal(id);
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+/** 设置输入框/下拉值。 */
+function setVal(id: string, value: string): void {
+  const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+  if (el) el.value = value;
+}
+
 function cancelEditRule(): void {
   currentEditRuleKey = null;
   (elements.editRuleKey as HTMLInputElement).value = '';
@@ -816,6 +886,12 @@ function cancelEditRule(): void {
   (elements.editRuleSelector as HTMLInputElement).value = '';
   (elements.editRuleInput as HTMLInputElement).value = '';
   (elements.editRuleUrl as HTMLInputElement).value = '';
+  setVal('edit-rule-urlmatch', '');
+  setVal('edit-rule-matchquery', '');
+  setVal('edit-rule-solvedelay', '');
+  setVal('edit-rule-retry', '');
+  setVal('edit-rule-maxwait', '');
+  setVal('edit-rule-dragprofile', '');
 }
 
 async function addBulkRules(): Promise<void> {
@@ -943,6 +1019,37 @@ async function exportDiagnosticReport(): Promise<void> {
     setDiagStatus(t('diag.exportFailed', msg), true);
     showToast(t('diag.exportFailed', msg), 'error');
   }
+}
+
+/** 构造「当前采集数据」的完整报告（全量 include），供诊断分析复用。 */
+async function buildCurrentDiagReport() {
+  let settings: any = null;
+  try { settings = await getSettings(); } catch { /* defaults */ }
+  const manifest = browser.runtime.getManifest();
+  return buildReport(
+    { includeLogs: true, includeEnv: true, includeSettings: true, includeStats: true, includeEvents: true },
+    {
+      appName: manifest.name || 'Mieru-OCR Extension',
+      appVersion: manifest.version || '0.0.0',
+      target: 'firefox-extension',
+      getSettings: async () => settings ?? DEFAULT_EXTENSION_SETTINGS,
+      getActiveModel: async () => {
+        try {
+          const id = await getActiveModelId();
+          if (!id) return null;
+          const all = await listModels();
+          const m = all.find((x) => x.id === id);
+          return m ? { id: m.id, size: m.size, charsetsLength: m.charsetsLength, source: m.source } : { id };
+        } catch { return null; }
+      },
+      getStats: async () => {
+        try {
+          const r = await browser.runtime.sendMessage({ action: 'getStats' });
+          return r?.success ? r.stats : null;
+        } catch { return null; }
+      },
+    },
+  );
 }
 
 async function clearDiagnosticLogs(): Promise<void> {
@@ -1416,6 +1523,98 @@ async function handleUploadModel(): Promise<void> {
 
   showToast(t('model.uploadSuccess', savedMeta.name), 'success');
   await loadModelsSection();
+}
+
+// ---------------------------------------------------------------------------
+// 文字点选检测模型管理（1.2.3）
+// ---------------------------------------------------------------------------
+
+async function loadDetModelSection(): Promise<void> {
+  const statusEl = document.getElementById('det-model-status');
+  const prefSel = document.getElementById('det-model-preference') as HTMLSelectElement | null;
+  if (prefSel) {
+    const settings = await getSettings();
+    prefSel.value = settings.detModelPreference === 'local' ? 'local' : 'auto';
+  }
+  if (!statusEl) return;
+  try {
+    const meta = await getDetModelMeta();
+    if (!meta) {
+      statusEl.textContent = '当前：未安装检测模型（首次使用文字点选时会按优先级下载，或在此上传/下载）。';
+      return;
+    }
+    const sourceLabel = meta.source === 'uploaded' ? '本地上传' : meta.source === 'subscription' ? '订阅指定' : '仓库下载';
+    const sizeMB = (meta.size / 1024 / 1024).toFixed(1);
+    statusEl.textContent = `当前：${meta.name || 'common_det'}（来源：${sourceLabel}，${sizeMB} MB${meta.version ? '，v' + meta.version : ''}）`;
+  } catch (e) {
+    statusEl.textContent = '读取检测模型状态失败：' + (e as Error).message;
+  }
+}
+
+async function notifyDetModelChanged(): Promise<void> {
+  try { await browser.runtime.sendMessage({ action: 'detModelChanged' }); } catch { /* 背景页未就绪时忽略 */ }
+}
+
+async function handleDetModelPreferenceChange(): Promise<void> {
+  const prefSel = document.getElementById('det-model-preference') as HTMLSelectElement | null;
+  if (!prefSel) return;
+  const value = prefSel.value === 'local' ? 'local' : 'auto';
+  const settings = await getSettings();
+  settings.detModelPreference = value;
+  await saveSettings(settings);
+  await notifyDetModelChanged();
+  showToast('已更新检测模型来源偏好', 'success');
+}
+
+async function handleUploadDetModel(): Promise<void> {
+  const fileInput = document.getElementById('det-model-file') as HTMLInputElement | null;
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast('请先选择 .onnx 检测模型文件', 'error');
+    return;
+  }
+  showToast('正在校验检测模型…', 'success');
+  const validation = await validateDetModelFile(file);
+  if (!validation.ok) {
+    showToast('上传失败：' + (validation.error || ''), 'error');
+    return;
+  }
+  try {
+    await saveDetModel(validation.modelBuffer!, { source: 'uploaded', name: file.name });
+  } catch (e) {
+    showToast('保存失败：' + (e as Error).message, 'error');
+    return;
+  }
+  if (fileInput) fileInput.value = '';
+  resetFilePickerDisplay('det-model-file-name');
+  await notifyDetModelChanged();
+  await loadDetModelSection();
+  showToast('检测模型已上传。如需优先使用，请把来源偏好设为「优先本地」。', 'success');
+}
+
+async function handleDownloadDetModel(): Promise<void> {
+  showToast('正在从镜像下载默认检测模型（约 20 MB）…', 'success');
+  try {
+    const meta = await forceDownloadDefaultDetModel();
+    await notifyDetModelChanged();
+    await loadDetModelSection();
+    showToast(`默认检测模型已下载（${(meta.size / 1024 / 1024).toFixed(1)} MB）`, 'success');
+  } catch (e) {
+    showToast('下载失败：' + (e as Error).message, 'error');
+  }
+}
+
+async function handleClearDetModel(): Promise<void> {
+  const ok = await showConfirm({ message: '确定清除当前检测模型？下次使用文字点选时会按优先级重新获取。' });
+  if (!ok) return;
+  try {
+    await clearDetModel();
+    await notifyDetModelChanged();
+    await loadDetModelSection();
+    showToast('检测模型已清除', 'success');
+  } catch (e) {
+    showToast('清除失败：' + (e as Error).message, 'error');
+  }
 }
 
 function bindFilePickerDisplay(inputId: string, displayId: string): void {

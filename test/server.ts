@@ -2,14 +2,17 @@
  * Mieru-OCR 订阅功能测试服务器 (Standalone)
  *
  * 独立于扩展构建流程，不依赖项目源码。提供：
- *   - GET /subscription.json    => 测试用规则包（CORS 全开，方便扩展抓取）
- *   - GET /                     => 测试页 index.html
- *   - GET /index.html           => 测试页
+ *   - GET /subscription.json            => 测试用规则包（CORS 全开）
+ *   - GET /  /index.html                => OCR 订阅回归测试页
+ *   - GET /playground/                  => 滑块/点选交互测试台
+ *   - GET /fixtures/common_det.onnx     => 本地点选检测模型
+ *   - GET /public/*  /node_modules/onnxruntime-web/*  => playground 模型与 runtime
  *
  * 运行方式：
- *   bun test-subscription-service/server.ts            # 默认 http://localhost:8765
- *   PORT=9000 bun test-subscription-service/server.ts  # 自定义端口
- *   bun test-subscription-service/server.ts 9000       # 命令行参数指定端口
+ *   bun test/server.ts                 # 默认 http://localhost:8765
+ *   PORT=9000 bun test/server.ts
+ *   bun test/server.ts 9000
+ *   bun run test:subscription-server
  */
 
 import { readFileSync, existsSync, statSync } from 'fs';
@@ -158,8 +161,11 @@ lines.push(
   '├───────────────────────────────────────────────────────────┤',
   `│  订阅 URL:    /subscription.json`.padEnd(60) + '│',
   `│  测试页面:    /  或  /index.html`.padEnd(60) + '│',
+  `│  交互 playground: /playground/`.padEnd(60) + '│',
+  `│  det 模型:    /fixtures/common_det.onnx`.padEnd(60) + '│',
   '├───────────────────────────────────────────────────────────┤',
   '│  在扩展里粘贴上面任一 Host + /subscription.json 即可订阅 │',
+  '│  滑块/点选规则会匹配 /playground/ （需 autoSolveOnRule） │',
   '│  按 Ctrl+C 停止                                           │',
   '╰───────────────────────────────────────────────────────────╯',
   '',

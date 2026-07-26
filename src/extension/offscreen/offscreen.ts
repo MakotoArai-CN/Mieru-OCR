@@ -1,7 +1,7 @@
 import { OCREngine } from '@core/ocr-engine';
 import { DetectionEngine } from '@core/detection-engine';
 import { labelBoxesWithEngines, decodeDataURLToImage } from '@core/interaction/click-select-solver';
-import { BUILTIN_MODEL_ID, BUNDLED_MODELS, getBundledModel, getModelData, isBundledModelId } from '../model-store';
+import { BUILTIN_MODEL_ID, BUNDLED_MODELS, getBundledModel, getModelData, getDetModelData, isBundledModelId } from '../model-store';
 
 /**
  * Offscreen document with multi-model support.
@@ -145,10 +145,12 @@ async function getActiveEngine(): Promise<{ engine: OCREngine; modelId: string }
  * Detection engine (ddddocr common_det.onnx, YOLOX), lazily built and kept for
  * the offscreen document's lifetime. Used to find character boxes for
  * click-select captchas. Threads are left at the OCR engine's setting (1) — see
- * DetectionEngineOptions.numThreads. The model is a fixed bundled asset, not an
- * uploadable model, so we fetch it directly via getURL.
+ * DetectionEngineOptions.numThreads.
+ *
+ * 1.2.3 起检测模型不再随扩展内置——由 service worker 的 ensureDetModel 按优先级
+ * （本地上传 > 订阅指定下载 > 仓库镜像）写入 IndexedDB，这里只负责从 IndexedDB 读取。
+ * 模型缺失时抛 DET_NOT_PROVISIONED，由上层触发 ensureDetModel 后重试。
  */
-const DETECTION_MODEL_FILE = 'common_det.onnx';
 let detectionEngine: DetectionEngine | null = null;
 let detectionEngineInit: Promise<DetectionEngine> | null = null;
 
@@ -162,9 +164,9 @@ async function getDetectionEngine(): Promise<DetectionEngine> {
     configureOrt(ort);
     const engine = new DetectionEngine({
       getModel: async () => {
-        const res = await fetch(chrome.runtime.getURL(DETECTION_MODEL_FILE));
-        if (!res.ok) throw new Error(`检测模型 ${DETECTION_MODEL_FILE} 加载失败 (HTTP ${res.status})`);
-        return { model: await res.arrayBuffer() };
+        const model = await getDetModelData();
+        if (!model) throw new Error('DET_NOT_PROVISIONED');
+        return { model };
       },
       getOrt: async () => ort,
       wasmPaths: chrome.runtime.getURL('/'),
@@ -180,6 +182,12 @@ async function getDetectionEngine(): Promise<DetectionEngine> {
     detectionEngineInit = null; // allow retry on next call
     throw e;
   }
+}
+
+/** 检测模型被重新下载 / 更新后，调用方发消息让我们丢弃缓存的引擎，下次重建。 */
+function invalidateDetectionEngine(): void {
+  detectionEngine = null;
+  detectionEngineInit = null;
 }
 
 /** Listen for storage changes to invalidate cached engines */
@@ -210,6 +218,12 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: a
     // Called when a model is deleted — remove from cache
     const id = message.modelId;
     if (id) engineCache.delete(id);
+    sendResponse({ success: true });
+    return false;
+  }
+  if (message?.action === 'offscreen:invalidate-det-model') {
+    // 检测模型被重新下载 / 上传 / 清除后，丢弃缓存引擎，下次 detect 时重建。
+    invalidateDetectionEngine();
     sendResponse({ success: true });
     return false;
   }

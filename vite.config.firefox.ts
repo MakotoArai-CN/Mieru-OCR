@@ -97,13 +97,13 @@ function copyFirefoxAssets() {
         console.log('Copied charsets.json');
       }
 
-      // ddddocr 目标检测模型（文字点选用）。缺省时跳过——点选辅助默认关闭。
-      const detModelPath = resolve(publicDir, 'common_det.onnx');
-      if (existsSync(detModelPath)) {
-        copyFileSync(detModelPath, resolve(distDir, 'common_det.onnx'));
-        console.log('Copied common_det.onnx');
-      } else {
-        console.warn('common_det.onnx not found in public/, click-select assist will be unavailable');
+      // 1.2.3 起检测模型（common_det.onnx）不再随扩展内置（省 ~20MB），改为按需提供：
+      // 用户上传 / 订阅指定下载 / 仓库镜像下载（见 src/extension/det-model.ts ensureDetModel）。
+      // 主动清除上一次构建可能遗留的同名文件，避免 zip 仍带上 20MB 陈旧模型。
+      const staleDet = resolve(distDir, 'common_det.onnx');
+      if (existsSync(staleDet)) {
+        rmSync(staleDet);
+        console.log('Removed stale common_det.onnx from dist (no longer bundled)');
       }
 
       // const extraBundled = [

@@ -86,6 +86,22 @@ export interface SiteRule {
   frameSelector?: string;
   /** 规则采集时的 iframe URL（仅用于诊断/迁移，不参与匹配，URL 跨实例可能不稳定） */
   frameUrl?: string;
+  /** URL 匹配模式。缺省时由旧字段推断（有 fullUrl→'origin-path'，有 urlPattern→'prefix'，皆无→'hostname'）。
+   *  'origin-path' = 忽略全部 query/hash，按 origin+pathname 匹配（抗随机参数，推荐默认）；
+   *  'prefix' = 对归一化后的 origin+pathname 做前缀匹配；
+   *  'exact' = 含 query 的完全一致（旧 fullUrl 行为，需严格含参时用）；
+   *  'hostname' = 仅域名。 */
+  urlMatch?: 'origin-path' | 'prefix' | 'exact' | 'hostname';
+  /** 必须参与匹配的 query 参数名白名单：仅比对这些参数的值，其余（含随机数）一律忽略。 */
+  matchQuery?: string[];
+  /** 命中后延迟多少毫秒再首次求解，应对懒加载 / 入场动画的验证码。缺省沿用 500。 */
+  solveDelayMs?: number;
+  /** 求解未成功时的重试间隔（毫秒）。缺省 / 0 = 不重试。 */
+  retryMs?: number;
+  /** 从命中到放弃的最长等待（毫秒），超过后停止重试。缺省 / 0 = 仅首次尝试。 */
+  maxWaitMs?: number;
+  /** 滑块拖拽速度档位：影响轨迹时长 / 抖动 / 过冲幅度。缺省 'normal'。 */
+  dragProfile?: 'fast' | 'normal' | 'cautious';
 }
 
 export interface SiteRuleStorage {
@@ -150,6 +166,9 @@ export interface OCRConfig {
   /** 深度扫描：让 content script 在所有子 iframe 中也运行，并启用顶层 picker 跨框架接力。
    *  默认关闭——开启后广告/分析 iframe 也会注入脚本。仅在常规模式拾取不到目标元素时打开。 */
   deepScan: boolean;
+  /** 文字点选检测模型来源偏好：'auto'(默认) = 优先订阅指定 / 远程下载的模型；
+   *  'local' = 优先使用用户上传的本地点选模型。检测模型不再随扩展内置（1.2.3 起）。 */
+  detModelPreference: 'auto' | 'local';
 }
 
 export interface ExtensionSettings extends OCRConfig {

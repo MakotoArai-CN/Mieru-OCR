@@ -1,5 +1,7 @@
 import type { ExtensionSettings, SiteRule } from '@core/types';
 import { autoUpdateSubscriptions } from '../subscription-manager';
+import { ensureDetModel } from '../det-model';
+import { recordAttempt, backoffCooldownMs, type RuleStat, type RuleStatsMap } from '@core/rule-stats';
 
 const OFFSCREEN_URL = 'offscreen.html';
 const SUBSCRIPTION_ALARM_NAME = 'Mieru-subscription-update';
@@ -335,6 +337,18 @@ async function handleMessage(
       case 'getActiveModelId':
         await handleGetActiveModelId(sendResponse);
         break;
+      case 'ensureDetModel':
+        await handleEnsureDetModel(sendResponse);
+        break;
+      case 'detModelChanged':
+        await handleDetModelChanged(sendResponse);
+        break;
+      case 'getRuleStat':
+        await handleGetRuleStat(message, sendResponse);
+        break;
+      case 'recordRuleAttempt':
+        await handleRecordRuleAttempt(message, sendResponse);
+        break;
       default:
         sendResponse({ success: false, error: '未知操作: ' + message.action });
     }
@@ -639,6 +653,65 @@ async function handleGetActiveModelId(sendResponse: (response: any) => void): Pr
   }
 }
 
+/** 让 offscreen 丢弃缓存的检测模型引擎（检测模型重新下载/上传/清除后调用）。 */
+async function invalidateOffscreenDetModel(): Promise<void> {
+  try {
+    const offscreenApi = (chrome as any).offscreen;
+    const getContexts = (chrome.runtime as any).getContexts;
+    if (offscreenApi && typeof getContexts === 'function') {
+      const existing = await getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+      if (Array.isArray(existing) && existing.length > 0) {
+        await chrome.runtime.sendMessage({ action: 'offscreen:invalidate-det-model' });
+      }
+    }
+  } catch { /* offscreen 不存在则无需失效 */ }
+}
+
+/**
+ * content 在点选求解前调用：按优先级 provisioning 检测模型（本地/订阅/镜像）。
+ * 若本次重新下载/写入（changed），通知 offscreen 失效缓存引擎以加载新模型。
+ */
+async function handleEnsureDetModel(sendResponse: (response: any) => void): Promise<void> {
+  try {
+    const res = await ensureDetModel();
+    if (res.changed) await invalidateOffscreenDetModel();
+    sendResponse({ success: res.ready, ...res });
+  } catch (e) {
+    sendResponse({ success: false, ready: false, reason: (e as Error).message });
+  }
+}
+
+/** options 页在上传/清除/手动下载检测模型后调用，使 offscreen 重建引擎。 */
+async function handleDetModelChanged(sendResponse: (response: any) => void): Promise<void> {
+  await invalidateOffscreenDetModel();
+  sendResponse({ success: true });
+}
+
+async function handleGetRuleStat(message: any, sendResponse: (response: any) => void): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get('ruleStats');
+    const map: RuleStatsMap = result.ruleStats || {};
+    sendResponse({ success: true, stat: map[message.ruleKey] || null });
+  } catch (e) {
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
+/** 记录一次规则求解结果，返回更新后的 stat 与建议冷却（含指数退避）。 */
+async function handleRecordRuleAttempt(message: any, sendResponse: (response: any) => void): Promise<void> {
+  try {
+    const { ruleKey, success } = message as { ruleKey: string; success: boolean };
+    const result = await chrome.storage.local.get('ruleStats');
+    const map: RuleStatsMap = result.ruleStats || {};
+    const updated: RuleStat = recordAttempt(map[ruleKey], !!success, Date.now());
+    map[ruleKey] = updated;
+    await chrome.storage.local.set({ ruleStats: map });
+    sendResponse({ success: true, stat: updated, cooldownMs: backoffCooldownMs(!!success, updated) });
+  } catch (e) {
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
 function getDefaultSettings(): ExtensionSettings {
   return {
     autoDetect: true,
@@ -688,6 +761,7 @@ function getDefaultSettings(): ExtensionSettings {
     imageContextMenuAutoFill: true,
     preserveFocus: false,
     deepScan: false,
+    detModelPreference: 'auto',
   };
 }
 

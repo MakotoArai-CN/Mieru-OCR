@@ -386,3 +386,101 @@ export function truncateName(name: string, maxLen = 24): string {
   const tail = Math.floor((maxLen - 1) / 2);
   return name.slice(0, head) + '…' + name.slice(name.length - tail);
 }
+
+// ---------------------------------------------------------------------------
+// 文字点选检测模型（YOLOX，common_det.onnx）。
+// 1.2.3 起不再随扩展内置（省 ~20MB），改为按需提供：用户上传 / 订阅指定下载 / 仓库镜像下载。
+// 单一实例，固定 IndexedDB id；二进制存 models store，元数据存 chrome.storage.local。
+// ---------------------------------------------------------------------------
+
+/** 检测模型在 IndexedDB 中的固定 id（区别于可多选的 OCR 模型 id）。 */
+export const DET_MODEL_ID = '__det__';
+const DET_META_KEY = 'detModelMeta';
+
+export interface DetModelMeta {
+  /** 来源：用户上传 / 订阅指定下载 / 仓库镜像下载 */
+  source: 'uploaded' | 'subscription' | 'mirror';
+  /** 版本（订阅指定时用于缓存失效判断；镜像用 CONSTANTS.MODEL_VERSION） */
+  version?: string;
+  /** 下载校验用的 sha256（hex，小写） */
+  sha256?: string;
+  /** 字节数 */
+  size: number;
+  /** 显示名 */
+  name?: string;
+  /** 保存时间 */
+  savedAt: number;
+}
+
+/** 读取检测模型元数据（不含二进制）。无则返回 null。 */
+export async function getDetModelMeta(): Promise<DetModelMeta | null> {
+  const result = await storage.get(DET_META_KEY);
+  return result[DET_META_KEY] || null;
+}
+
+/** 读取检测模型二进制（offscreen / background 推理用）。无则返回 null。 */
+export async function getDetModelData(): Promise<ArrayBuffer | null> {
+  const d = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction([STORE_NAME], 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(DET_MODEL_ID);
+    req.onsuccess = () => resolve((req.result as ModelData | undefined)?.modelBlob || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** 写入检测模型二进制 + 元数据（覆盖式）。 */
+export async function saveDetModel(
+  modelBuffer: ArrayBuffer,
+  meta: Omit<DetModelMeta, 'size' | 'savedAt'>,
+): Promise<DetModelMeta> {
+  const d = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = d.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.put({ id: DET_MODEL_ID, modelBlob: modelBuffer, charsets: [] } as ModelData);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+  const full: DetModelMeta = { ...meta, size: modelBuffer.byteLength, savedAt: Date.now() };
+  await storage.set({ [DET_META_KEY]: full });
+  try {
+    if (typeof navigator !== 'undefined' && navigator.storage && (navigator.storage as any).persist) {
+      await (navigator.storage as any).persist();
+    }
+  } catch {
+    /* non-fatal */
+  }
+  return full;
+}
+
+/** 删除检测模型（二进制 + 元数据）。 */
+export async function clearDetModel(): Promise<void> {
+  const d = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = d.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.delete(DET_MODEL_ID);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+  await storage.set({ [DET_META_KEY]: null });
+}
+
+/** 校验上传的检测模型文件（无字符表，仅校验 ONNX 魔数与大小）。 */
+export async function validateDetModelFile(
+  modelFile: File,
+): Promise<{ ok: boolean; error?: string; modelBuffer?: ArrayBuffer }> {
+  if (modelFile.size > MAX_MODEL_SIZE) {
+    return { ok: false, error: `模型文件过大（${(modelFile.size / 1024 / 1024).toFixed(1)} MB），上限 ${MAX_MODEL_SIZE / 1024 / 1024} MB` };
+  }
+  if (modelFile.size < 1024) {
+    return { ok: false, error: '模型文件过小，可能损坏' };
+  }
+  const buffer = await modelFile.arrayBuffer();
+  if (!looksLikeOnnx(buffer)) {
+    return { ok: false, error: '文件不是有效的 ONNX 模型（魔数校验失败）' };
+  }
+  return { ok: true, modelBuffer: buffer };
+}

@@ -7,6 +7,7 @@ import {
   shouldUpdate as shouldUpdateSub,
 } from '@core/subscription';
 import type { CalculateRule } from '@core/types';
+import { getDetModelMeta, clearDetModel } from './model-store';
 
 const SUBSCRIPTIONS_KEY = 'subscriptions';
 
@@ -104,6 +105,14 @@ export async function deleteSubscription(id: string, removeRules = true): Promis
   if (!sub) return;
   if (removeRules && sub.cachedPackage) {
     await removeAppliedRules(sub.cachedPackage);
+    // 该订阅曾指定检测模型，且当前缓存的检测模型正来自订阅 → 清掉，让 ensureDetModel 重新解析
+    // （回退到其它订阅 / 镜像）。用户上传的本地模型(source='uploaded')不受影响。
+    if (sub.cachedPackage.detModel) {
+      try {
+        const meta = await getDetModelMeta();
+        if (meta?.source === 'subscription') await clearDetModel();
+      } catch { /* 非致命 */ }
+    }
   }
   await saveSubscriptions(subs.filter((s) => s.id !== id));
 }

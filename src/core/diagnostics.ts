@@ -19,9 +19,11 @@
  */
 
 const MAX_ENTRIES = 200;
+const MAX_EVENTS = 300;
 const MAX_MSG_LEN = 300;
 const FLUSH_DEBOUNCE_MS = 1000;
 const BUFFER_KEY_PREFIX = 'ddddocr_diag_log_';
+const EVENT_KEY_PREFIX = 'ddddocr_diag_evt_';
 const KNOWN_CONTEXTS = ['sw', 'content', 'subframe', 'options', 'popup', 'offscreen', 'userscript'] as const;
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -34,7 +36,23 @@ export interface LogEntry {
   msg: string;
 }
 
+/** 结构化事件类型（1.2.3 起）。比自由文本日志更易机器分析。 */
+export type DiagEventKind = 'recognize' | 'slider' | 'click' | 'rule-match' | 'det-model' | 'error';
+
+export interface DiagEvent {
+  ts: number;
+  ctx: DiagContext;
+  kind: DiagEventKind;
+  /** 是否成功（recognize/slider/click 用；其余可省） */
+  ok?: boolean;
+  /** 耗时 ms */
+  ms?: number;
+  /** 附加安全字段（枚举/数字/布尔/短串/已 hash 的键）。emit 时会脱敏兜底。 */
+  data?: Record<string, unknown>;
+}
+
 let buffer: LogEntry[] = [];
+let eventBuffer: DiagEvent[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let cachedCtx: DiagContext | null = null;
 let enabled = false;
@@ -150,6 +168,27 @@ export function pushEntry(level: LogLevel, args: unknown[]): void {
   } catch { /* never let logging itself crash */ }
 }
 
+/**
+ * Append one structured event. Same debug-mode gate as logs. `entry.data` is
+ * defensively sanitized (long / URL-like / selector-like strings redacted).
+ */
+export function pushEvent(kind: DiagEventKind, entry: { ok?: boolean; ms?: number; data?: Record<string, unknown> } = {}): void {
+  if (!enabled) return;
+  try {
+    const evt: DiagEvent = {
+      ts: Date.now(),
+      ctx: detectContext(),
+      kind,
+      ok: entry.ok,
+      ms: typeof entry.ms === 'number' ? Math.round(entry.ms) : undefined,
+      data: entry.data ? sanitizeEventData(entry.data) : undefined,
+    };
+    eventBuffer.push(evt);
+    while (eventBuffer.length > MAX_EVENTS) eventBuffer.shift();
+    scheduleFlush();
+  } catch { /* never let diagnostics crash its caller */ }
+}
+
 function scheduleFlush(): void {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
@@ -161,8 +200,10 @@ function scheduleFlush(): void {
 async function flush(): Promise<void> {
   const storage = getStorage();
   if (!storage) return;
+  const ctx = detectContext();
   try {
-    await storage.set(BUFFER_KEY_PREFIX + detectContext(), buffer.slice());
+    await storage.set(BUFFER_KEY_PREFIX + ctx, buffer.slice());
+    await storage.set(EVENT_KEY_PREFIX + ctx, eventBuffer.slice());
   } catch { /* silent — diagnostics must never throw to its caller */ }
 }
 
@@ -190,18 +231,66 @@ export async function readAllLogs(): Promise<LogEntry[]> {
   return unique;
 }
 
+/** Read all per-context event buckets, dedupe, sort. Includes current in-memory buffer. */
+export async function readAllEvents(): Promise<DiagEvent[]> {
+  const storage = getStorage();
+  const collected: DiagEvent[] = [];
+  if (storage) {
+    for (const ctx of KNOWN_CONTEXTS) {
+      try {
+        const arr = await storage.get(EVENT_KEY_PREFIX + ctx);
+        if (Array.isArray(arr)) collected.push(...arr);
+      } catch { /* skip */ }
+    }
+  }
+  collected.push(...eventBuffer);
+  const seen = new Set<string>();
+  const unique = collected.filter((e) => {
+    const k = `${e.ts}|${e.ctx}|${e.kind}|${e.ok}|${e.ms}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  unique.sort((a, b) => a.ts - b.ts);
+  return unique;
+}
+
 export async function clearLogs(): Promise<void> {
   buffer = [];
+  eventBuffer = [];
   const storage = getStorage();
   if (!storage) return;
   for (const ctx of KNOWN_CONTEXTS) {
-    try { await storage.set(BUFFER_KEY_PREFIX + ctx, []); } catch { /* skip */ }
+    try {
+      await storage.set(BUFFER_KEY_PREFIX + ctx, []);
+      await storage.set(EVENT_KEY_PREFIX + ctx, []);
+    } catch { /* skip */ }
   }
+}
+
+/** 事件 data 兜底脱敏：超长 / 形似 URL / selector / 路径的字符串替换为 length+hash 占位。 */
+function sanitizeEventData(data: Record<string, unknown>): Record<string, unknown> {
+  const looksSensitive = (s: string): boolean =>
+    s.length > 40 || /https?:\/\//i.test(s) || /[#.>[\]/]/.test(s);
+  const clean = (v: unknown): unknown => {
+    if (typeof v === 'string') return looksSensitive(v) ? redactString(v) : v;
+    if (Array.isArray(v)) return v.slice(0, 20).map(clean);
+    if (v && typeof v === 'object') {
+      const o: Record<string, unknown> = {};
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) o[k] = clean(val);
+      return o;
+    }
+    return v; // number / boolean / null / undefined
+  };
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) out[k] = clean(v);
+  return out;
 }
 
 // ---------------- sanitization ----------------
 
-function hashString(s: string): string {
+/** 稳定字符串 hash（8-hex）。导出供事件发射方对规则键等做无 PII 关联标识。 */
+export function hashString(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
     h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
@@ -261,10 +350,23 @@ export interface ReportOptions {
   includeEnv: boolean;
   includeSettings: boolean;
   includeStats: boolean;
+  /** 结构化事件 + 汇总（默认 true）。 */
+  includeEvents?: boolean;
+}
+
+/** 按事件 kind 的汇总（成功率 / 平均耗时），以及失败原因直方图。 */
+export interface DiagSummary {
+  byKind: Record<string, { total: number; ok: number; fail: number; avgMs: number }>;
+  /** 失败原因 → 次数（来自 slider/click/det 的 data.reason） */
+  failReasons: Record<string, number>;
+  /** 每上下文的日志/事件/错误计数 */
+  contexts: Record<string, { logs: number; events: number; errors: number }>;
+  totalEvents: number;
+  totalLogs: number;
 }
 
 export interface DiagnosticReport {
-  schema: 'Mieru-diag-v1';
+  schema: 'Mieru-diag-v1' | 'Mieru-diag-v2';
   generatedAt: string;
   app: { name: string; version: string; target: ReportTarget };
   env?: {
@@ -278,9 +380,12 @@ export interface DiagnosticReport {
   activeModel?: { id: string; size?: number; charsetsLength?: number; source?: string };
   stats?: unknown;
   logs?: LogEntry[];
+  events?: DiagEvent[];
+  summary?: DiagSummary;
   counts: {
     logs: number;
     truncatedLogs: boolean;
+    events?: number;
   };
 }
 
@@ -293,9 +398,43 @@ export interface ReportContributors {
   getStats?: () => Promise<any>;
 }
 
+/** 从事件 + 日志计算汇总。纯函数，analyzer 也可复用。 */
+export function computeSummary(events: DiagEvent[], logs: LogEntry[]): DiagSummary {
+  const byKind: DiagSummary['byKind'] = {};
+  const failReasons: DiagSummary['failReasons'] = {};
+  const contexts: DiagSummary['contexts'] = {};
+  const ctxOf = (c: string) => (contexts[c] ||= { logs: 0, events: 0, errors: 0 });
+
+  for (const e of events) {
+    const k = (byKind[e.kind] ||= { total: 0, ok: 0, fail: 0, avgMs: 0 });
+    k.total += 1;
+    if (e.ok === true) k.ok += 1;
+    else if (e.ok === false) k.fail += 1;
+    if (typeof e.ms === 'number') k.avgMs += e.ms;
+    if (e.ok === false || e.kind === 'error') {
+      const reason = (e.data?.reason as string) || (e.kind === 'error' ? 'error' : 'unknown');
+      failReasons[reason] = (failReasons[reason] || 0) + 1;
+    }
+    const cx = ctxOf(e.ctx);
+    cx.events += 1;
+    if (e.kind === 'error') cx.errors += 1;
+  }
+  for (const k of Object.values(byKind)) {
+    const withMs = k.total; // avgMs accumulated only where ms present; approximate over total
+    k.avgMs = withMs ? Math.round(k.avgMs / withMs) : 0;
+  }
+  for (const l of logs) {
+    const cx = ctxOf(l.ctx);
+    cx.logs += 1;
+    if (l.level === 'error') cx.errors += 1;
+  }
+  return { byKind, failReasons, contexts, totalEvents: events.length, totalLogs: logs.length };
+}
+
 export async function buildReport(opts: ReportOptions, c: ReportContributors): Promise<DiagnosticReport> {
+  const wantEvents = opts.includeEvents !== false;
   const report: DiagnosticReport = {
-    schema: 'Mieru-diag-v1',
+    schema: 'Mieru-diag-v2',
     generatedAt: new Date().toISOString(),
     app: { name: c.appName, version: c.appVersion, target: c.target },
     counts: { logs: 0, truncatedLogs: false },
@@ -332,11 +471,21 @@ export async function buildReport(opts: ReportOptions, c: ReportContributors): P
     catch (e) { report.stats = { _error: String(e) }; }
   }
 
+  let logsForSummary: LogEntry[] = [];
   if (opts.includeLogs) {
     const logs = await readAllLogs();
+    logsForSummary = logs;
     report.counts.logs = logs.length;
     report.counts.truncatedLogs = logs.length >= MAX_ENTRIES * KNOWN_CONTEXTS.length;
     report.logs = logs;
+  }
+
+  if (wantEvents) {
+    const events = await readAllEvents();
+    report.events = events;
+    report.counts.events = events.length;
+    // 汇总即便没勾选日志也计算（用已读到的 logs，可能为空）
+    report.summary = computeSummary(events, logsForSummary);
   }
 
   return report;

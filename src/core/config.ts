@@ -139,6 +139,8 @@ export const DEFAULT_CONFIG: OCRConfig = {
   imageContextMenuAutoFill: true,
   preserveFocus: false,
   deepScan: false,
+  // 文字点选检测模型默认走「订阅指定 / 远程下载」优先；用户上传本地模型后可在设置改为 'local'。
+  detModelPreference: 'auto',
 };
 
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {

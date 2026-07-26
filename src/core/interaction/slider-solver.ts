@@ -6,8 +6,15 @@
  * 这里不读配置——由 content.ts 在调用前 gate，保持本模块纯逻辑、可单测。
  */
 
-import { slideMatch, detectGapByColumnEdges, type ImageLike } from '../slide-detector';
-import { humanDragTrajectory } from './trajectory';
+import {
+  slideMatch,
+  detectGapByColumnEdges,
+  detectGapByBrightness,
+  fuseGapCandidates,
+  type GapCandidate,
+  type ImageLike,
+} from '../slide-detector';
+import { humanDragTrajectory, type DragProfile } from './trajectory';
 import { dragAlong } from './pointer';
 import type { DetectedCaptcha } from '../captcha-detector';
 
@@ -28,6 +35,8 @@ export interface SliderSolveOptions {
   minScore?: number;
   /** 缺口检测出的距离上叠加的修正（px），针对个别库的固定偏差。默认 0 */
   offset?: number;
+  /** 拖拽速度档位（来自规则 dragProfile），影响轨迹拟人程度。默认 'normal' */
+  profile?: DragProfile;
   onLog?: (msg: string) => void;
 }
 
@@ -73,20 +82,52 @@ export async function solveSlider(
   let gapXNative: number;
   let score: number;
   let method: string;
+
+  // 多算法缺口检测融合：模板匹配(NCC) + 列边缘 + 亮度梯度，各产出归一化候选后投票。
+  const marginX = Math.round(bg.width * 0.1);
+  const candidates: GapCandidate[] = [];
+  let pieceX = NaN;
+  let pieceScore = NaN;
   const piece = captcha.sliderPiece ? elementToImageData(captcha.sliderPiece) : null;
   if (piece) {
     const m = slideMatch(piece, bg);
-    gapXNative = m.x;
-    score = m.score;
-    method = m.method;
-    log(`slideMatch: x=${gapXNative}px score=${score.toFixed(3)} method=${method} (${m.elapsed.toFixed(0)}ms)`);
-    if (score < minScore) return fail('low-confidence', { gapX: gapXNative, score, method });
+    pieceX = m.x;
+    pieceScore = m.score;
+    candidates.push({ x: m.x, conf: Math.max(0, m.score), method: m.method, weight: 1.6 });
+    log(`slideMatch: x=${m.x}px score=${m.score.toFixed(3)} method=${m.method} (${m.elapsed.toFixed(0)}ms)`);
+  }
+  const ce = detectGapByColumnEdges(bg, marginX);
+  candidates.push({ x: ce.x, conf: ce.score, method: 'column-edge', weight: 1 });
+  const br = detectGapByBrightness(bg, marginX);
+  candidates.push({ x: br.x, conf: br.score, method: 'brightness', weight: 0.8 });
+
+  const tol = Math.max(6, Math.round(bg.width * 0.04));
+  const fused = fuseGapCandidates(candidates, tol);
+  log(`缺口候选: ${candidates.map((c) => `${c.method}@${Math.round(c.x)}(${c.conf.toFixed(2)})`).join(', ')}`
+    + ` → 融合 x=${fused ? Math.round(fused.x) : '?'} agree=${fused?.agree ?? 0}`);
+
+  if (piece && pieceScore >= minScore) {
+    // 模板匹配高置信：以其为准（最可靠），其余两路仅作记录/印证。
+    gapXNative = pieceX;
+    score = pieceScore;
+    method = 'template-match';
+  } else if (piece) {
+    // 模板匹配置信低：要求列边缘 + 亮度两路互相印证（agree≥2）才接受融合结果，否则放弃。
+    if (fused && fused.agree >= 2) {
+      gapXNative = fused.x;
+      score = pieceScore;
+      method = `fusion(${fused.method})`;
+      log(`模板匹配置信低(${pieceScore.toFixed(3)} < ${minScore})，改用多算法融合 x=${Math.round(fused.x)}`);
+    } else {
+      return fail('low-confidence', { gapX: pieceX, score: pieceScore, method: 'template-match' });
+    }
   } else {
-    const m = detectGapByColumnEdges(bg, Math.round(bg.width * 0.1));
-    gapXNative = m.x;
+    // 无滑块小图：用融合结果（不硬失败，沿用旧的列边缘兜底语义，但更稳）。
+    if (!fused) return fail('no-gap');
+    gapXNative = fused.x;
     score = NaN;
-    method = 'column-edge';
-    log(`无滑块小图，列边缘兜底: x=${gapXNative}px`);
+    method = `fusion(${fused.method})`;
+    log(`无滑块小图，多算法融合兜底: x=${Math.round(fused.x)} agree=${fused.agree}`);
   }
 
   // native px → 显示 px
@@ -117,8 +158,8 @@ export async function solveSlider(
 
   if (distance < 2) return fail('distance-too-small', { gapX: gapDisplayX, distance, score, method });
 
-  const traj = humanDragTrajectory(distance);
-  log(`拖拽轨迹点数=${traj.length}`);
+  const traj = humanDragTrajectory(distance, { profile: opts.profile });
+  log(`拖拽轨迹点数=${traj.length} 档位=${opts.profile ?? 'normal'}`);
   const finalX = await dragAlong(handle, traj);
   log(`拖拽完成，终点 clientX=${finalX.toFixed(1)}`);
 

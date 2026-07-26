@@ -25,8 +25,24 @@ export interface SubscriptionRulePackage {
   agreementSelectors?: string[];
   /** 站点黑名单 */
   siteBlacklist?: string[];
+  /** 文字点选检测模型（YOLOX）。订阅可指定直链下载地址 + 可选校验哈希；
+   *  当用户未显式选用本地模型（detModelPreference !== 'local'）时优先采用此模型。
+   *  检测模型不再随扩展内置（1.2.3 起），由订阅指定 / 用户上传 / 仓库镜像三选一提供。 */
+  detModel?: DetModelSpec;
   /** 元数据 */
   updatedAt?: number;
+}
+
+/** 订阅指定的检测模型描述。 */
+export interface DetModelSpec {
+  /** ONNX 模型直链下载地址（http/https） */
+  url: string;
+  /** 可选 sha256（hex），下载后校验，防篡改 */
+  sha256?: string;
+  /** 版本号，用于缓存失效判断（变化才重新下载） */
+  version?: string;
+  /** 显示名 */
+  name?: string;
 }
 
 export interface Subscription {
@@ -92,9 +108,22 @@ export function validateRulePackage(data: any): { valid: boolean; error?: string
     inputExcludeKeywords: Array.isArray(data.inputExcludeKeywords) ? data.inputExcludeKeywords.filter((s: any) => typeof s === 'string') : undefined,
     agreementSelectors: Array.isArray(data.agreementSelectors) ? data.agreementSelectors.filter((s: any) => typeof s === 'string') : undefined,
     siteBlacklist: Array.isArray(data.siteBlacklist) ? data.siteBlacklist.filter((s: any) => typeof s === 'string') : undefined,
+    detModel: validateDetModelSpec(data.detModel),
     updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : Date.now(),
   };
   return { valid: true, pkg };
+}
+
+/** 校验订阅里的 detModel 字段：url 必须是合法 http(s) 直链，其余可选。非法则返回 undefined（忽略）。 */
+function validateDetModelSpec(raw: any): DetModelSpec | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  if (typeof raw.url !== 'string' || !isValidSubscriptionUrl(raw.url)) return undefined;
+  return {
+    url: raw.url,
+    sha256: typeof raw.sha256 === 'string' ? raw.sha256.trim().toLowerCase() : undefined,
+    version: typeof raw.version === 'string' ? raw.version : undefined,
+    name: typeof raw.name === 'string' ? raw.name : undefined,
+  };
 }
 
 /**

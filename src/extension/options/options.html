@@ -339,6 +339,37 @@
             <label for="edit-rule-url" data-i18n="rules.fullUrl">完整URL匹配</label>
             <input type="text" id="edit-rule-url" data-i18n-placeholder="rules.fullUrl.placeholder" placeholder="留空则使用主机名匹配">
           </div>
+          <div class="form-group">
+            <label for="edit-rule-urlmatch">URL 匹配模式</label>
+            <select id="edit-rule-urlmatch">
+              <option value="">（自动推断）</option>
+              <option value="origin-path">origin+路径（忽略随机参数，推荐）</option>
+              <option value="prefix">路径前缀</option>
+              <option value="exact">含参数完全一致</option>
+              <option value="hostname">仅域名</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="edit-rule-matchquery">必须校验的 query 参数（逗号分隔，可空）</label>
+            <input type="text" id="edit-rule-matchquery" placeholder="例如: lang,step">
+          </div>
+          <div class="form-group">
+            <label>滑块/点选求解时机（毫秒，可空）</label>
+            <div style="display:flex;gap:8px;">
+              <input type="number" id="edit-rule-solvedelay" min="0" placeholder="命中后延迟" style="flex:1;">
+              <input type="number" id="edit-rule-retry" min="0" placeholder="重试间隔" style="flex:1;">
+              <input type="number" id="edit-rule-maxwait" min="0" placeholder="放弃阈值" style="flex:1;">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="edit-rule-dragprofile">滑块拖拽档位</label>
+            <select id="edit-rule-dragprofile">
+              <option value="">默认（normal）</option>
+              <option value="fast">fast（快）</option>
+              <option value="normal">normal（标准）</option>
+              <option value="cautious">cautious（谨慎/更拟人）</option>
+            </select>
+          </div>
           <div class="button-group">
             <button id="btn-save-edit-rule" class="btn btn-primary" data-i18n="rules.saveEdit">保存修改</button>
             <button id="btn-cancel-edit-rule" class="btn btn-secondary" data-i18n="common.cancel">取消</button>
@@ -437,6 +468,32 @@
             </div>
           </div>
           <button id="btn-upload-model" class="btn btn-primary" data-i18n="model.uploadBtn">上传</button>
+        </div>
+
+        <div class="card">
+          <h3>文字点选检测模型</h3>
+          <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">文字点选验证码所需的检测模型（YOLOX）。自 1.2.3 起不再随扩展内置，可上传本地模型或在线下载；订阅也可指定下载地址。</p>
+          <div id="det-model-status" style="font-size:13px;margin-bottom:12px;color:var(--text-secondary);"></div>
+          <div class="form-group">
+            <label>模型来源优先</label>
+            <select id="det-model-preference">
+              <option value="auto">自动（订阅指定 / 在线下载优先）</option>
+              <option value="local">优先使用本地上传模型</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>上传本地检测模型 (.onnx)</label>
+            <div class="file-picker">
+              <input type="file" id="det-model-file" accept=".onnx,application/octet-stream" class="file-picker-input">
+              <label for="det-model-file" class="btn btn-secondary file-picker-btn" data-i18n="common.chooseFile">选择文件</label>
+              <span class="file-picker-name" id="det-model-file-name" data-i18n="common.noFileChosen">未选择文件</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="btn-upload-det-model" class="btn btn-primary">上传本地模型</button>
+            <button id="btn-download-det-model" class="btn btn-secondary">下载默认模型</button>
+            <button id="btn-clear-det-model" class="btn btn-danger">清除</button>
+          </div>
         </div>
       </section>
 
@@ -611,6 +668,34 @@
             <button id="btn-import-config" class="btn btn-secondary" data-i18n="config.importConfig">导入配置</button>
             <button id="btn-reset-all" class="btn btn-danger" data-i18n="config.resetAll">重置所有设置</button>
           </div>
+        </div>
+
+        <div class="card">
+          <h3>诊断分析</h3>
+          <div class="hint" style="margin-bottom:10px;">本地启发式分析当前采集的诊断数据（或导入他人的报告 JSON），给出可能根因与修复建议。可选「AI 深度分析」会把<b>已脱敏</b>报告发送到你配置的端点。</div>
+          <div class="button-group">
+            <button id="btn-diag-analyze" class="btn btn-primary">分析当前数据</button>
+            <label for="diag-import-file" class="btn btn-secondary" style="margin:0;cursor:pointer;">导入报告分析</label>
+            <input type="file" id="diag-import-file" accept=".json,application/json" style="display:none;">
+          </div>
+          <div id="diag-analysis-result" style="margin-top:12px;"></div>
+
+          <details style="margin-top:16px;">
+            <summary style="cursor:pointer;font-weight:500;">AI 深度分析（可选，需配置端点）</summary>
+            <div class="hint" style="margin:8px 0;">apiKey 可留空（用于本地 OpenAI 兼容端点，如 Ollama / LM Studio）。点击后会把<b>已脱敏</b>报告发送到下方 baseURL。</div>
+            <div class="form-group">
+              <label>协议</label>
+              <select id="diag-ai-provider">
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI 兼容</option>
+              </select>
+            </div>
+            <div class="form-group"><label>baseURL</label><input type="text" id="diag-ai-baseurl" placeholder="https://api.anthropic.com"></div>
+            <div class="form-group"><label>API Key（可空）</label><input type="password" id="diag-ai-apikey" placeholder="留空则不发送鉴权头"></div>
+            <div class="form-group"><label>模型</label><input type="text" id="diag-ai-model" placeholder="claude-sonnet-4-6"></div>
+            <button id="btn-diag-ai" class="btn btn-primary">AI 深度分析</button>
+            <div id="diag-ai-result" style="margin-top:12px;"></div>
+          </details>
         </div>
 
         <div class="action-bar">

@@ -1,9 +1,34 @@
+# 依赖与构建产物
 node_modules/
 dist/
-LLM*
+
+# 日志 / 编辑器 / 本机状态
 *.log
 .DS_Store
 .vscode/
-benchmark*
-experiments/
+.idea/
 .playwright-mcp/
+.openclaude/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+
+# 基准测试产物（脚本在仓库，数据集与输出不入库）
+benchmark_dataset/
+benchmark_results/
+LLM*
+
+# 历史/本地实验目录
+experiments/
+
+# 本地点选检测模型（约 20MB，从 dist/userscript/ 或 release 拷贝）
+test/fixtures/*.onnx
+
+# 打包生成的浏览器 bundle（源码在，产物可重建）
+test/playground/playground.bundle.js
+tools/analyzer/analyzer.bundle.js
+
+# 系统杂项
+Thumbs.db
+Desktop.ini
+*.tmp
+*.swp

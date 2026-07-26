@@ -1,9 +1,16 @@
 {
   "name": "Mieru-OCR 订阅测试包",
-  "description": "用于回归测试订阅功能的示例规则包。涵盖 8 类规则：触发关键词 / 排除模式 / 协议关键词 / 输入排除 / 协议选择器 / 站点黑名单 / 站点规则 / 计算规则。配合 index.html 测试页一起使用。",
-  "version": "1.0.0",
+  "description": "用于回归测试订阅功能的示例规则包。涵盖 OCR 关键词类规则 + 滑块/点选交互规则（配合 playground）。",
+  "version": "1.2.0",
   "author": "Mieru-OCR Test Suite",
-  "updatedAt": 1762819200000,
+  "updatedAt": 1753056000000,
+
+  "detModel": {
+    "url": "http://localhost:8765/fixtures/common_det.onnx",
+    "sha256": "6faa8ea85a8c1a634e5050c4a138fca10f30194e0d7abbe9ade1fcd423af6ed6",
+    "version": "1.5.1",
+    "name": "common_det（本地测试）"
+  },
 
   "includeKeywords": [
     "subtestcap",
@@ -50,6 +57,72 @@
       "selector": "#sub-test-site-rule-captcha",
       "inputSelector": "#sub-test-site-rule-input",
       "submitSelector": "#sub-test-site-rule-submit"
+    },
+
+    "slider@localhost-playground": {
+      "hostname": "localhost",
+      "urlPattern": "http://localhost:8765/playground/",
+      "urlMatch": "prefix",
+      "subType": "slider",
+      "selector": "#gtSlider",
+      "solveDelayMs": 500,
+      "retryMs": 2000,
+      "maxWaitMs": 15000,
+      "dragProfile": "normal"
+    },
+    "slider@127-playground": {
+      "hostname": "127.0.0.1",
+      "urlPattern": "http://127.0.0.1:8765/playground/",
+      "urlMatch": "prefix",
+      "subType": "slider",
+      "selector": "#gtSlider",
+      "solveDelayMs": 500,
+      "retryMs": 2000,
+      "maxWaitMs": 15000,
+      "dragProfile": "normal"
+    },
+    "slider@localhost-playground-pop": {
+      "hostname": "localhost",
+      "urlPattern": "http://localhost:8765/playground/",
+      "urlMatch": "prefix",
+      "subType": "slider",
+      "selector": ".my-verify-box",
+      "solveDelayMs": 800,
+      "retryMs": 2000,
+      "maxWaitMs": 15000,
+      "dragProfile": "cautious"
+    },
+    "slider@127-playground-pop": {
+      "hostname": "127.0.0.1",
+      "urlPattern": "http://127.0.0.1:8765/playground/",
+      "urlMatch": "prefix",
+      "subType": "slider",
+      "selector": ".my-verify-box",
+      "solveDelayMs": 800,
+      "retryMs": 2000,
+      "maxWaitMs": 15000,
+      "dragProfile": "cautious"
+    },
+
+    "click@localhost-playground": {
+      "hostname": "localhost",
+      "urlPattern": "http://localhost:8765/playground/",
+      "urlMatch": "prefix",
+      "subType": "click-select",
+      "selector": "#csContainer",
+      "solveDelayMs": 600,
+      "retryMs": 2500,
+      "maxWaitMs": 20000
+    },
+    "click@127-playground": {
+      "hostname": "127.0.0.1",
+      "urlPattern": "http://127.0.0.1:8765/playground/",
+      "urlMatch": "prefix",
+      "subType": "click-select",
+      "selector": "#csContainer",
+      "solveDelayMs": 600,
+      "retryMs": 2500,
+      "maxWaitMs": 20000
     }
   },
 

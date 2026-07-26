@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mieru-OCR 诊断报告分析器</title>
+<style>
+  :root { --bg:#f5f5f7; --card:#fff; --line:#e4e4e7; --pri:#4A90E2; --ok:#10b981; --err:#ef4444; --muted:#71717a; --sec:#52525b; --bg2:#f8fbff; --bg3:#eef0fe; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f0f1a; --card:#1a1a2e; --line:#27272a; --muted:#a1a1aa; --sec:#a1a1aa; --bg2:#252540; --bg3:#252540; } body { color:#fff; } }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC",sans-serif; margin:0; padding:24px; background:var(--bg); color:#1a1a2e; }
+  .wrap { max-width:920px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 1px 4px rgba(0,0,0,.04); margin-bottom:18px; }
+  .card h2 { font-size:15px; margin:0 0 12px; }
+  #drop { border:2px dashed var(--line); border-radius:12px; padding:36px; text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  #drop.over, #drop:hover { border-color:var(--pri); color:var(--pri); background:var(--bg2); }
+  .hint { color:var(--muted); font-size:13px; }
+  .hint.err { color:var(--err); }
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; margin-bottom:10px; }
+  .metric { background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:10px; text-align:center; }
+  .metric .v { font-size:20px; font-weight:700; color:var(--pri); }
+  .metric .k { font-size:11px; color:var(--muted); margin-top:2px; }
+  .reasons { margin-bottom:10px; font-size:13px; }
+  .chip { display:inline-block; margin:2px 6px 2px 0; padding:2px 8px; border-radius:999px; background:var(--bg3); font-size:12px; }
+  .finding { border-left:3px solid var(--muted); padding:8px 12px; margin:8px 0; background:var(--bg2); border-radius:0 8px 8px 0; }
+  .ftitle { font-weight:600; }
+  .fdetail { font-size:13px; color:var(--sec); margin:4px 0; }
+  .fev { font-size:12px; color:var(--muted); font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .frec { font-size:13px; margin-top:4px; }
+  label { display:block; font-size:13px; margin:10px 0 4px; }
+  input, select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:inherit; font-size:13px; }
+  button { margin-top:12px; padding:8px 16px; border:none; border-radius:8px; background:var(--pri); color:#fff; cursor:pointer; font-size:13px; }
+  button:hover { filter:brightness(1.05); }
+  .ai-out { white-space:pre-wrap; word-break:break-word; font-family:inherit; font-size:13px; line-height:1.6; background:var(--bg2); padding:12px; border-radius:8px; margin:12px 0 0; }
+  details summary { cursor:pointer; }
+  .priv { font-size:12px; color:var(--muted); margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mieru-OCR 诊断报告分析器</h1>
+  <div class="sub">纯离线：拖入或选择一个 <code>Mieru-diag-*.json</code> 报告，本地启发式分析可能根因与修复建议。可选 AI 深度分析（需自配端点）。</div>
+
+  <div class="card">
+    <div id="drop">把诊断报告 JSON 拖到这里，或点击选择文件</div>
+    <input type="file" id="file" accept=".json,application/json" style="display:none">
+  </div>
+
+  <div class="card">
+    <h2>分析结果</h2>
+    <div id="result"><div class="hint">尚未加载报告。</div></div>
+  </div>
+
+  <div class="card" id="ai-section" style="display:none">
+    <h2>AI 深度分析（可选）</h2>
+    <div class="hint">apiKey 可留空（用于本地 OpenAI 兼容端点，如 Ollama / LM Studio）。默认支持 Anthropic(Claude) 与 OpenAI 协议。</div>
+    <label>协议</label>
+    <select id="ai-provider">
+      <option value="anthropic">Anthropic (Claude)</option>
+      <option value="openai">OpenAI 兼容</option>
+    </select>
+    <label>baseURL</label>
+    <input type="text" id="ai-baseurl" placeholder="https://api.anthropic.com">
+    <label>API Key（可空）</label>
+    <input type="password" id="ai-apikey" placeholder="留空则不发送鉴权头">
+    <label>模型</label>
+    <input type="text" id="ai-model" placeholder="claude-sonnet-4-6">
+    <button id="btn-ai">AI 深度分析</button>
+    <div class="priv">⚠️ 点击后会把<b>已脱敏</b>的报告发送到上方 baseURL，请确认你信任该端点。</div>
+    <div id="ai-result"></div>
+  </div>
+
+  <div class="sub">配置仅存于本浏览器 localStorage，报告不上传到任何第三方（除非你主动点「AI 深度分析」）。</div>
+</div>
+<script type="module" src="./analyzer.bundle.js"></script>
+</body>
+</html>

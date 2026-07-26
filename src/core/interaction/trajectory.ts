@@ -14,44 +14,77 @@ export interface TrajectoryStep {
   dt: number;
 }
 
+/** 拖拽速度档位：影响轨迹时长 / 抖动幅度 / 过冲量。规则可通过 SiteRule.dragProfile 指定。 */
+export type DragProfile = 'fast' | 'normal' | 'cautious';
+
+interface ProfileParams {
+  maxVelocity: number;
+  accelBase: number;
+  accelRand: number;
+  decelBase: number;
+  decelRand: number;
+  jitterX: number;
+  jitterY: number;
+  overshoot: number;
+  dtBase: number;
+  dtRand: number;
+}
+
+function profileParams(profile: DragProfile): ProfileParams {
+  switch (profile) {
+    case 'fast':
+      return { maxVelocity: 12, accelBase: 0.8, accelRand: 0.7, decelBase: 0.5, decelRand: 0.5, jitterX: 1.5, jitterY: 2, overshoot: 2, dtBase: 12, dtRand: 6 };
+    case 'cautious':
+      return { maxVelocity: 5, accelBase: 0.35, accelRand: 0.35, decelBase: 0.2, decelRand: 0.3, jitterX: 2.5, jitterY: 4, overshoot: 6, dtBase: 22, dtRand: 16 };
+    case 'normal':
+    default:
+      return { maxVelocity: 8, accelBase: 0.5, accelRand: 0.5, decelBase: 0.3, decelRand: 0.4, jitterX: 2, jitterY: 3, overshoot: 3, dtBase: 16, dtRand: 10 };
+  }
+}
+
 /**
- * 生成到目标距离 distance 的拖拽轨迹。
+ * 生成到目标距离 distance 的拖拽轨迹（加速 → 减速 → 过冲回拉微调 + 手抖）。
  * @param distance 目标水平位移（px）
- * @param rand 可注入的随机源（默认 Math.random），便于测试可复现。
+ * @param opts.profile 速度档位（默认 'normal'）；opts.rand 可注入随机源便于测试复现。
  */
-export function humanDragTrajectory(distance: number, rand: () => number = Math.random): TrajectoryStep[] {
-  const steps: { x: number; dt: number }[] = [];
+export function humanDragTrajectory(
+  distance: number,
+  opts: { profile?: DragProfile; rand?: () => number } = {},
+): TrajectoryStep[] {
+  const rand = opts.rand ?? Math.random;
+  const p = profileParams(opts.profile ?? 'normal');
   if (distance <= 0) return [{ x: 0, y: 0, dt: 16 }];
 
+  const steps: { x: number; dt: number }[] = [];
   let current = 0;
   let velocity = 0;
-  const maxVelocity = 8;
   const accelerationPhase = distance * 0.6;
 
   // 第一阶段：加速
   while (current < accelerationPhase) {
-    velocity = Math.min(velocity + 0.5 + rand() * 0.5, maxVelocity);
+    velocity = Math.min(velocity + p.accelBase + rand() * p.accelRand, p.maxVelocity);
     current += velocity;
-    steps.push({ x: current, dt: 16 + rand() * 8 });
+    steps.push({ x: current, dt: p.dtBase + rand() * p.dtRand });
   }
 
   // 第二阶段：减速
   while (current < distance - 5) {
-    velocity = Math.max(velocity - (0.3 + rand() * 0.4), 1);
+    velocity = Math.max(velocity - (p.decelBase + rand() * p.decelRand), 1);
     current += velocity;
-    steps.push({ x: current, dt: 16 + rand() * 12 });
+    steps.push({ x: current, dt: p.dtBase + rand() * (p.dtRand + 2) });
   }
 
-  // 第三阶段：微调（人类常见行为：超出后回退到位）
-  current = Math.min(current, distance + 3);
-  steps.push({ x: current, dt: 50 + rand() * 30 });
-  steps.push({ x: distance - 1, dt: 80 + rand() * 40 });
-  steps.push({ x: distance, dt: 60 + rand() * 30 });
+  // 第三阶段：过冲后回拉到位（人类常见行为），过冲幅度随档位变化
+  const over = distance + p.overshoot * (0.5 + rand() * 0.8);
+  steps.push({ x: over, dt: 40 + rand() * 30 });
+  steps.push({ x: distance + 1, dt: 60 + rand() * 30 });
+  steps.push({ x: distance - 1, dt: 70 + rand() * 40 });
+  steps.push({ x: distance, dt: 50 + rand() * 30 });
 
-  // 叠加手抖
+  // 叠加手抖（幅度按档位）
   return steps.map((s) => ({
-    x: Math.max(0, s.x + (rand() - 0.5) * 2),
-    y: (rand() - 0.5) * 3,
+    x: Math.max(0, s.x + (rand() - 0.5) * p.jitterX),
+    y: (rand() - 0.5) * p.jitterY,
     dt: s.dt,
   }));
 }

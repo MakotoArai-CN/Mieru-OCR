@@ -291,13 +291,11 @@ async function selectCaptcha(): Promise<void> {
 
       showToast(t('popup.captchaRuleSaved'), 'success');
 
-      // 交互式（滑块/点选）规则：对应辅助开关未开时提示去设置开启，否则命中也不会自动求解。
+      // 交互式（滑块/点选）规则：1.2.3 起由「命中规则自动求解」(autoSolveOnRule) 授权，
+      // 不再看 enable*Assist 开关。仅当自动求解被显式关闭时提示。
       if (response.subType) {
         const settings = (await chrome.storage.local.get('settings')).settings || {};
-        const assistOn = response.subType === 'slider'
-          ? (settings.enableSliderPuzzleAssist || settings.enableSingleSliderAssist)
-          : settings.enableClickSelectAssist;
-        if (!assistOn) showToast(t('popup.assistOffHint'), 'info');
+        if (settings.autoSolveOnRule === false) showToast(t('popup.assistOffHint'), 'info');
       }
 
       updateReadyStatus();

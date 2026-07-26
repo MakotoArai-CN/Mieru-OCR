@@ -1,9 +1,16 @@
 {
   "name": "Mieru-OCR 公共订阅示例",
-  "description": "包含常见网站的验证码识别规则与关键词补充。这是一个示例订阅，演示订阅规则包格式。",
-  "version": "1.0.0",
+  "description": "演示订阅规则包格式：OCR / 滑块 / 文字点选规则、URL 匹配、扫描时机、检测模型直链。",
+  "version": "1.1.0",
   "author": "MakotoArai-CN",
   "updatedAt": 1735689600000,
+
+  "detModel": {
+    "url": "https://your-cdn.example.com/common_det.onnx",
+    "sha256": "6faa8ea85a8c1a634e5050c4a138fca10f30194e0d7abbe9ade1fcd423af6ed6",
+    "version": "1.5.1",
+    "name": "common_det（订阅指定；1.2.3 起不内置，请自托管直链）"
+  },
 
   "siteRules": {
     "example.com": {
@@ -12,11 +19,34 @@
       "inputSelector": "input[name='captcha']",
       "submitSelector": "button[type='submit']"
     },
-    "https://login.example.org": {
+    "https://login.example.org/login": {
       "hostname": "login.example.org",
-      "fullUrl": "https://login.example.org/login",
+      "urlPattern": "https://login.example.org/login",
+      "urlMatch": "origin-path",
       "selector": "#captcha-img",
       "inputSelector": "#captcha-input"
+    },
+    "slider@demo.example.com": {
+      "hostname": "demo.example.com",
+      "urlPattern": "https://demo.example.com/verify",
+      "urlMatch": "prefix",
+      "subType": "slider",
+      "selector": ".geetest_box",
+      "solveDelayMs": 800,
+      "retryMs": 2500,
+      "maxWaitMs": 15000,
+      "dragProfile": "cautious"
+    },
+    "click@demo.example.com": {
+      "hostname": "demo.example.com",
+      "fullUrl": "https://demo.example.com/account/login?lang=ja",
+      "urlMatch": "origin-path",
+      "matchQuery": ["lang"],
+      "subType": "click-select",
+      "selector": ".point-captcha-panel",
+      "solveDelayMs": 600,
+      "retryMs": 3000,
+      "maxWaitMs": 20000
     }
   },
 
@@ -29,34 +59,10 @@
     }
   ],
 
-  "includeKeywords": [
-    "verifyimg",
-    "vimg",
-    "captchaCode"
-  ],
-
-  "excludePatterns": [
-    "qrcode",
-    "thumbnail"
-  ],
-
-  "agreementKeywords": [
-    "agree-to-terms",
-    "user-agreement-checkbox"
-  ],
-
-  "inputExcludeKeywords": [
-    "captcha-mobile",
-    "captcha-email"
-  ],
-
-  "agreementSelectors": [
-    "#agreeTos",
-    ".terms-checkbox input"
-  ],
-
-  "siteBlacklist": [
-    "https://example.com/no-captcha-page",
-    "*.banned-site.com"
-  ]
+  "includeKeywords": ["verifyimg", "vimg", "captchaCode"],
+  "excludePatterns": ["qrcode", "thumbnail"],
+  "agreementKeywords": ["agree-to-terms", "user-agreement-checkbox"],
+  "inputExcludeKeywords": ["captcha-mobile", "captcha-email"],
+  "agreementSelectors": ["#agreeTos", ".terms-checkbox input"],
+  "siteBlacklist": ["https://example.com/no-captcha-page", "*.banned-site.com"]
 }

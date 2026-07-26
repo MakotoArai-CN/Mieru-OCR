@@ -1,6 +1,7 @@
 import { OCREngine } from '@core/ocr-engine';
 import { AutoFill } from '@core/auto-fill';
 import { CONSTANTS, Logger } from '@core/config';
+import { pushEvent } from '@core/diagnostics';
 import { Calculator } from '@core/calculator';
 import { CaptchaDetector, type DetectedCaptcha, type GuessedElement } from '@core/captcha-detector';
 import { solveSlider } from '@core/interaction/slider-solver';
@@ -278,7 +279,9 @@ class AutoDetector {
   private startIntervalCheck(): void {
     this.checkInterval = window.setInterval(() => {
       void this.maybeAssistCloudflare();
-      const captchas = this.detector.scan();
+      // userscript 沿用交互式盲扫（滑块/点选仍受用户开关 gate）。扩展侧已改为订阅/规则驱动，
+      // 故盲扫在 scan() 里默认关闭，这里显式开启。订阅化的 userscript 交互式列为后续跟进。
+      const captchas = this.detector.scan({ includeInteractive: true });
       if (!captchas || captchas.length === 0) return;
       for (const c of captchas) {
         if (this.hasElementChanged(c.element)) {
@@ -643,9 +646,20 @@ class AutoDetector {
         Logger.warn('滑块辅助未执行:', res.reason ?? res);
       }
       this.setInteractiveCooldown(captcha.element, res.success);
+      pushEvent('slider', {
+        ok: res.success,
+        ms: Date.now() - startTime,
+        data: {
+          reason: res.reason,
+          score: Number.isFinite(res.score) ? Math.round(res.score * 1000) / 1000 : undefined,
+          distance: Math.round(res.distance),
+          method: res.method,
+        },
+      });
     } catch (error) {
       Logger.error('滑块辅助异常:', error);
       this.setInteractiveCooldown(captcha.element, false);
+      pushEvent('error', { data: { where: 'slider', message: String((error as Error)?.message || error) } });
       this.eventEmitter?.emit('recognize:error', { element: captcha.element, error: error as Error });
     } finally {
       this.processingElements.delete(captcha.element);
@@ -686,9 +700,11 @@ class AutoDetector {
         Logger.warn('文字点选辅助未执行:', res.reason ?? res);
       }
       this.setInteractiveCooldown(captcha.element, res.success);
+      pushEvent('click', { ok: res.success, ms: Date.now() - startTime, data: { reason: res.reason, detReady: true } });
     } catch (error) {
       Logger.error('文字点选辅助异常:', error);
       this.setInteractiveCooldown(captcha.element, false);
+      pushEvent('error', { data: { where: 'click-select', message: String((error as Error)?.message || error) } });
       this.eventEmitter?.emit('recognize:error', { element: captcha.element, error: error as Error });
     } finally {
       this.processingElements.delete(captcha.element);

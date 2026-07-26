@@ -401,6 +401,7 @@ export function slideMatch(
 /**
  * 单图缺口检测（无独立滑块小图时的兜底）：在背景图上按列扫描边缘能量，
  * 找出最可能是缺口的横坐标。精度低于 slideMatch，仅在拿不到 piece 时使用。
+ * score 归一化到 0..1（峰值列能量相对区间均值的突出度），供多算法融合加权。
  */
 export function detectGapByColumnEdges(bgImgData: ImageLike, marginX = 0): { x: number; score: number } {
   const gray = toGray(bgImgData);
@@ -413,9 +414,89 @@ export function detectGapByColumnEdges(bgImgData: ImageLike, marginX = 0): { x: 
     colEnergy[x] = s;
   }
   // 跳过最左侧 marginX（滑块初始位置通常带强边缘），取能量最高的列作为缺口左缘
-  let bestX = marginX, best = -1;
+  let bestX = marginX, best = -1, total = 0, span = 0;
   for (let x = Math.max(marginX, 2); x < w - 2; x++) {
+    total += colEnergy[x];
+    span++;
     if (colEnergy[x] > best) { best = colEnergy[x]; bestX = x; }
   }
-  return { x: bestX, score: best };
+  const mean = span > 0 ? total / span : 0;
+  const score = mean > 1e-6 ? Math.max(0, Math.min(1, best / (mean * 6))) : 0;
+  return { x: bestX, score };
+}
+
+/**
+ * 单图缺口检测（亮度梯度法）：与 detectGapByColumnEdges 的 Canny 边缘能量互补——
+ * 看「列平均亮度的横向突变」，缺口边界处亮度梯度大。作为多算法融合的第三路。
+ * score 同样归一化到 0..1。
+ */
+export function detectGapByBrightness(bgImgData: ImageLike, marginX = 0): { x: number; score: number } {
+  const gray = toGray(bgImgData);
+  const { data, width: w, height: h } = gray;
+  const colMean = new Float32Array(w);
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let y = 0; y < h; y++) s += data[y * w + x];
+    colMean[x] = s / Math.max(1, h);
+  }
+  const grad = new Float32Array(w);
+  for (let x = 1; x < w; x++) grad[x] = Math.abs(colMean[x] - colMean[x - 1]);
+  let bestX = marginX, best = -1, total = 0, span = 0;
+  for (let x = Math.max(marginX, 2); x < w - 2; x++) {
+    const e = grad[x - 1] + grad[x] + grad[x + 1]; // 3 列窗口聚合，抗单列噪声
+    total += e;
+    span++;
+    if (e > best) { best = e; bestX = x; }
+  }
+  const mean = span > 0 ? total / span : 0;
+  const score = mean > 1e-6 ? Math.max(0, Math.min(1, best / (mean * 6))) : 0;
+  return { x: bestX, score };
+}
+
+export interface GapCandidate {
+  /** 缺口横坐标（背景图 native px） */
+  x: number;
+  /** 该方法的归一化置信度 0..1 */
+  conf: number;
+  method: string;
+  /** 方法权重（模板匹配最高） */
+  weight?: number;
+}
+
+export interface FusedGap {
+  x: number;
+  /** 聚合置信度（簇内加权和） */
+  conf: number;
+  method: string;
+  /** 落在容差内、彼此印证的候选数 */
+  agree: number;
+}
+
+/**
+ * 多算法缺口融合：把各方法的候选按横坐标聚类，取「加权置信度之和」最高的簇，
+ * 返回簇内加权平均横坐标。多个方法在邻近 x 互相印证时综合置信度更高（投票），
+ * 单算法的偶发误判被其余方法稀释。
+ */
+export function fuseGapCandidates(cands: GapCandidate[], tolerance = 8): FusedGap | null {
+  const valid = cands.filter((c) => Number.isFinite(c.x) && c.x >= 0);
+  if (valid.length === 0) return null;
+  let best: FusedGap | null = null;
+  for (const anchor of valid) {
+    let wx = 0, wsum = 0, agree = 0;
+    const methods: string[] = [];
+    for (const c of valid) {
+      if (Math.abs(c.x - anchor.x) <= tolerance) {
+        const wgt = (c.weight ?? 1) * Math.max(0.05, c.conf);
+        wx += c.x * wgt;
+        wsum += wgt;
+        agree++;
+        methods.push(c.method);
+      }
+    }
+    const cx = wsum > 0 ? wx / wsum : anchor.x;
+    if (!best || wsum > best.conf) {
+      best = { x: cx, conf: wsum, method: methods.join('+'), agree };
+    }
+  }
+  return best;
 }

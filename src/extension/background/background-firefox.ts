@@ -4,7 +4,9 @@ import { DetectionEngine } from '@core/detection-engine';
 import { labelBoxesWithEngines, decodeDataURLToImage } from '@core/interaction/click-select-solver';
 import type { ExtensionSettings } from '@core/types';
 import { autoUpdateSubscriptions } from '../subscription-manager';
-import { BUILTIN_MODEL_ID, getActiveModelId, getModelData } from '../model-store';
+import { BUILTIN_MODEL_ID, getActiveModelId, getModelData, getDetModelData } from '../model-store';
+import { ensureDetModel } from '../det-model';
+import { recordAttempt, backoffCooldownMs, type RuleStat, type RuleStatsMap } from '@core/rule-stats';
 
 const SUBSCRIPTION_ALARM_NAME = 'Mieru-subscription-update';
 
@@ -144,9 +146,11 @@ async function getOCREngine(): Promise<OCREngine> {
  * Detection engine (ddddocr common_det.onnx, YOLOX), lazily built in this
  * background page. MV2 has no offscreen document, so detection + OCR labeling
  * both run here. Threads stay at the OCR engine's setting (1) — see
- * DetectionEngineOptions.numThreads. The model is a fixed bundled asset.
+ * DetectionEngineOptions.numThreads.
+ *
+ * 1.2.3 起检测模型不再随扩展内置——先 ensureDetModel 按优先级（本地上传 > 订阅指定 >
+ * 仓库镜像）provisioning 写入 IndexedDB，再从 IndexedDB 读取。
  */
-const DETECTION_MODEL_FILE = 'common_det.onnx';
 let detectionEngine: DetectionEngine | null = null;
 let detectionEngineInit: Promise<DetectionEngine> | null = null;
 
@@ -158,9 +162,14 @@ async function getDetectionEngine(): Promise<DetectionEngine> {
     const ort = await loadOrt();
     const engine = new DetectionEngine({
       getModel: async () => {
-        const res = await fetch(browser.runtime.getURL(DETECTION_MODEL_FILE));
-        if (!res.ok) throw new Error(`检测模型 ${DETECTION_MODEL_FILE} 加载失败 (HTTP ${res.status})`);
-        return { model: await res.arrayBuffer() };
+        let model = await getDetModelData();
+        if (!model) {
+          const res = await ensureDetModel();
+          if (!res.ready) throw new Error(res.reason || 'DET_NOT_PROVISIONED');
+          model = await getDetModelData();
+        }
+        if (!model) throw new Error('DET_NOT_PROVISIONED');
+        return { model };
       },
       getOrt: async () => ort,
       wasmPaths: browser.runtime.getURL('/'),
@@ -176,6 +185,12 @@ async function getDetectionEngine(): Promise<DetectionEngine> {
     detectionEngineInit = null; // allow retry
     throw e;
   }
+}
+
+/** 检测模型被重新下载 / 上传 / 清除后，丢弃缓存引擎，下次 detect 时重建。 */
+function invalidateDetectionEngine(): void {
+  detectionEngine = null;
+  detectionEngineInit = null;
 }
 
 browser.runtime.onInstalled.addListener((details: any) => {
@@ -342,6 +357,19 @@ async function handleMessage(
         break;
       case 'clearStats':
         await handleClearStats(sendResponse);
+        break;
+      case 'ensureDetModel':
+        await handleEnsureDetModel(sendResponse);
+        break;
+      case 'detModelChanged':
+        invalidateDetectionEngine();
+        sendResponse({ success: true });
+        break;
+      case 'getRuleStat':
+        await handleGetRuleStat(message, sendResponse);
+        break;
+      case 'recordRuleAttempt':
+        await handleRecordRuleAttempt(message, sendResponse);
         break;
       default:
         sendResponse({ success: false, error: '未知操作: ' + message.action });
@@ -619,6 +647,45 @@ async function handleClearStats(sendResponse: (response: any) => void): Promise<
   sendResponse({ success: true });
 }
 
+/**
+ * content 在点选求解前调用：按优先级 provisioning 检测模型（本地/订阅/镜像）。
+ * Firefox 无 offscreen，模型与引擎都在本页；changed 时丢弃缓存引擎以加载新模型。
+ */
+async function handleEnsureDetModel(sendResponse: (response: any) => void): Promise<void> {
+  try {
+    const res = await ensureDetModel();
+    if (res.changed) invalidateDetectionEngine();
+    sendResponse({ success: res.ready, ...res });
+  } catch (e) {
+    sendResponse({ success: false, ready: false, reason: (e as Error).message });
+  }
+}
+
+async function handleGetRuleStat(message: any, sendResponse: (response: any) => void): Promise<void> {
+  try {
+    const result = await browser.storage.local.get('ruleStats');
+    const map: RuleStatsMap = result?.ruleStats || {};
+    sendResponse({ success: true, stat: map[message.ruleKey] || null });
+  } catch (e) {
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
+/** 记录一次规则求解结果，返回更新后的 stat 与建议冷却（含指数退避）。 */
+async function handleRecordRuleAttempt(message: any, sendResponse: (response: any) => void): Promise<void> {
+  try {
+    const { ruleKey, success } = message as { ruleKey: string; success: boolean };
+    const result = await browser.storage.local.get('ruleStats');
+    const map: RuleStatsMap = result?.ruleStats || {};
+    const updated: RuleStat = recordAttempt(map[ruleKey], !!success, Date.now());
+    map[ruleKey] = updated;
+    await browser.storage.local.set({ ruleStats: map });
+    sendResponse({ success: true, stat: updated, cooldownMs: backoffCooldownMs(!!success, updated) });
+  } catch (e) {
+    sendResponse({ success: false, error: (e as Error).message });
+  }
+}
+
 function getDefaultSettings(): ExtensionSettings {
   return {
     autoDetect: true,
@@ -668,6 +735,7 @@ function getDefaultSettings(): ExtensionSettings {
     imageContextMenuAutoFill: true,
     preserveFocus: false,
     deepScan: false,
+    detModelPreference: 'auto',
   };
 }
 
