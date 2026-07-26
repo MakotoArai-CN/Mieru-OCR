@@ -146,7 +146,7 @@ function installSliderBehavior(): void {
 const detector = new CaptchaDetector();
 
 function doDetect(): void {
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   logTo('sliderLog', `--- 检测 ---`, 'dim');
   logTo('sliderLog', `CaptchaDetector.scan() 返回 ${captchas.length} 个候选`);
   const slider = captchas.find((c) => c.subType === 'slider');
@@ -163,7 +163,7 @@ function doDetect(): void {
 async function doSolve(): Promise<void> {
   renderPuzzle();
   await new Promise((r) => setTimeout(r, 100)); // 等 DOM 复位
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   const slider = captchas.find((c) => c.subType === 'slider');
   if (!slider) { logTo('sliderLog', '未检测到 slider，无法求解', 'err'); return; }
   logTo('sliderLog', `--- 自动求解 (真值缺口 x=${truth.gapX}px) ---`, 'dim');
@@ -245,11 +245,13 @@ async function getEngines(): Promise<{ ocr: OCREngine; det: DetectionEngine }> {
   if (!detEngine) {
     logTo('csLog', '初始化检测引擎 (common_det.onnx)…', 'dim');
     detEngine = new DetectionEngine({
-      getModel: async () => ({ model: await (await fetch('/public/common_det.onnx')).arrayBuffer() }),
+      // 1.2.3 起 det 模型不内置 public/；本地测试从 test/fixtures 提供
+      getModel: async () => ({ model: await (await fetch('/fixtures/common_det.onnx')).arrayBuffer() }),
       getOrt: async () => ort,
       wasmPaths: WASM,
       numThreads: 1,
     });
+
     await detEngine.init();
   }
   return { ocr: ocrEngine, det: detEngine };
@@ -314,7 +316,7 @@ function renderClickSelect(): void {
 }
 
 function doDetectCS(): void {
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   logTo('csLog', '--- 检测 ---', 'dim');
   const cs = captchas.find((c) => c.subType === 'click-select');
   if (!cs) {
@@ -331,7 +333,7 @@ function doDetectCS(): void {
 async function doSolveCS(): Promise<{ ok: boolean; correct: number; total: number; reason?: string }> {
   clearMarkers();
   const total = csOrder.length;
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   const cs = captchas.find((c) => c.subType === 'click-select');
   if (!cs) { logTo('csLog', '未检测到 click-select，无法求解', 'err'); return { ok: false, correct: 0, total, reason: 'no-detect' }; }
 
@@ -433,6 +435,133 @@ async function doAssistCF(): Promise<void> {
 }
 
 // ────────────── 初始化 ──────────────
+// ────────────── 弹出式 + 自定义命名滑块（结构化检测回归）──────────────
+// 容器 class 不含任何 SLIDER_KEYWORDS，点击后延迟 append 到 body，模拟「后续弹出的滑块」。
+// 验证 scanStructuralSliders：靠 手柄([draggable]) + canvas + 横向轨道形态 识别，与关键词无关。
+let popTruth: PuzzleTruth = { gapX: 0, gapY: 0 };
+let popBox: HTMLElement | null = null;
+
+function buildPopupSlider(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'my-verify-box'; // 故意不含任何 SLIDER_KEYWORDS
+  box.style.cssText =
+    'position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:99999;' +
+    'background:#fff;padding:14px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:340px;';
+
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;width:320px;height:160px;';
+  const bg = document.createElement('canvas');
+  bg.width = BG_W; bg.height = BG_H;
+  bg.style.cssText = 'display:block;border-radius:8px;';
+  const slice = document.createElement('canvas');
+  slice.width = TPL; slice.height = BG_H;
+  slice.style.cssText = 'position:absolute;top:0;left:0;';
+  stage.append(bg, slice);
+
+  const track = document.createElement('div');
+  track.style.cssText = 'position:relative;width:320px;height:40px;background:#eef0f3;border-radius:20px;margin-top:12px;';
+  const grip = document.createElement('div');
+  // 手柄：无 handle/knob 等关键词 class，靠 draggable + cursor:grab 被结构化检测发现。
+  grip.className = 'vb-grip';
+  grip.setAttribute('draggable', 'true');
+  grip.textContent = '⇢';
+  grip.style.cssText =
+    'position:absolute;top:0;left:0;width:40px;height:40px;background:#fff;border:1px solid #d8dbe0;' +
+    'border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,.15);cursor:grab;display:flex;align-items:center;justify-content:center;';
+  // 浏览器对 draggable 元素默认会启动原生拖拽，会吞掉 pointer/mouse 事件——禁掉以保留行为。
+  grip.addEventListener('dragstart', (e) => e.preventDefault());
+  track.appendChild(grip);
+
+  box.append(stage, track);
+
+  // 画拼图（与 renderPuzzle 同口径）
+  const gapX = 90 + Math.floor(Math.random() * (BG_W - TPL - 110));
+  const gapY = Math.floor((BG_H - TPL) / 2 + (Math.random() - 0.5) * 30);
+  const bctx = bg.getContext('2d')!;
+  const grad = bctx.createLinearGradient(0, 0, BG_W, BG_H);
+  grad.addColorStop(0, '#f7971e'); grad.addColorStop(1, '#d6336c');
+  bctx.fillStyle = grad; bctx.fillRect(0, 0, BG_W, BG_H);
+  for (let i = 0; i < 80; i++) {
+    bctx.fillStyle = `rgba(255,255,255,${0.05 + Math.random() * 0.25})`;
+    bctx.beginPath();
+    bctx.arc(Math.random() * BG_W, Math.random() * BG_H, 3 + Math.random() * 16, 0, Math.PI * 2);
+    bctx.fill();
+  }
+  const sctx = slice.getContext('2d')!;
+  sctx.clearRect(0, 0, TPL, BG_H);
+  sctx.save(); sctx.translate(0, gapY); puzzlePath(sctx, TPL, TPL); sctx.clip();
+  sctx.drawImage(bg, gapX, gapY, TPL, TPL, 0, 0, TPL, TPL); sctx.restore();
+  bctx.save(); bctx.translate(gapX, gapY); puzzlePath(bctx, TPL, TPL);
+  bctx.fillStyle = 'rgba(0,0,0,0.5)'; bctx.fill();
+  bctx.strokeStyle = 'rgba(0,0,0,0.85)'; bctx.lineWidth = 2; bctx.stroke(); bctx.restore();
+  popTruth = { gapX, gapY };
+
+  // 拖拽行为（pointer + mouse 双监听，与 pointer.ts 对齐）
+  const maxX = 320 - 40;
+  let dragging = false, startX = 0, curLeft = 0;
+  const onDown = (x: number) => { dragging = true; startX = x - curLeft; grip.style.cursor = 'grabbing'; };
+  const onMove = (x: number) => {
+    if (!dragging) return;
+    curLeft = Math.max(0, Math.min(maxX, x - startX));
+    grip.style.left = curLeft + 'px';
+    slice.style.left = curLeft + 'px';
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false; grip.style.cursor = 'grab';
+    const err = Math.abs(curLeft - popTruth.gapX);
+    logTo('popLog', `释放：落点=${curLeft.toFixed(1)}px 真值=${popTruth.gapX}px 误差=${err.toFixed(1)}px → ${err <= 6 ? '✓ 通过' : '✗ 失败'}`, err <= 6 ? 'ok' : 'err');
+  };
+  grip.addEventListener('pointerdown', (e) => onDown((e as PointerEvent).clientX));
+  grip.addEventListener('mousedown', (e) => onDown((e as MouseEvent).clientX));
+  document.addEventListener('pointermove', (e) => onMove((e as PointerEvent).clientX));
+  document.addEventListener('mousemove', (e) => onMove((e as MouseEvent).clientX));
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('mouseup', onUp);
+
+  return box;
+}
+
+function popShow(): void {
+  popClose();
+  logTo('popLog', '点击后 600ms 将弹出自定义命名滑块（不含关键词）…', 'dim');
+  window.setTimeout(() => {
+    popBox = buildPopupSlider();
+    document.body.appendChild(popBox);
+    logTo('popLog', `已弹出 .my-verify-box（缺口真值 x=${popTruth.gapX}px）。点「检测」看 scanStructuralSliders 是否命中。`, 'ok');
+  }, 600);
+}
+
+function popClose(): void {
+  if (popBox) { popBox.remove(); popBox = null; }
+}
+
+function popDetect(): void {
+  logTo('popLog', '--- 检测 ---', 'dim');
+  if (!popBox) { logTo('popLog', '请先「弹出滑块」。', 'warn'); return; }
+  const captchas = detector.scan({ includeInteractive: true });
+  logTo('popLog', `CaptchaDetector.scan() 返回 ${captchas.length} 个候选`);
+  const hit = captchas.find((c) => c.subType === 'slider' && popBox!.contains(c.element));
+  if (!hit) {
+    logTo('popLog', '✗ 未识别出弹出滑块的 slider 子类型（结构化检测未命中）', 'err');
+    return;
+  }
+  logTo('popLog', `✓ 结构化命中：id=${hit.id} confidence=${hit.confidence}（容器无关键词，靠结构识别）`, 'ok');
+  logTo('popLog', `  背景图: ${(hit.innerCanvas as HTMLCanvasElement)?.width}×${(hit.innerCanvas as HTMLCanvasElement)?.height}`);
+  logTo('popLog', `  滑块小图: ${hit.sliderPiece ? `${(hit.sliderPiece as HTMLCanvasElement).width}×${(hit.sliderPiece as HTMLCanvasElement).height}` : '未找到'}`, hit.sliderPiece ? '' : 'warn');
+  logTo('popLog', `  拖拽手柄: ${hit.sliderHandle ? (hit.sliderHandle.className || hit.sliderHandle.tagName) : '未找到'}`, hit.sliderHandle ? '' : 'warn');
+}
+
+async function popSolve(): Promise<void> {
+  if (!popBox) { logTo('popLog', '请先「弹出滑块」。', 'warn'); return; }
+  const captchas = detector.scan({ includeInteractive: true });
+  const hit = captchas.find((c) => c.subType === 'slider' && popBox!.contains(c.element));
+  if (!hit) { logTo('popLog', '✗ 未命中，无法求解。', 'err'); return; }
+  logTo('popLog', '--- 自动求解（solveSlider）---', 'dim');
+  const res = await solveSlider(hit, { onLog: (m) => logTo('popLog', '[slider] ' + m) });
+  logTo('popLog', `结果：success=${res.success} gapX=${res.gapX.toFixed(1)} distance=${res.distance.toFixed(1)} score=${Number.isNaN(res.score) ? 'NaN' : res.score.toFixed(3)} method=${res.method}${res.reason ? ' reason=' + res.reason : ''}`, res.success ? 'ok' : 'err');
+}
+
 function main(): void {
   renderPuzzle();
   installSliderBehavior();
@@ -441,6 +570,13 @@ function main(): void {
   $('sliderSolve').addEventListener('click', () => { void doSolve(); });
   $('sliderSelftest').addEventListener('click', () => doSelftest(30));
   logTo('sliderLog', 'Ready. 「检测」验证 CaptchaDetector 命中；「自动求解」跑 slideMatch+拖拽；「自测」测缺口检测准确率。', 'ok');
+
+  // 弹出式 + 自定义命名滑块（结构化检测回归）
+  $('popShow').addEventListener('click', popShow);
+  $('popDetect').addEventListener('click', popDetect);
+  $('popSolve').addEventListener('click', () => { void popSolve(); });
+  $('popClose').addEventListener('click', () => { popClose(); logTo('popLog', '已关闭。', 'dim'); });
+  logTo('popLog', 'Ready. 「弹出滑块」延迟新增一个无关键词容器；「检测」验证 scanStructuralSliders 命中；「自动求解」端到端拖拽。', 'ok');
 
   // 文字点选
   renderClickSelect();

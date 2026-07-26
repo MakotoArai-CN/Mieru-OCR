@@ -37,6 +37,13 @@ export interface GuessedElement {
   clickTarget?: HTMLElement;
 }
 
+/** 拖拽手柄的关键词（class/id 子串）。供 findSliderHandle 与结构化滑块检测共享，
+ *  这样「靠手柄反推容器」与「容器内找手柄」两条路径用同一套信号，避免分叉。 */
+const SLIDER_HANDLE_KEYWORDS = [
+  'handle', 'slider-btn', 'sliderbtn', 'btn_slide', 'slide-btn', 'drag',
+  'knob', 'thumb', 'gt_slider_knob', 'gt_slider', 'slider_button', 'nc_iconfont', 'control',
+];
+
 export class CaptchaDetector {
   private detectedCaptchas: DetectedCaptcha[] = [];
   /** Cache last logged scan count to suppress identical-result spam in diagnostics buffer. */
@@ -99,14 +106,21 @@ export class CaptchaDetector {
     return excludePatterns.some(pattern => combined.includes(pattern));
   }
 
-  scan(): DetectedCaptcha[] {
+  scan(opts: { includeInteractive?: boolean } = {}): DetectedCaptcha[] {
     this.detectedCaptchas = [];
     Logger.time('CaptchaDetector.scan');
     this.scanImages();
     this.scanCanvas();
     this.scanSvg();
     this.scanBackgroundImages();
-    this.scanInteractiveContainers();
+    // 滑块 / 文字点选盲扫默认关闭（1.2.3 起扩展改为订阅/规则驱动——误扫率高、会对普通拖拽控件
+    // 误触发自动操作）。扩展的交互式求解只经 content 的 checkAndApplySiteRule → customCaptchaSubType
+    // 路径。仅当调用方显式传 includeInteractive=true 时才做盲扫——目前只有 userscript 沿用
+    // （其交互式仍受用户开关 gate，订阅化列为后续跟进）。
+    if (opts.includeInteractive) {
+      this.scanInteractiveContainers();
+      this.scanStructuralSliders();
+    }
     Logger.timeEnd('CaptchaDetector.scan');
     // 仅在结果数变化或 >0 时记录日志，避免周期扫描刷爆 200 条诊断缓冲
     const count = this.detectedCaptchas.length;
@@ -204,9 +218,8 @@ export class CaptchaDetector {
    *   <div class="slider-captcha"><canvas>...</canvas><div class="track">...</div></div>
    *   <div class="click-captcha"><canvas>...</canvas></div>
    *
-   * The outer container is what users interact with (drag track / click area),
-   * but the inner canvas is what OCR needs to sample. We add these as type
-   * 'canvas' (so capture pipeline reuses canvas path) but tag with subType.
+   * 仅在 scan({ includeInteractive: true }) 时调用（目前只有 userscript）。扩展不再盲扫，
+   * 交互式改由订阅/站点规则驱动。
    */
   private scanInteractiveContainers(): void {
     const SLIDER = (CONSTANTS as any).SLIDER_KEYWORDS as string[] | undefined;
@@ -215,13 +228,8 @@ export class CaptchaDetector {
     const slider = (SLIDER || []).map((s) => s.toLowerCase());
     const click = (CLICK || []).map((s) => s.toLowerCase());
 
-    // Cap how deeply we search — a real captcha container is at most a
-    // handful of nodes wide. Avoid scanning the whole document.
     const MAX_NODES = 600;
     let scanned = 0;
-
-    // Collect candidates: any element whose self-attributes match keywords.
-    // We use [class*=...] / [id*=...] selector heuristics for performance.
     const seen = new Set<Element>();
     const matchKeyword = (el: Element, list: string[]): boolean => {
       const haystack = (
@@ -237,17 +245,11 @@ export class CaptchaDetector {
     const consider = (el: Element, kind: 'slider' | 'click-select', idx: number) => {
       if (seen.has(el) || ++scanned > MAX_NODES) return;
       seen.add(el);
-      // Skip if outer is hidden / off-screen.
       if (!this.isVisible(el)) return;
-      // Container should have a canvas or img descendant — that's the
-      // actual pixel surface OCR will read from.
       const inner = el.querySelector('canvas, img');
       if (!inner) return;
       const rect = el.getBoundingClientRect();
-      // Slider tracks tend to be wider than tall; click-select areas are
-      // closer to square. Both should be at least captcha-sized though.
       if (rect.width < 60 || rect.height < 24) return;
-      // Skip if this element (or any ancestor) was already detected.
       const innerEl = inner as HTMLCanvasElement | HTMLImageElement;
       if (this.detectedCaptchas.some((c) => c.element === el || c.element === innerEl)) return;
 
@@ -258,13 +260,12 @@ export class CaptchaDetector {
         element: el,
         innerCanvas: innerEl,
         rect,
-        confidence: this.calculateConfidence(el) + 10, // small boost: keyword match was already strong
+        confidence: this.calculateConfidence(el) + 10,
         inputElement: this.findRelatedInput(el),
         elementInfo: this.extractCaptchaInfo(el),
       };
       if (kind === 'slider') {
         const parts = this.findSliderParts(el, innerEl);
-        // 缺口检测需要背景图：背景应是容器内最大的那张，innerEl 取到的可能是小图，做一次纠正
         if (parts.background) captcha.innerCanvas = parts.background;
         if (parts.piece) captcha.sliderPiece = parts.piece;
         if (parts.handle) captcha.sliderHandle = parts.handle;
@@ -273,9 +274,6 @@ export class CaptchaDetector {
       Logger.debug(`检测到交互式验证码 (${kind}):`, captcha.elementInfo);
     };
 
-    // Build a single querySelector covering both keyword sets via [class*=]/[id*=].
-    // Note: [class*=keyword] is case-sensitive for selectors, but we further
-    // confirm via matchKeyword (lowercased) inside.
     const buildSel = (list: string[]): string => list
       .flatMap((kw) => [`[class*="${kw}" i]`, `[id*="${kw}" i]`, `[data-captcha-type*="${kw}" i]`])
       .join(',');
@@ -287,7 +285,6 @@ export class CaptchaDetector {
           if (matchKeyword(el, slider)) consider(el, 'slider', i);
         });
       } catch {
-        // Fallback: linear scan if compound selector fails (very long lists)
         document.querySelectorAll('div, section, span').forEach((el, i) => {
           if (scanned > MAX_NODES) return;
           if (matchKeyword(el, slider)) consider(el, 'slider', i);
@@ -305,6 +302,86 @@ export class CaptchaDetector {
           if (scanned > MAX_NODES) return;
           if (matchKeyword(el, click)) consider(el, 'click-select', i);
         });
+      }
+    }
+  }
+
+  /**
+   * 结构化滑块检测：不依赖类名关键词，靠「拖拽手柄 + 图像面 + 横向轨道形态」识别滑块容器。
+   * 仅在 scan({ includeInteractive: true }) 时调用（判据从严，避免误判普通拖拽控件）。
+   */
+  private scanStructuralSliders(): void {
+    let candidates: HTMLElement[] = [];
+    try {
+      const sel =
+        SLIDER_HANDLE_KEYWORDS.map((k) => `[class*="${k}" i],[id*="${k}" i]`).join(',') +
+        ',[draggable="true"]';
+      candidates = Array.from(document.querySelectorAll<HTMLElement>(sel));
+    } catch {
+      /* selector 不支持时忽略关键词候选 */
+    }
+    if (candidates.length < 30 && typeof getComputedStyle === 'function') {
+      const all = document.querySelectorAll<HTMLElement>('div,span,a,button,i');
+      const LIMIT = 1500;
+      for (let i = 0; i < all.length && i < LIMIT; i++) {
+        const e = all[i];
+        const cur = getComputedStyle(e).cursor;
+        if (cur === 'grab' || cur === 'move') {
+          const r = e.getBoundingClientRect();
+          if (r.width > 10 && r.width <= 140 && r.height > 10) candidates.push(e);
+        }
+      }
+    }
+
+    const MAX_HANDLES = 40;
+    let scanned = 0;
+    for (const handle of candidates) {
+      if (++scanned > MAX_HANDLES) break;
+      const hr = handle.getBoundingClientRect();
+      if (hr.width <= 0 || hr.height <= 0 || hr.width > 140) continue;
+
+      let el: Element | null = handle.parentElement;
+      let depth = 0;
+      while (el && depth < 6 && el !== document.body && el !== document.documentElement) {
+        // 该祖先已被其它扫描（图片/canvas/背景图）收录时只跳过这一层，继续往上找真正的
+        // 滑块容器——早期这里 break 整条链，导致手柄父级恰好被收录时结构化检测直接失效。
+        if (this.detectedCaptchas.some((c) => c.element === el)) {
+          el = el.parentElement;
+          depth++;
+          continue;
+        }
+        const inner = el.querySelector('canvas, img') as
+          | HTMLCanvasElement
+          | HTMLImageElement
+          | null;
+        if (inner) {
+          const rect = el.getBoundingClientRect();
+          const horizontal = rect.width >= rect.height;
+          const sized =
+            rect.width >= 80 && rect.width <= 600 && rect.height >= 24 && rect.height <= 360;
+          const handleAtLeft = hr.left - rect.left < rect.width * 0.5;
+          if (this.isVisible(el) && horizontal && sized && handleAtLeft) {
+            const parts = this.findSliderParts(el, inner);
+            const captcha: DetectedCaptcha = {
+              id: `captcha-slider-struct-${this.detectedCaptchas.length}`,
+              type: 'canvas',
+              subType: 'slider',
+              element: el,
+              innerCanvas: parts.background || inner,
+              sliderPiece: parts.piece,
+              sliderHandle: parts.handle || handle,
+              rect,
+              confidence: this.calculateConfidence(el) + 5,
+              inputElement: null,
+              elementInfo: this.extractCaptchaInfo(el),
+            };
+            this.detectedCaptchas.push(captcha);
+            Logger.debug('结构化检测到滑块:', captcha.elementInfo);
+            break;
+          }
+        }
+        el = el.parentElement;
+        depth++;
       }
     }
   }
@@ -356,10 +433,7 @@ export class CaptchaDetector {
 
   /** 在容器内定位拖拽手柄：关键词 → draggable → cursor 样式，取最靠左的合理候选。 */
   private findSliderHandle(container: Element): HTMLElement | undefined {
-    const KW = [
-      'handle', 'slider-btn', 'sliderbtn', 'btn_slide', 'slide-btn', 'drag',
-      'knob', 'thumb', 'gt_slider_knob', 'gt_slider', 'nc_iconfont', 'control',
-    ];
+    const KW = SLIDER_HANDLE_KEYWORDS;
     let candidates: HTMLElement[] = [];
     try {
       const sel = KW.map((k) => `[class*="${k}" i],[id*="${k}" i]`).join(',');
@@ -388,8 +462,8 @@ export class CaptchaDetector {
 
   /**
    * 从「用户手动选中的容器」构造一个交互式 DetectedCaptcha（滑块 / 文字点选）。
-   * 与 scanInteractiveContainers 共用 findSliderParts，但入口是已知容器、已知 subType，
-   * 不做关键词猜测——用于 picker 手选 / 规则命中后按 subType 直接求解。
+   * 入口是已知容器、已知 subType，不做关键词盲扫猜测——用于 picker 手选 / 规则命中后
+   * 按 subType 直接求解（1.2.3 起交互式只走规则路径，不再盲扫）。
    * 拿不到内部 canvas/img 时返回 null（交互验证码必须有像素面可读）。
    */
   buildInteractiveCaptcha(
@@ -564,8 +638,11 @@ export class CaptchaDetector {
   }
 
   private isLikelyBackgroundCaptcha(el: HTMLElement): boolean {
+    // 注意：候选选择器是 [style*="background"]，简写 `background: #eee`（纯色、无图）也会命中。
+    // 这种元素的 el.style.backgroundImage 返回 'initial' 而非 ''/'none'，若不排除就会把纯色
+    // 容器（如滑块轨道）误判成背景图验证码，并抢占结构化检测的祖先链。
     const bgImage = el.style.backgroundImage || '';
-    if (!bgImage || bgImage === 'none') return false;
+    if (!bgImage || bgImage === 'none' || bgImage === 'initial' || bgImage === 'unset') return false;
     const rect = el.getBoundingClientRect();
     if (!this.isCaptchaSize(rect.width, rect.height)) {
       return false;

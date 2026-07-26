@@ -79,7 +79,25 @@
       <div class="log" id="sliderLog"></div>
     </section>
 
+    <!-- ── 弹出式 + 自定义命名滑块（结构化检测回归）── -->
+    <section class="card" id="popCard">
+      <h2>①b 弹出滑块 <span class="badge">自定义命名 · 点击后延迟新增到 body</span></h2>
+      <div class="sub" style="font-size:12px;margin-bottom:8px;">
+        容器 class <code>my-verify-box</code> 不含任何 SLIDER_KEYWORDS，点击后 600ms 才 <code>appendChild</code> 到
+        <code>body</code>（模拟「后续弹出」）。用于回归 <code>scanStructuralSliders</code>——靠「手柄 + canvas + 横向轨道形态」
+        识别，不依赖类名关键词。
+      </div>
+      <div class="row">
+        <button id="popShow">弹出滑块（延迟新增）</button>
+        <button id="popDetect" class="sec">检测（CaptchaDetector.scan）</button>
+        <button id="popSolve" class="sec">自动求解（solveSlider）</button>
+        <button id="popClose" class="sec">关闭</button>
+      </div>
+      <div class="log" id="popLog"></div>
+    </section>
+
     <!-- ── 文字点选 ── -->
+
     <section class="card" id="csCard">
       <h2>② 文字点选 <span class="badge">common_det 检测 + OCR 端到端</span></h2>
       <div class="point-captcha" id="csContainer">

@@ -3,7 +3,9 @@ var MAX_ENTRIES = 200;
 var MAX_MSG_LEN = 300;
 var FLUSH_DEBOUNCE_MS = 1000;
 var BUFFER_KEY_PREFIX = "ddddocr_diag_log_";
+var EVENT_KEY_PREFIX = "ddddocr_diag_evt_";
 var buffer = [];
+var eventBuffer = [];
 var flushTimer = null;
 var cachedCtx = null;
 var enabled = false;
@@ -120,8 +122,10 @@ async function flush() {
   const storage = getStorage();
   if (!storage)
     return;
+  const ctx = detectContext();
   try {
-    await storage.set(BUFFER_KEY_PREFIX + detectContext(), buffer.slice());
+    await storage.set(BUFFER_KEY_PREFIX + ctx, buffer.slice());
+    await storage.set(EVENT_KEY_PREFIX + ctx, eventBuffer.slice());
   } catch {}
 }
 
@@ -398,7 +402,8 @@ var DEFAULT_CONFIG = {
   imageContextMenuEnabled: false,
   imageContextMenuAutoFill: true,
   preserveFocus: false,
-  deepScan: false
+  deepScan: false,
+  detModelPreference: "auto"
 };
 var DEFAULT_EXTENSION_SETTINGS = {
   ...DEFAULT_CONFIG,
@@ -467,6 +472,22 @@ class Logger {
 }
 
 // src/core/captcha-detector.ts
+var SLIDER_HANDLE_KEYWORDS = [
+  "handle",
+  "slider-btn",
+  "sliderbtn",
+  "btn_slide",
+  "slide-btn",
+  "drag",
+  "knob",
+  "thumb",
+  "gt_slider_knob",
+  "gt_slider",
+  "slider_button",
+  "nc_iconfont",
+  "control"
+];
+
 class CaptchaDetector {
   detectedCaptchas = [];
   lastLoggedScanCount = -1;
@@ -522,14 +543,17 @@ class CaptchaDetector {
     const combined = `${className} ${id}`.trim();
     return excludePatterns.some((pattern) => combined.includes(pattern));
   }
-  scan() {
+  scan(opts = {}) {
     this.detectedCaptchas = [];
     Logger.time("CaptchaDetector.scan");
     this.scanImages();
     this.scanCanvas();
     this.scanSvg();
     this.scanBackgroundImages();
-    this.scanInteractiveContainers();
+    if (opts.includeInteractive) {
+      this.scanInteractiveContainers();
+      this.scanStructuralSliders();
+    }
     Logger.timeEnd("CaptchaDetector.scan");
     const count = this.detectedCaptchas.length;
     if (count > 0 || count !== this.lastLoggedScanCount) {
@@ -703,6 +727,72 @@ class CaptchaDetector {
       }
     }
   }
+  scanStructuralSliders() {
+    let candidates = [];
+    try {
+      const sel = SLIDER_HANDLE_KEYWORDS.map((k) => `[class*="${k}" i],[id*="${k}" i]`).join(",") + ',[draggable="true"]';
+      candidates = Array.from(document.querySelectorAll(sel));
+    } catch {}
+    if (candidates.length < 30 && typeof getComputedStyle === "function") {
+      const all = document.querySelectorAll("div,span,a,button,i");
+      const LIMIT = 1500;
+      for (let i = 0;i < all.length && i < LIMIT; i++) {
+        const e = all[i];
+        const cur = getComputedStyle(e).cursor;
+        if (cur === "grab" || cur === "move") {
+          const r = e.getBoundingClientRect();
+          if (r.width > 10 && r.width <= 140 && r.height > 10)
+            candidates.push(e);
+        }
+      }
+    }
+    const MAX_HANDLES = 40;
+    let scanned = 0;
+    for (const handle of candidates) {
+      if (++scanned > MAX_HANDLES)
+        break;
+      const hr = handle.getBoundingClientRect();
+      if (hr.width <= 0 || hr.height <= 0 || hr.width > 140)
+        continue;
+      let el = handle.parentElement;
+      let depth = 0;
+      while (el && depth < 6 && el !== document.body && el !== document.documentElement) {
+        if (this.detectedCaptchas.some((c) => c.element === el)) {
+          el = el.parentElement;
+          depth++;
+          continue;
+        }
+        const inner = el.querySelector("canvas, img");
+        if (inner) {
+          const rect = el.getBoundingClientRect();
+          const horizontal = rect.width >= rect.height;
+          const sized = rect.width >= 80 && rect.width <= 600 && rect.height >= 24 && rect.height <= 360;
+          const handleAtLeft = hr.left - rect.left < rect.width * 0.5;
+          if (this.isVisible(el) && horizontal && sized && handleAtLeft) {
+            const parts = this.findSliderParts(el, inner);
+            const captcha = {
+              id: `captcha-slider-struct-${this.detectedCaptchas.length}`,
+              type: "canvas",
+              subType: "slider",
+              element: el,
+              innerCanvas: parts.background || inner,
+              sliderPiece: parts.piece,
+              sliderHandle: parts.handle || handle,
+              rect,
+              confidence: this.calculateConfidence(el) + 5,
+              inputElement: null,
+              elementInfo: this.extractCaptchaInfo(el)
+            };
+            this.detectedCaptchas.push(captcha);
+            Logger.debug("结构化检测到滑块:", captcha.elementInfo);
+            break;
+          }
+        }
+        el = el.parentElement;
+        depth++;
+      }
+    }
+  }
   findSliderParts(container, fallbackInner) {
     const surfaces = Array.from(container.querySelectorAll("canvas, img"));
     const visible = surfaces.filter((s) => {
@@ -731,20 +821,7 @@ class CaptchaDetector {
     return { background, piece, handle: this.findSliderHandle(container) };
   }
   findSliderHandle(container) {
-    const KW = [
-      "handle",
-      "slider-btn",
-      "sliderbtn",
-      "btn_slide",
-      "slide-btn",
-      "drag",
-      "knob",
-      "thumb",
-      "gt_slider_knob",
-      "gt_slider",
-      "nc_iconfont",
-      "control"
-    ];
+    const KW = SLIDER_HANDLE_KEYWORDS;
     let candidates = [];
     try {
       const sel = KW.map((k) => `[class*="${k}" i],[id*="${k}" i]`).join(",");
@@ -769,6 +846,33 @@ class CaptchaDetector {
       return;
     visible.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
     return visible[0];
+  }
+  buildInteractiveCaptcha(container, subType, idSuffix = 0) {
+    const innerEl = container.querySelector("canvas, img");
+    if (!innerEl)
+      return null;
+    const rect = container.getBoundingClientRect();
+    const captcha = {
+      id: `captcha-${subType}-${idSuffix}`,
+      type: "canvas",
+      subType,
+      element: container,
+      innerCanvas: innerEl,
+      rect,
+      confidence: 100,
+      inputElement: this.findRelatedInput(container),
+      elementInfo: this.extractCaptchaInfo(container)
+    };
+    if (subType === "slider") {
+      const parts = this.findSliderParts(container, innerEl);
+      if (parts.background)
+        captcha.innerCanvas = parts.background;
+      if (parts.piece)
+        captcha.sliderPiece = parts.piece;
+      if (parts.handle)
+        captcha.sliderHandle = parts.handle;
+    }
+    return captcha;
   }
   extractCaptchaInfo(element) {
     const rect = element.getBoundingClientRect();
@@ -914,7 +1018,7 @@ class CaptchaDetector {
   }
   isLikelyBackgroundCaptcha(el) {
     const bgImage = el.style.backgroundImage || "";
-    if (!bgImage || bgImage === "none")
+    if (!bgImage || bgImage === "none" || bgImage === "initial" || bgImage === "unset")
       return false;
     const rect = el.getBoundingClientRect();
     if (!this.isCaptchaSize(rect.width, rect.height)) {
@@ -2143,42 +2247,110 @@ function detectGapByColumnEdges(bgImgData, marginX = 0) {
       s += data[y * w + x];
     colEnergy[x] = s;
   }
-  let bestX = marginX, best = -1;
+  let bestX = marginX, best = -1, total = 0, span = 0;
   for (let x = Math.max(marginX, 2);x < w - 2; x++) {
+    total += colEnergy[x];
+    span++;
     if (colEnergy[x] > best) {
       best = colEnergy[x];
       bestX = x;
     }
   }
-  return { x: bestX, score: best };
+  const mean = span > 0 ? total / span : 0;
+  const score = mean > 0.000001 ? Math.max(0, Math.min(1, best / (mean * 6))) : 0;
+  return { x: bestX, score };
+}
+function detectGapByBrightness(bgImgData, marginX = 0) {
+  const gray = toGray(bgImgData);
+  const { data, width: w, height: h } = gray;
+  const colMean = new Float32Array(w);
+  for (let x = 0;x < w; x++) {
+    let s = 0;
+    for (let y = 0;y < h; y++)
+      s += data[y * w + x];
+    colMean[x] = s / Math.max(1, h);
+  }
+  const grad = new Float32Array(w);
+  for (let x = 1;x < w; x++)
+    grad[x] = Math.abs(colMean[x] - colMean[x - 1]);
+  let bestX = marginX, best = -1, total = 0, span = 0;
+  for (let x = Math.max(marginX, 2);x < w - 2; x++) {
+    const e = grad[x - 1] + grad[x] + grad[x + 1];
+    total += e;
+    span++;
+    if (e > best) {
+      best = e;
+      bestX = x;
+    }
+  }
+  const mean = span > 0 ? total / span : 0;
+  const score = mean > 0.000001 ? Math.max(0, Math.min(1, best / (mean * 6))) : 0;
+  return { x: bestX, score };
+}
+function fuseGapCandidates(cands, tolerance = 8) {
+  const valid = cands.filter((c) => Number.isFinite(c.x) && c.x >= 0);
+  if (valid.length === 0)
+    return null;
+  let best = null;
+  for (const anchor of valid) {
+    let wx = 0, wsum = 0, agree = 0;
+    const methods = [];
+    for (const c of valid) {
+      if (Math.abs(c.x - anchor.x) <= tolerance) {
+        const wgt = (c.weight ?? 1) * Math.max(0.05, c.conf);
+        wx += c.x * wgt;
+        wsum += wgt;
+        agree++;
+        methods.push(c.method);
+      }
+    }
+    const cx = wsum > 0 ? wx / wsum : anchor.x;
+    if (!best || wsum > best.conf) {
+      best = { x: cx, conf: wsum, method: methods.join("+"), agree };
+    }
+  }
+  return best;
 }
 
 // src/core/interaction/trajectory.ts
-function humanDragTrajectory(distance, rand = Math.random) {
-  const steps = [];
+function profileParams(profile) {
+  switch (profile) {
+    case "fast":
+      return { maxVelocity: 12, accelBase: 0.8, accelRand: 0.7, decelBase: 0.5, decelRand: 0.5, jitterX: 1.5, jitterY: 2, overshoot: 2, dtBase: 12, dtRand: 6 };
+    case "cautious":
+      return { maxVelocity: 5, accelBase: 0.35, accelRand: 0.35, decelBase: 0.2, decelRand: 0.3, jitterX: 2.5, jitterY: 4, overshoot: 6, dtBase: 22, dtRand: 16 };
+    case "normal":
+    default:
+      return { maxVelocity: 8, accelBase: 0.5, accelRand: 0.5, decelBase: 0.3, decelRand: 0.4, jitterX: 2, jitterY: 3, overshoot: 3, dtBase: 16, dtRand: 10 };
+  }
+}
+function humanDragTrajectory(distance, opts = {}) {
+  const rand = opts.rand ?? Math.random;
+  const p = profileParams(opts.profile ?? "normal");
   if (distance <= 0)
     return [{ x: 0, y: 0, dt: 16 }];
+  const steps = [];
   let current = 0;
   let velocity = 0;
-  const maxVelocity = 8;
   const accelerationPhase = distance * 0.6;
   while (current < accelerationPhase) {
-    velocity = Math.min(velocity + 0.5 + rand() * 0.5, maxVelocity);
+    velocity = Math.min(velocity + p.accelBase + rand() * p.accelRand, p.maxVelocity);
     current += velocity;
-    steps.push({ x: current, dt: 16 + rand() * 8 });
+    steps.push({ x: current, dt: p.dtBase + rand() * p.dtRand });
   }
   while (current < distance - 5) {
-    velocity = Math.max(velocity - (0.3 + rand() * 0.4), 1);
+    velocity = Math.max(velocity - (p.decelBase + rand() * p.decelRand), 1);
     current += velocity;
-    steps.push({ x: current, dt: 16 + rand() * 12 });
+    steps.push({ x: current, dt: p.dtBase + rand() * (p.dtRand + 2) });
   }
-  current = Math.min(current, distance + 3);
-  steps.push({ x: current, dt: 50 + rand() * 30 });
-  steps.push({ x: distance - 1, dt: 80 + rand() * 40 });
-  steps.push({ x: distance, dt: 60 + rand() * 30 });
+  const over = distance + p.overshoot * (0.5 + rand() * 0.8);
+  steps.push({ x: over, dt: 40 + rand() * 30 });
+  steps.push({ x: distance + 1, dt: 60 + rand() * 30 });
+  steps.push({ x: distance - 1, dt: 70 + rand() * 40 });
+  steps.push({ x: distance, dt: 50 + rand() * 30 });
   return steps.map((s) => ({
-    x: Math.max(0, s.x + (rand() - 0.5) * 2),
-    y: (rand() - 0.5) * 3,
+    x: Math.max(0, s.x + (rand() - 0.5) * p.jitterX),
+    y: (rand() - 0.5) * p.jitterY,
     dt: s.dt
   }));
 }
@@ -2350,21 +2522,45 @@ async function solveSlider(captcha, opts = {}) {
   let gapXNative;
   let score;
   let method;
+  const marginX = Math.round(bg.width * 0.1);
+  const candidates = [];
+  let pieceX = NaN;
+  let pieceScore = NaN;
   const piece = captcha.sliderPiece ? elementToImageData(captcha.sliderPiece) : null;
   if (piece) {
     const m = slideMatch(piece, bg);
-    gapXNative = m.x;
-    score = m.score;
-    method = m.method;
-    log(`slideMatch: x=${gapXNative}px score=${score.toFixed(3)} method=${method} (${m.elapsed.toFixed(0)}ms)`);
-    if (score < minScore)
-      return fail("low-confidence", { gapX: gapXNative, score, method });
+    pieceX = m.x;
+    pieceScore = m.score;
+    candidates.push({ x: m.x, conf: Math.max(0, m.score), method: m.method, weight: 1.6 });
+    log(`slideMatch: x=${m.x}px score=${m.score.toFixed(3)} method=${m.method} (${m.elapsed.toFixed(0)}ms)`);
+  }
+  const ce = detectGapByColumnEdges(bg, marginX);
+  candidates.push({ x: ce.x, conf: ce.score, method: "column-edge", weight: 1 });
+  const br = detectGapByBrightness(bg, marginX);
+  candidates.push({ x: br.x, conf: br.score, method: "brightness", weight: 0.8 });
+  const tol = Math.max(6, Math.round(bg.width * 0.04));
+  const fused = fuseGapCandidates(candidates, tol);
+  log(`缺口候选: ${candidates.map((c) => `${c.method}@${Math.round(c.x)}(${c.conf.toFixed(2)})`).join(", ")}` + ` → 融合 x=${fused ? Math.round(fused.x) : "?"} agree=${fused?.agree ?? 0}`);
+  if (piece && pieceScore >= minScore) {
+    gapXNative = pieceX;
+    score = pieceScore;
+    method = "template-match";
+  } else if (piece) {
+    if (fused && fused.agree >= 2) {
+      gapXNative = fused.x;
+      score = pieceScore;
+      method = `fusion(${fused.method})`;
+      log(`模板匹配置信低(${pieceScore.toFixed(3)} < ${minScore})，改用多算法融合 x=${Math.round(fused.x)}`);
+    } else {
+      return fail("low-confidence", { gapX: pieceX, score: pieceScore, method: "template-match" });
+    }
   } else {
-    const m = detectGapByColumnEdges(bg, Math.round(bg.width * 0.1));
-    gapXNative = m.x;
+    if (!fused)
+      return fail("no-gap");
+    gapXNative = fused.x;
     score = NaN;
-    method = "column-edge";
-    log(`无滑块小图，列边缘兜底: x=${gapXNative}px`);
+    method = `fusion(${fused.method})`;
+    log(`无滑块小图，多算法融合兜底: x=${Math.round(fused.x)} agree=${fused.agree}`);
   }
   const bgRect = bgEl.getBoundingClientRect();
   const nativeW = bgEl.naturalWidth || bgEl.width || bgRect.width;
@@ -2384,8 +2580,8 @@ async function solveSlider(captcha, opts = {}) {
   log(`scale=${scale.toFixed(3)} gapX=${gapDisplayX.toFixed(1)}px pieceStart=${pieceStartOffset.toFixed(1)}px → distance=${distance.toFixed(1)}px`);
   if (distance < 2)
     return fail("distance-too-small", { gapX: gapDisplayX, distance, score, method });
-  const traj = humanDragTrajectory(distance);
-  log(`拖拽轨迹点数=${traj.length}`);
+  const traj = humanDragTrajectory(distance, { profile: opts.profile });
+  log(`拖拽轨迹点数=${traj.length} 档位=${opts.profile ?? "normal"}`);
   const finalX = await dragAlong(handle, traj);
   log(`拖拽完成，终点 clientX=${finalX.toFixed(1)}`);
   return { success: true, gapX: gapDisplayX, distance, score, method };
@@ -3371,7 +3567,7 @@ function installSliderBehavior() {
 }
 var detector = new CaptchaDetector;
 function doDetect() {
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   logTo("sliderLog", `--- 检测 ---`, "dim");
   logTo("sliderLog", `CaptchaDetector.scan() 返回 ${captchas.length} 个候选`);
   const slider = captchas.find((c) => c.subType === "slider");
@@ -3387,7 +3583,7 @@ function doDetect() {
 async function doSolve() {
   renderPuzzle();
   await new Promise((r) => setTimeout(r, 100));
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   const slider = captchas.find((c) => c.subType === "slider");
   if (!slider) {
     logTo("sliderLog", "未检测到 slider，无法求解", "err");
@@ -3462,7 +3658,7 @@ async function getEngines() {
   if (!detEngine) {
     logTo("csLog", "初始化检测引擎 (common_det.onnx)…", "dim");
     detEngine = new DetectionEngine({
-      getModel: async () => ({ model: await (await fetch("/public/common_det.onnx")).arrayBuffer() }),
+      getModel: async () => ({ model: await (await fetch("/fixtures/common_det.onnx")).arrayBuffer() }),
       getOrt: async () => ort2,
       wasmPaths: WASM,
       numThreads: 1
@@ -3529,7 +3725,7 @@ function renderClickSelect() {
   clearMarkers();
 }
 function doDetectCS() {
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   logTo("csLog", "--- 检测 ---", "dim");
   const cs = captchas.find((c) => c.subType === "click-select");
   if (!cs) {
@@ -3544,7 +3740,7 @@ function doDetectCS() {
 async function doSolveCS() {
   clearMarkers();
   const total = csOrder.length;
-  const captchas = detector.scan();
+  const captchas = detector.scan({ includeInteractive: true });
   const cs = captchas.find((c) => c.subType === "click-select");
   if (!cs) {
     logTo("csLog", "未检测到 click-select，无法求解", "err");
@@ -3641,6 +3837,143 @@ async function doAssistCF() {
   logTo("cfLog", `结果: mode=${res.mode} success=${res.success}${res.widgets != null ? ` widgets=${res.widgets}` : ""}`, res.success ? "ok" : "warn");
   logTo("cfLog", "注：辅助 ≠ 绕过。合成点击 isTrusted=false + CF 网络/行为指纹，客户端无法自动通过（见右侧评分 mock）。", "warn");
 }
+var popTruth = { gapX: 0, gapY: 0 };
+var popBox = null;
+function buildPopupSlider() {
+  const box = document.createElement("div");
+  box.className = "my-verify-box";
+  box.style.cssText = "position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:99999;" + "background:#fff;padding:14px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:340px;";
+  const stage = document.createElement("div");
+  stage.style.cssText = "position:relative;width:320px;height:160px;";
+  const bg = document.createElement("canvas");
+  bg.width = BG_W;
+  bg.height = BG_H;
+  bg.style.cssText = "display:block;border-radius:8px;";
+  const slice = document.createElement("canvas");
+  slice.width = TPL;
+  slice.height = BG_H;
+  slice.style.cssText = "position:absolute;top:0;left:0;";
+  stage.append(bg, slice);
+  const track = document.createElement("div");
+  track.style.cssText = "position:relative;width:320px;height:40px;background:#eef0f3;border-radius:20px;margin-top:12px;";
+  const grip = document.createElement("div");
+  grip.className = "vb-grip";
+  grip.setAttribute("draggable", "true");
+  grip.textContent = "⇢";
+  grip.style.cssText = "position:absolute;top:0;left:0;width:40px;height:40px;background:#fff;border:1px solid #d8dbe0;" + "border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,.15);cursor:grab;display:flex;align-items:center;justify-content:center;";
+  grip.addEventListener("dragstart", (e) => e.preventDefault());
+  track.appendChild(grip);
+  box.append(stage, track);
+  const gapX = 90 + Math.floor(Math.random() * (BG_W - TPL - 110));
+  const gapY = Math.floor((BG_H - TPL) / 2 + (Math.random() - 0.5) * 30);
+  const bctx = bg.getContext("2d");
+  const grad = bctx.createLinearGradient(0, 0, BG_W, BG_H);
+  grad.addColorStop(0, "#f7971e");
+  grad.addColorStop(1, "#d6336c");
+  bctx.fillStyle = grad;
+  bctx.fillRect(0, 0, BG_W, BG_H);
+  for (let i = 0;i < 80; i++) {
+    bctx.fillStyle = `rgba(255,255,255,${0.05 + Math.random() * 0.25})`;
+    bctx.beginPath();
+    bctx.arc(Math.random() * BG_W, Math.random() * BG_H, 3 + Math.random() * 16, 0, Math.PI * 2);
+    bctx.fill();
+  }
+  const sctx = slice.getContext("2d");
+  sctx.clearRect(0, 0, TPL, BG_H);
+  sctx.save();
+  sctx.translate(0, gapY);
+  puzzlePath(sctx, TPL, TPL);
+  sctx.clip();
+  sctx.drawImage(bg, gapX, gapY, TPL, TPL, 0, 0, TPL, TPL);
+  sctx.restore();
+  bctx.save();
+  bctx.translate(gapX, gapY);
+  puzzlePath(bctx, TPL, TPL);
+  bctx.fillStyle = "rgba(0,0,0,0.5)";
+  bctx.fill();
+  bctx.strokeStyle = "rgba(0,0,0,0.85)";
+  bctx.lineWidth = 2;
+  bctx.stroke();
+  bctx.restore();
+  popTruth = { gapX, gapY };
+  const maxX = 320 - 40;
+  let dragging = false, startX = 0, curLeft = 0;
+  const onDown = (x) => {
+    dragging = true;
+    startX = x - curLeft;
+    grip.style.cursor = "grabbing";
+  };
+  const onMove = (x) => {
+    if (!dragging)
+      return;
+    curLeft = Math.max(0, Math.min(maxX, x - startX));
+    grip.style.left = curLeft + "px";
+    slice.style.left = curLeft + "px";
+  };
+  const onUp = () => {
+    if (!dragging)
+      return;
+    dragging = false;
+    grip.style.cursor = "grab";
+    const err = Math.abs(curLeft - popTruth.gapX);
+    logTo("popLog", `释放：落点=${curLeft.toFixed(1)}px 真值=${popTruth.gapX}px 误差=${err.toFixed(1)}px → ${err <= 6 ? "✓ 通过" : "✗ 失败"}`, err <= 6 ? "ok" : "err");
+  };
+  grip.addEventListener("pointerdown", (e) => onDown(e.clientX));
+  grip.addEventListener("mousedown", (e) => onDown(e.clientX));
+  document.addEventListener("pointermove", (e) => onMove(e.clientX));
+  document.addEventListener("mousemove", (e) => onMove(e.clientX));
+  document.addEventListener("pointerup", onUp);
+  document.addEventListener("mouseup", onUp);
+  return box;
+}
+function popShow() {
+  popClose();
+  logTo("popLog", "点击后 600ms 将弹出自定义命名滑块（不含关键词）…", "dim");
+  window.setTimeout(() => {
+    popBox = buildPopupSlider();
+    document.body.appendChild(popBox);
+    logTo("popLog", `已弹出 .my-verify-box（缺口真值 x=${popTruth.gapX}px）。点「检测」看 scanStructuralSliders 是否命中。`, "ok");
+  }, 600);
+}
+function popClose() {
+  if (popBox) {
+    popBox.remove();
+    popBox = null;
+  }
+}
+function popDetect() {
+  logTo("popLog", "--- 检测 ---", "dim");
+  if (!popBox) {
+    logTo("popLog", "请先「弹出滑块」。", "warn");
+    return;
+  }
+  const captchas = detector.scan({ includeInteractive: true });
+  logTo("popLog", `CaptchaDetector.scan() 返回 ${captchas.length} 个候选`);
+  const hit = captchas.find((c) => c.subType === "slider" && popBox.contains(c.element));
+  if (!hit) {
+    logTo("popLog", "✗ 未识别出弹出滑块的 slider 子类型（结构化检测未命中）", "err");
+    return;
+  }
+  logTo("popLog", `✓ 结构化命中：id=${hit.id} confidence=${hit.confidence}（容器无关键词，靠结构识别）`, "ok");
+  logTo("popLog", `  背景图: ${hit.innerCanvas?.width}×${hit.innerCanvas?.height}`);
+  logTo("popLog", `  滑块小图: ${hit.sliderPiece ? `${hit.sliderPiece.width}×${hit.sliderPiece.height}` : "未找到"}`, hit.sliderPiece ? "" : "warn");
+  logTo("popLog", `  拖拽手柄: ${hit.sliderHandle ? hit.sliderHandle.className || hit.sliderHandle.tagName : "未找到"}`, hit.sliderHandle ? "" : "warn");
+}
+async function popSolve() {
+  if (!popBox) {
+    logTo("popLog", "请先「弹出滑块」。", "warn");
+    return;
+  }
+  const captchas = detector.scan({ includeInteractive: true });
+  const hit = captchas.find((c) => c.subType === "slider" && popBox.contains(c.element));
+  if (!hit) {
+    logTo("popLog", "✗ 未命中，无法求解。", "err");
+    return;
+  }
+  logTo("popLog", "--- 自动求解（solveSlider）---", "dim");
+  const res = await solveSlider(hit, { onLog: (m) => logTo("popLog", "[slider] " + m) });
+  logTo("popLog", `结果：success=${res.success} gapX=${res.gapX.toFixed(1)} distance=${res.distance.toFixed(1)} score=${Number.isNaN(res.score) ? "NaN" : res.score.toFixed(3)} method=${res.method}${res.reason ? " reason=" + res.reason : ""}`, res.success ? "ok" : "err");
+}
 function main() {
   renderPuzzle();
   installSliderBehavior();
@@ -3654,6 +3987,16 @@ function main() {
   });
   $("sliderSelftest").addEventListener("click", () => doSelftest(30));
   logTo("sliderLog", "Ready. 「检测」验证 CaptchaDetector 命中；「自动求解」跑 slideMatch+拖拽；「自测」测缺口检测准确率。", "ok");
+  $("popShow").addEventListener("click", popShow);
+  $("popDetect").addEventListener("click", popDetect);
+  $("popSolve").addEventListener("click", () => {
+    popSolve();
+  });
+  $("popClose").addEventListener("click", () => {
+    popClose();
+    logTo("popLog", "已关闭。", "dim");
+  });
+  logTo("popLog", "Ready. 「弹出滑块」延迟新增一个无关键词容器；「检测」验证 scanStructuralSliders 命中；「自动求解」端到端拖拽。", "ok");
   renderClickSelect();
   $("csRegen").addEventListener("click", () => {
     renderClickSelect();
