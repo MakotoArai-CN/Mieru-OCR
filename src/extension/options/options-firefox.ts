@@ -1156,7 +1156,13 @@ async function loadStats(): Promise<void> {
 }
 
 async function clearStats(): Promise<void> {
-  if (!confirm(t('stats.clearConfirm'))) return;
+  const ok = await showConfirm({
+    title: t('stats.clear'),
+    message: t('stats.clearConfirm'),
+    confirmText: t('stats.clearConfirmBtn'),
+    cancelText: t('common.cancel'),
+  });
+  if (!ok) return;
   try {
     await browser.runtime.sendMessage({ action: 'clearStats' });
     await loadStats();
@@ -1207,7 +1213,13 @@ async function handleFileImport(event: Event): Promise<void> {
 }
 
 async function resetAll(): Promise<void> {
-  if (!confirm(t('config.resetConfirm'))) return;
+  const ok = await showConfirm({
+    title: t('config.resetAll'),
+    message: t('config.resetConfirm'),
+    confirmText: t('config.resetConfirmBtn'),
+    cancelText: t('common.cancel'),
+  });
+  if (!ok) return;
   try {
     await browser.storage.local.clear();
     await browser.storage.local.set(normalizeConfigData({}));
@@ -1298,7 +1310,13 @@ async function loadSubscriptions(): Promise<void> {
       if (!id) return;
       const subs2 = await getSubscriptions();
       const sub = subs2.find((s) => s.id === id);
-      if (!confirm(t('sub.deleteConfirm', sub?.name || id))) return;
+      const ok = await showConfirm({
+        title: t('sub.delete'),
+        message: t('sub.deleteConfirm', sub?.name || id),
+        confirmText: t('sub.delete'),
+        cancelText: t('common.cancel'),
+      });
+      if (!ok) return;
       await deleteSubscription(id, true);
       await loadSubscriptions();
       await loadRules();
@@ -1455,8 +1473,16 @@ async function loadModelsSection(): Promise<void> {
       const customs2 = await listModels();
       const target = customs2.find((m) => m.id === id);
       if (!target) return;
-      if (!confirm(t('model.deleteConfirm', target.name))) return;
+      const ok = await showConfirm({
+        title: t('model.deleteBtn'),
+        message: t('model.deleteConfirm', target.name),
+        confirmText: t('model.deleteBtn'),
+        cancelText: t('common.cancel'),
+      });
+      if (!ok) return;
       await deleteModel(id);
+      // 通知后台逐出该模型的缓存引擎，否则重用同 id 时会拿到旧字节构建的引擎
+      try { await browser.runtime.sendMessage({ action: 'invalidateModel', modelId: id }); } catch {}
       showToast(t('model.deleted'), 'success');
       await loadModelsSection();
     });

@@ -193,6 +193,23 @@ function invalidateDetectionEngine(): void {
   detectionEngineInit = null;
 }
 
+/**
+ * OCR 模型被删除 / 替换后，把它从 engineCache 里逐出，下次识别时按新字节重建。
+ * 不传 modelId 则整表清空（用于「不确定影响哪个」的兜底场景）。
+ *
+ * 必要性：engineCache 以 modelId 为键最多缓存 2 个引擎。删除模型后若不逐出，
+ * 用同一 id 重新上传/启用时会拿到用旧字节构建的引擎。
+ */
+function invalidateOCREngine(modelId?: string): void {
+  if (modelId) {
+    engineCache.delete(modelId);
+    console.log('[Background Firefox] 已逐出缓存引擎:', modelId);
+  } else {
+    engineCache.clear();
+    console.log('[Background Firefox] 已清空引擎缓存');
+  }
+}
+
 browser.runtime.onInstalled.addListener((details: any) => {
   console.log('[Background Firefox] 扩展安装/更新:', details.reason);
   if (details.reason === 'install') {
@@ -363,6 +380,10 @@ async function handleMessage(
         break;
       case 'detModelChanged':
         invalidateDetectionEngine();
+        sendResponse({ success: true });
+        break;
+      case 'invalidateModel':
+        invalidateOCREngine(message.modelId);
         sendResponse({ success: true });
         break;
       case 'getRuleStat':
