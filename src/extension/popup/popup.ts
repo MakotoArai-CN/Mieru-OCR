@@ -4,6 +4,7 @@ import { initLocale, t, translatePage } from '@core/i18n';
 let currentCaptcha: any = null;
 let recognizedText: string | null = null;
 let currentHostname: string | null = null;
+let currentSiteRuleKey: string | null = null;
 let currentSiteRule: any = null;
 let hasCustomInput = false;
 let hasCustomCaptcha = false;
@@ -155,9 +156,16 @@ async function loadStatus(): Promise<void> {
       }
     }
 
+    // 记下命中的 key：删除时必须按它来，按 hostname 反查会漏掉
+    // urlPattern / fullUrl 规则。未命中时要显式收起规则区，否则横幅会残留。
     if (matchedRule) {
+      currentSiteRuleKey = matchedRule.key;
       currentSiteRule = matchedRule.rule;
       showRuleSection(matchedRule.rule);
+    } else {
+      currentSiteRuleKey = null;
+      currentSiteRule = null;
+      elements.ruleSection?.classList.add('hidden');
     }
 
     if (!isInjectableUrl(tab.url)) {
@@ -207,7 +215,9 @@ function updateReadyStatus(): void {
 
 function showRuleSection(rule: any): void {
   elements.ruleSection?.classList.remove('hidden');
-  const selector = rule.selector.length > 25 ? rule.selector.substring(0, 25) + '...' : rule.selector;
+  // 交互式规则（滑块/点选）可能没有 selector，直接取 .length 会抛 TypeError。
+  const raw = String(rule?.selector || '');
+  const selector = raw.length > 25 ? raw.substring(0, 25) + '...' : raw;
   elements.ruleText!.textContent = t('popup.ruleRemembered', selector);
 }
 
@@ -231,6 +241,8 @@ function updateOcrStatusView(status: string, message?: string): void {
   if (status === 'ready') {
     elements.ocrStatus.textContent = t('popup.status.ready');
     elements.ocrStatus.className = 'value status-ready';
+    // 必须清掉 title：否则 fault→ready 恢复后，绿色「就绪」上仍挂着旧错误提示。
+    elements.ocrStatus.title = '';
     return;
   }
 
@@ -388,33 +400,28 @@ async function previewCaptcha(): Promise<void> {
 }
 
 async function deleteSiteRule(): Promise<void> {
-  if (!currentHostname) return;
+  // 直接用匹配时记下的 key。此前按 hostname 重新反查，对 urlPattern / fullUrl
+  // 规则永远找不到 key，却仍然收起横幅并提示「已删除」——静默失败。
+  if (!currentSiteRuleKey) {
+    showToast(t('popup.noRuleFound'), 'error');
+    return;
+  }
+
+  const ok = await showConfirm({
+    title: t('popup.deleteRule'),
+    message: t('rules.deleteRuleConfirmMsg'),
+    confirmText: t('common.delete'),
+    cancelText: t('common.cancel'),
+  });
+  if (!ok) return;
 
   try {
-    const rulesResponse = await chrome.runtime.sendMessage({ action: 'getSiteRules' });
-    const rules = rulesResponse.success ? rulesResponse.rules : {};
-    
-    let keyToDelete: string | null = null;
-    
-    for (const key of Object.keys(rules)) {
-      const rule = rules[key];
-      if (rule.hostname === currentHostname) {
-        keyToDelete = key;
-        break;
-      }
-    }
-
-    if (keyToDelete) {
-      await chrome.runtime.sendMessage({
-        action: 'deleteSiteRule',
-        ruleKey: keyToDelete,
-        hostname: currentHostname,
-      });
-    }
-
+    await chrome.runtime.sendMessage({ action: 'deleteSiteRule', ruleKey: currentSiteRuleKey });
     elements.ruleSection?.classList.add('hidden');
+    currentSiteRuleKey = null;
     currentSiteRule = null;
     showToast(t('popup.ruleDeleted'), 'success');
+    await loadStatus();
   } catch {
     showToast(t('popup.deleteFailed'), 'error');
   }
