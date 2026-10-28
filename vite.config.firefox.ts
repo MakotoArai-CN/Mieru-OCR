@@ -1,3 +1,4 @@
+import { copyWasmRuntime, bundleContentScript, bundleBackground } from './scripts/extension-assets';
 import { defineConfig, createLogger } from 'vite';
 import { resolve } from 'path';
 import { copyFileSync, mkdirSync, existsSync, readdirSync, rmSync, statSync, readFileSync, writeFileSync } from 'fs';
@@ -55,25 +56,6 @@ function copyDirRecursive(srcDir: string, destDir: string): void {
   }
 }
 
-async function bundleContentScript(distDir: string, entryPath: string, isFirefox = true): Promise<void> {
-  const esbuild = await import('esbuild');
-  await esbuild.build({
-    entryPoints: [entryPath],
-    bundle: true,
-    format: 'iife',
-    platform: 'browser',
-    target: ['es2020'],
-    tsconfig: resolve(__dirname, 'tsconfig.json'),
-    outfile: resolve(distDir, 'content.js'),
-    allowOverwrite: true,
-    legalComments: 'none',
-    logLevel: 'silent',
-    // 这道 esbuild 编译独立于 vite，不继承其 define——必须在此单独注入，
-    // 否则 content script 运行时抛 __FIREFOX__ is not defined，且因为
-    // logLevel: 'silent' 构建期不会有任何警告。
-    define: { __FIREFOX__: String(isFirefox) },
-  });
-}
 
 function copyFirefoxAssets() {
   return {
@@ -124,25 +106,7 @@ function copyFirefoxAssets() {
       //   }
       // }
 
-      const ortDistDir = resolve(__dirname, 'node_modules/onnxruntime-web/dist');
-      if (existsSync(ortDistDir)) {
-        const files = readdirSync(ortDistDir);
-        const runtimeFiles = files.filter((f) => {
-          if (f === 'ort.min.js') return true;
-          if (f.startsWith('ort-') && f.endsWith('.wasm')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.mjs')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.worker.js')) return true;
-          return false;
-        });
-        runtimeFiles.forEach((file) => {
-          const srcPath = resolve(ortDistDir, file);
-          const destPath = resolve(distDir, file);
-          if (existsSync(srcPath)) {
-            copyFileSync(srcPath, destPath);
-            console.log(`Copied ${file}`);
-          }
-        });
-      }
+      copyWasmRuntime(distDir);
 
       const distIconsDir = resolve(distDir, 'icons');
       if (!existsSync(distIconsDir)) {
@@ -184,11 +148,9 @@ function copyFirefoxAssets() {
 
       const nestedPopup = resolve(distDir, 'src/extension/popup/popup-firefox.html');
       const nestedOptions = resolve(distDir, 'src/extension/options/options-firefox.html');
-      const nestedBgHtml = resolve(distDir, 'src/extension/background/background-firefox.html');
 
       const rootPopup = resolve(distDir, 'popup.html');
       const rootOptions = resolve(distDir, 'options.html');
-      const rootBgHtml = resolve(distDir, 'background.html');
 
       if (existsSync(nestedPopup)) {
         copyFileSync(nestedPopup, rootPopup);
@@ -197,10 +159,6 @@ function copyFirefoxAssets() {
       if (existsSync(nestedOptions)) {
         copyFileSync(nestedOptions, rootOptions);
         console.log('Copied options-firefox.html to options.html');
-      }
-      if (existsSync(nestedBgHtml)) {
-        copyFileSync(nestedBgHtml, rootBgHtml);
-        console.log('Copied background-firefox.html to background.html');
       }
 
       const nestedSrcDir = resolve(distDir, 'src');
@@ -213,8 +171,13 @@ function copyFirefoxAssets() {
         }
       }
 
-      await bundleContentScript(distDir, resolve(__dirname, 'src/extension/content/content-firefox.ts'));
+      await bundleContentScript(distDir, resolve(__dirname, 'src/extension/content/content-firefox.ts'), true);
       console.log('Rebundled Firefox content.js as classic script');
+
+      // MV3 背景页：`background.scripts` 只接受按顺序执行的经典脚本，不能是 ESM 分块，
+      // 所以这里单独打成 IIFE（manifest 里先加载 ort.min.js，再加载 background.js）。
+      await bundleBackground(distDir);
+      console.log('Bundled Firefox background.js as classic script');
 
       const zipFile = new AdmZip();
       zipFile.addLocalFolder(distDir);
@@ -227,6 +190,7 @@ function copyFirefoxAssets() {
 }
 
 export default defineConfig({
+  publicDir: false,
   customLogger: makeQuietLogger(),
   // 平台判定用构建期常量，便于 tree-shaking 掉 MV3 专有分支。
   // 注意 content script 走 bundleContentScript 的 esbuild 二次编译，需在那里单独 define。
@@ -246,8 +210,6 @@ export default defineConfig({
       input: {
         'popup-firefox': resolve(__dirname, 'src/extension/popup/popup-firefox.html'),
         'options-firefox': resolve(__dirname, 'src/extension/options/options-firefox.html'),
-        'background-html': resolve(__dirname, 'src/extension/background/background-firefox.html'),
-        background: resolve(__dirname, 'src/extension/background/background-firefox.ts'),
         content: resolve(__dirname, 'src/extension/content/content-firefox.ts'),
       },
       output: {

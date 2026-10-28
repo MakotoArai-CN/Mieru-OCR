@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Mieru-OCR Extension",
   "version": "1.2.0",
   "description": "完全离线的验证码识别工具，支持自动检测并填充验证码",
@@ -17,14 +17,18 @@
     "activeTab",
     "storage",
     "alarms",
-    "contextMenus",
+    "contextMenus"
+  ],
+  "host_permissions": [
     "<all_urls>"
   ],
   "background": {
-    "page": "background.html",
-    "persistent": true
+    "scripts": [
+      "ort.min.js",
+      "background.js"
+    ]
   },
-  "browser_action": {
+  "action": {
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
@@ -54,22 +58,13 @@
       "all_frames": true
     }
   ],
-  "web_accessible_resources": [
-    "common.onnx",
-    "common_det.onnx",
-    "charsets.json",
-    "icons/*",
-    "ort-wasm-simd.wasm",
-    "ort-wasm.wasm",
-    "ort-wasm-threaded.wasm",
-    "ort-wasm-simd-threaded.wasm",
-    "ort.min.js"
-  ],
-  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
   "browser_specific_settings": {
     "gecko": {
       "id": "Mieru-OCR@makotoarai",
-      "strict_min_version": "140.0",
+      "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": [
           "none"
