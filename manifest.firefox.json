@@ -11,6 +11,7 @@
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "64": "icons/icon-64.png",
+    "96": "icons/icon-96.png",
     "128": "icons/icon-128.png"
   },
   "permissions": [
@@ -35,6 +36,7 @@
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png",
       "64": "icons/icon-64.png",
+      "96": "icons/icon-96.png",
       "128": "icons/icon-128.png"
     },
     "default_title": "Mieru-OCR"
@@ -70,6 +72,9 @@
           "none"
         ]
       }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
     }
   }
 }

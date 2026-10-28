@@ -160,6 +160,112 @@ function charMatch(boxChar: string, target: string): boolean {
   return false;
 }
 
+/**
+ * OCR 常见形近字混淆。只在精确匹配失败后作为第二遍尝试，
+ * 避免把本该失败的情况强行点错（顺序点选点错一个就整题失败，但"不点"同样失败，
+ * 所以有依据的猜测是净收益）。
+ */
+const CONFUSABLE_GROUPS: string[][] = [
+  ['未', '末'], ['己', '已', '巳'], ['日', '曰'], ['戌', '戍', '戊'],
+  ['天', '夭'], ['人', '入'], ['千', '干'], ['土', '士'], ['田', '由', '甲', '申'],
+  ['0', 'O', 'o', '〇'], ['1', 'l', 'I', '丨'], ['2', 'Z'], ['5', 'S'], ['8', 'B'],
+];
+
+function confusableOf(ch: string): string[] {
+  for (const group of CONFUSABLE_GROUPS) {
+    if (group.includes(ch)) return group.filter((c) => c !== ch);
+  }
+  return [];
+}
+
+export interface TargetAssignment {
+  /** 按题序选中的候选框下标 */
+  indices: number[];
+  /** 非精确匹配的兜底记录，便于诊断 */
+  warnings: string[];
+}
+
+/**
+ * 把题面字符按顺序分配给候选框。纯函数，便于单测。
+ *
+ * 三轮策略：
+ *  1. 精确匹配（同字 / 单字被候选串包含），同字取 OCR 置信度最高的未用框；
+ *  2. 形近字兜底（未/末、0/O 等）；
+ *  3. 数量相同时按"排除法"分配剩余框（det 可能把某个字识别成空串）。
+ * 任意一轮之后仍有目标无法分配且无法排除 → 返回 null（调用方放弃，避免乱点）。
+ */
+export function assignTargets(
+  order: string[],
+  boxes: { char: string; conf: number }[],
+): TargetAssignment | null {
+  if (order.length === 0 || boxes.length < order.length) return null;
+
+  const used = new Array(boxes.length).fill(false);
+  const indices: number[] = new Array(order.length).fill(-1);
+  const warnings: string[] = [];
+
+  const pick = (target: string, accept: (char: string) => boolean): number => {
+    let best = -1;
+    let bestConf = -Infinity;
+    for (let i = 0; i < boxes.length; i++) {
+      if (used[i]) continue;
+      if (!accept(boxes[i].char)) continue;
+      const conf = Number.isFinite(boxes[i].conf) ? boxes[i].conf : 0;
+      if (conf > bestConf) {
+        best = i;
+        bestConf = conf;
+      }
+    }
+    return best;
+  };
+
+  // 1) 精确
+  for (let t = 0; t < order.length; t++) {
+    const idx = pick(order[t], (ch) => charMatch(ch, order[t]));
+    if (idx >= 0) {
+      used[idx] = true;
+      indices[t] = idx;
+    }
+  }
+
+  // 2) 形近字
+  for (let t = 0; t < order.length; t++) {
+    if (indices[t] >= 0) continue;
+    const equivalents = confusableOf(order[t]);
+    if (equivalents.length === 0) continue;
+    const idx = pick(order[t], (ch) => equivalents.some((eq) => ch === eq || (eq.length === 1 && ch.includes(eq))));
+    if (idx >= 0) {
+      used[idx] = true;
+      indices[t] = idx;
+      warnings.push(`confusable:${order[t]}->${boxes[idx].char}`);
+    }
+  }
+
+  // 3) 排除法（仅当候选数与目标数相同，剩余一一对应）
+  if (order.length === boxes.length) {
+    for (let t = 0; t < order.length; t++) {
+      if (indices[t] >= 0) continue;
+      let best = -1;
+      let bestConf = -Infinity;
+      for (let i = 0; i < boxes.length; i++) {
+        if (used[i]) continue;
+        const conf = Number.isFinite(boxes[i].conf) ? boxes[i].conf : 0;
+        if (conf > bestConf) {
+          best = i;
+          bestConf = conf;
+        }
+      }
+      if (best >= 0) {
+        used[best] = true;
+        indices[t] = best;
+        warnings.push(`eliminated:${order[t]}->${boxes[best].char || '?'}`);
+      }
+    }
+  }
+
+  return indices.some((i) => i < 0) ? null : { indices, warnings };
+}
+
 /** 从 DOM 启发式读取题面顺序（如「请依次点击：黄瓜皮」「请按顺序点击"辰人鸟"」）。失败返回 null。 */
 function readPromptOrderFromDom(captcha: DetectedCaptcha): string[] | null {
   const container = captcha.element as HTMLElement;
@@ -241,26 +347,18 @@ export async function solveClickSelect(
   log(`检测到 ${labeled.length} 个候选框: ${detected}`);
   if (labeled.length === 0) return { success: false, reason: 'no-boxes', detected };
 
-  // 3. 按题序匹配
-  const used = new Set<number>();
-  const chosen: LabeledBox[] = [];
-  for (const target of order) {
-    let bestIdx = -1;
-    let bestConf = -1;
-    for (let i = 0; i < labeled.length; i++) {
-      if (used.has(i)) continue;
-      if (charMatch(labeled[i].char, target) && labeled[i].conf > bestConf) {
-        bestIdx = i;
-        bestConf = labeled[i].conf;
-      }
-    }
-    if (bestIdx < 0) {
-      log(`题面字符「${target}」未在候选框中找到`);
-      return { success: false, reason: `unmatched:${target}`, detected };
-    }
-    used.add(bestIdx);
-    chosen.push(labeled[bestIdx]);
+  // 3. 按题序匹配（精确 → 形近字 → 排除法）
+  if (labeled.length < order.length) {
+    log(`候选框不足: 题序 ${order.length} 个字，只检测到 ${labeled.length} 个框`);
+    return { success: false, reason: 'too-few-boxes', detected };
   }
+  const assignment = assignTargets(order, labeled.map((b) => ({ char: b.char, conf: b.conf })));
+  if (!assignment) {
+    log(`题序与候选框无法对应: 题面=${order.join('')} 检测=${detected}`);
+    return { success: false, reason: `unmatched:${order.join('')}`, detected };
+  }
+  for (const warning of assignment.warnings) log(`匹配兜底: ${warning}`);
+  const chosen = assignment.indices.map((index) => labeled[index]);
 
   // 4. 逐个点击（主图像素系 → 视口坐标）
   const rect = imgEl.getBoundingClientRect();

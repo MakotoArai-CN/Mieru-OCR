@@ -64,7 +64,7 @@ export interface SlideMatchResult {
    * 正确缺口≈1，错位通常 <0.5；NaN 表示拼图块没有 alpha 通道（无法校验）。
    */
   contentScore: number;
-  method: 'edge' | 'edge+alpha' | 'grayscale-fallback' | 'content-search';
+  method: 'edge' | 'edge+alpha' | 'grayscale-fallback' | 'content-search' | 'shape-match';
   targetEdgeCount: number;
   elapsed: number;
   downsample: number;
@@ -82,6 +82,97 @@ export function toGray(imgData: ImageLike): GrayImage {
     out[i / 4] = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
   return { data: out, width, height };
+}
+
+/** 取拼图块 alpha 通道做二值掩膜（255=实体）。用于只看轮廓的匹配。 */
+function alphaMaskGray(piece: ImageLike): GrayImage {
+  const { width, height, data } = piece;
+  const out = new Float32Array(width * height);
+  for (let i = 0; i < out.length; i++) out[i] = data[i * 4 + 3] >= 128 ? 255 : 0;
+  return { data: out, width, height };
+}
+
+/** 两遍扫描的倒角距离变换：返回每个像素到最近边缘像素的近似距离。 */
+function distanceTransform(binary: Uint8Array, w: number, h: number): Float32Array {
+  const INF = 1e6;
+  const dt = new Float32Array(w * h);
+  // 边缘像素距离为 0，其余像素到最近边缘的距离由两遍扫描传播。
+  for (let i = 0; i < dt.length; i++) dt[i] = binary[i] ? 0 : INF;
+  const S = Math.SQRT2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      let v = dt[i];
+      if (v === 0) continue;
+      if (x > 0) v = Math.min(v, dt[i - 1] + 1);
+      if (y > 0) {
+        v = Math.min(v, dt[i - w] + 1);
+        if (x > 0) v = Math.min(v, dt[i - w - 1] + S);
+        if (x < w - 1) v = Math.min(v, dt[i - w + 1] + S);
+      }
+      dt[i] = v;
+    }
+  }
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      let v = dt[i];
+      if (v === 0) continue;
+      if (x < w - 1) v = Math.min(v, dt[i + 1] + 1);
+      if (y < h - 1) {
+        v = Math.min(v, dt[i + w] + 1);
+        if (x < w - 1) v = Math.min(v, dt[i + w + 1] + S);
+        if (x > 0) v = Math.min(v, dt[i + w - 1] + S);
+      }
+      dt[i] = v;
+    }
+  }
+  return dt;
+}
+
+/** 倒角匹配：把拼图轮廓贴到背景边缘距离场上，取平均距离最小处。 */
+function chamferShapeMatch(
+  bgEdge: EdgeImage,
+  maskEdge: EdgeImage,
+): { x: number; y: number; score: number } | null {
+  const offsets: { dx: number; dy: number }[] = [];
+  for (let y = 0; y < maskEdge.height; y++) {
+    for (let x = 0; x < maskEdge.width; x++) {
+      if (maskEdge.data[y * maskEdge.width + x]) offsets.push({ dx: x, dy: y });
+    }
+  }
+  if (offsets.length < 8) return null;
+
+  const { width: bw, height: bh } = bgEdge;
+  const binary = new Uint8Array(bgEdge.data.length);
+  for (let i = 0; i < binary.length; i++) binary[i] = bgEdge.data[i] ? 1 : 0;
+  const dt = distanceTransform(binary, bw, bh);
+
+  const maxX = bw - maskEdge.width;
+  const maxY = bh - maskEdge.height;
+  if (maxX < 0 || maxY < 0) return null;
+
+  let bestMean = Infinity;
+  let bestX = 0;
+  let bestY = 0;
+  for (let y = 0; y <= maxY; y++) {
+    for (let x = 0; x <= maxX; x++) {
+      let sum = 0;
+      for (let i = 0; i < offsets.length; i++) {
+        const d = dt[(y + offsets[i].dy) * bw + (x + offsets[i].dx)];
+        sum += d > 8 ? 8 : d;
+      }
+      const mean = sum / offsets.length;
+      if (mean < bestMean) {
+        bestMean = mean;
+        bestX = x;
+        bestY = y;
+      }
+    }
+  }
+  if (!Number.isFinite(bestMean)) return null;
+  // 平均距离 ≤3px 视为可信；越集中分数越高。
+  return { x: bestX, y: bestY, score: Math.max(0, 1 - bestMean / 6) };
 }
 
 function gaussianKernel1D(sigma: number, size: number): Float32Array {
@@ -518,6 +609,16 @@ export function slideMatch(
   let method: SlideMatchResult['method'];
   const runEdge = (): MatchResult => matchTemplate(toFloatEdge(bgEdge), toFloatEdge(tEdge));
   const runGray = (): MatchResult => matchTemplate(bgGray, targetGray);
+  // 形状匹配：只用拼图块的 alpha 轮廓（与内容无关）。
+  // 有些站点会把背景图重新裁剪/拼接，拼图内容与缺口对不上，此时内容相关性和
+  // 内容边缘都不可信，缺口的"轮廓"是唯一稳定信号。
+  const runShape = (): { x: number; y: number; score: number } | null => {
+    if (!box) return null;
+    const mask = alphaMaskGray(targetImgData);
+    const maskEdge = canny(mask, lowT, highT, sigma);
+    if (countNonZero(maskEdge.data) < 8) return null;
+    return chamferShapeMatch(bgEdge, maskEdge);
+  };
   if (tEdgeCount < minEdgePixels) {
     // 边缘太少 -> 灰度匹配兜底
     method = 'grayscale-fallback';
@@ -556,8 +657,22 @@ export function slideMatch(
   }
 
   // 两条路径都校验不过：直接按拼图块内容在背景上扫一遍。
-  // 这是最可靠但最贵的兜底，只在"可疑匹配"时触发。
+  // 内容对不上（背景被重排/拼接、或拼图内容被模糊/压缩）时，
+  // 先用拼图轮廓去对缺口轮廓——轮廓与内容无关，是这类场景最稳的信号。
   if (Number.isFinite(contentScore) && contentScore < 0.4) {
+    const shape = runShape();
+    // 倒角分：平均距离 ≤3px 对应 0.5 分，低于这个值说明背景里没有匹配的轮廓。
+    if (shape && shape.score >= 0.5) {
+      // chamfer 返回的是「整张拼图图像左上角」的坐标，换算成 alpha bbox 坐标要加回 cropOffset。
+      position = { x: shape.x + cropOffset.x, y: shape.y + cropOffset.y };
+      method = 'shape-match';
+      // 位置换了就要按新位置重算内容相关性（可能从"误匹配"变成真缺口）。
+      contentScore = contentAt(position);
+    }
+  }
+
+  // 轮廓也对不上时，再按拼图块内容在背景上扫一遍（内容存在但被误匹配的场景）。
+  if (Number.isFinite(contentScore) && contentScore < 0.4 && method !== 'shape-match') {
     const searched = searchByContent(bgImgData, targetImgData);
 
     if (searched.score >= 0.8 && searched.score > contentScore) {

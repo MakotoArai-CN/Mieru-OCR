@@ -73,6 +73,18 @@ const engines = createModelEngines({
   },
 });
 
+// Firefox for Android 不会渲染 action popup：清空 popup，点击图标直接打开设置页。
+// 桌面端保持 popup 不变（设置了 popup 时 onClicked 不会触发）。
+void browser.runtime.getPlatformInfo()
+  .then((info: { os?: string }) => {
+    if (info?.os !== 'android') return;
+    void browser.action?.setPopup?.({ popup: '' });
+  })
+  .catch(() => { /* 拿不到平台信息就按桌面处理 */ });
+browser.action?.onClicked?.addListener(() => {
+  void browser.runtime.openOptionsPage();
+});
+
 browser.runtime.onInstalled.addListener((details: any) => {
   console.log('[Background Firefox] 扩展安装/更新:', details.reason);
   if (details.reason === 'install') {

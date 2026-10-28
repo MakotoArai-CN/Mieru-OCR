@@ -75,8 +75,17 @@ export function translatePage(root?: Element | Document): void {
 
   container.querySelectorAll('[data-i18n-title]').forEach((el) => {
     const key = el.getAttribute('data-i18n-title');
-    if (key) (el as HTMLElement).title = t(key);
+    if (!key) return;
+    const text = t(key);
+    (el as HTMLElement).title = text;
+    // 图标按钮没有可读文本，补 aria-label 让读屏能念出来
+    if (!(el.textContent || '').trim()) el.setAttribute('aria-label', text);
   });
+
+  // 让读屏与 :lang 选择器拿到当前语言（切换语言后 document.lang 也要跟着变）
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = currentLocale === 'zh' ? 'zh-CN' : currentLocale;
+  }
 
   container.querySelectorAll('[data-i18n-html]').forEach((el) => {
     const key = el.getAttribute('data-i18n-html');

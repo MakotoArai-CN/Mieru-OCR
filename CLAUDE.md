@@ -21,7 +21,7 @@ bun run type-check           # TypeScript type checking (tsc --noEmit)
 ```
 
 Automated tests:
-- `bun test ./test` — unit tests for the shared core (25 cases)
+- `bun test ./test` — unit tests for the shared core (38 cases)
 - `python test/e2e/extension_smoke.py` — real Chromium + unpacked MV3 extension e2e (login/OCR/slider/CORS/iframe/settings/model/import)
 - `python test/e2e/firefox_smoke.py` — real Firefox + temporary MV3 add-on e2e (Selenium + geckodriver)
 - `npx web-ext lint --source-dir dist/firefox` — official Mozilla add-on validation
@@ -77,4 +77,5 @@ The `version` file at repo root is the source of truth. CI reads it and syncs to
 - Quantized model variants are in `models/` (for benchmarking, not bundled by default)
 - ONNX Runtime WASM files are copied from `node_modules/onnxruntime-web/dist/` during extension builds
 - For the userscript, ONNX Runtime is loaded via CDN `@require`, and models are downloaded from GitHub mirrors and cached in IndexedDB
+
 

@@ -712,7 +712,7 @@ function showContextMenuToast(input: ContextToastInput): void {
       : 'linear-gradient(135deg,#10b981,#059669)';
     wrapper.style.cssText = [
       'position:fixed', 'bottom:24px', 'right:24px',
-      'min-width:220px', 'max-width:380px',
+      'min-width:min(220px,calc(100vw - 48px))', 'max-width:min(380px,calc(100vw - 48px))', 'box-sizing:border-box',
       'padding:14px 18px',
       `background:${bg}`,
       'color:#fff',
@@ -1054,31 +1054,44 @@ function handleScan(sendResponse: (response: any) => void): void {
   }
 }
 
+/** 等单个 <img> 加载完成（已加载则立即返回）。 */
+async function waitImageReady(img: HTMLImageElement, timeout: number): Promise<void> {
+  if (img.complete && img.naturalWidth > 0) return;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(t('content.imageTimeout')));
+    }, timeout);
+    const onLoad = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error(t('content.imageFailed')));
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      img.removeEventListener('load', onLoad);
+      img.removeEventListener('error', onError);
+    };
+    img.addEventListener('load', onLoad);
+    img.addEventListener('error', onError);
+  });
+}
+
 async function waitForReady(captcha: DetectedCaptcha, timeout = 8000): Promise<void> {
   if (captcha.type === 'image') {
-    const img = captcha.element as HTMLImageElement;
-    if (img.complete && img.naturalWidth > 0) return;
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(t('content.imageTimeout')));
-      }, timeout);
-      const onLoad = () => {
-        cleanup();
-        resolve();
-      };
-      const onError = () => {
-        cleanup();
-        reject(new Error(t('content.imageFailed')));
-      };
-      const cleanup = () => {
-        clearTimeout(timer);
-        img.removeEventListener('load', onLoad);
-        img.removeEventListener('error', onError);
-      };
-      img.addEventListener('load', onLoad);
-      img.addEventListener('error', onError);
-    });
+    await waitImageReady(captcha.element as HTMLImageElement, timeout);
+    return;
+  }
+  // 滑块/点选的图片元素同样要等加载：没加载完就取像素会拿到空白画布，
+  // 模板匹配必然出错（表现为随机拖偏或直接放弃）。
+  const images: HTMLImageElement[] = [];
+  if (captcha.innerCanvas instanceof HTMLImageElement) images.push(captcha.innerCanvas);
+  if (captcha.sliderPiece instanceof HTMLImageElement) images.push(captcha.sliderPiece);
+  if (images.length > 0) {
+    await Promise.all(images.map(img => waitImageReady(img, timeout)));
     return;
   }
   await new Promise(resolve => requestAnimationFrame(resolve));
@@ -1947,7 +1960,7 @@ function showMieruToast(text: string, durationMs = 6000): void {
     const el = document.createElement('div');
     el.dataset.mieruToast = '1';
     el.textContent = text;
-    el.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:360px;padding:12px 16px;background:#1a1a2e;color:#fff;font-size:13px;line-height:1.5;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;';
+    el.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:min(360px,calc(100vw - 32px));box-sizing:border-box;padding:12px 16px;background:#1a1a2e;color:#fff;font-size:13px;line-height:1.5;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;';
     document.body.appendChild(el);
     requestAnimationFrame(() => { el.style.opacity = '1'; });
     setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, durationMs);

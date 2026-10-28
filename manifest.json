@@ -11,6 +11,7 @@
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "64": "icons/icon-64.png",
+    "96": "icons/icon-96.png",
     "128": "icons/icon-128.png"
   },
   "permissions": [
@@ -35,6 +36,7 @@
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png",
       "64": "icons/icon-64.png",
+      "96": "icons/icon-96.png",
       "128": "icons/icon-128.png"
     },
     "default_title": "Mieru-OCR"
@@ -42,14 +44,21 @@
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
-  }
+  },
+  "minimum_chrome_version": "116"
 }
