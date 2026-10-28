@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mieru-OCR Regression</title>
+<body>
+  <form>
+    <label>Name <input id="name"></label>
+    <canvas id="captcha-image" width="120" height="45"></canvas>
+    <label>Captcha <input id="captcha-input" name="captcha"></label>
+  </form>
+  <pre>Running browser checks...</pre>
+  <script src="/runtime/ort.min.js"></script>
+  <script src="/browser/regression.bundle.js"></script>
+</body>
+</html>

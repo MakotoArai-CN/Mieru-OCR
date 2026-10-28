@@ -112,3 +112,79 @@ bun run test:interaction
 - 本服务**不会**被任何 `bun run build:*` 命令包含到扩展产物里，是纯开发/测试工具。
 - `subscription.json` 里大部分关键词都加了 `subtest` 前缀，目的是不与真实网站的规则发生碰撞；测试完请**务必删除订阅**让扩展回滚这些规则。
 - 如果要测「自动更新」逻辑，把订阅的 `updateInterval` 设短一些（例如 1 小时），然后修改 `subscription.json` 中的 `version` 或 `updatedAt` 字段。
+
+## 扩展端到端测试：真实业务场景（真浏览器 + 真扩展 + 迷你后端）
+
+`e2e/extension_smoke.py` 用 Python Playwright 拉起带 `dist/extension` 未打包扩展的真实
+Chromium，并起一个迷你后端（验证码真值、登录校验、换图接口都在服务端），场景复刻
+电商/后台登录链路，而不是「画个 canvas 填个 input」：
+
+**登录页**（`/login`）
+- Header + 顶部搜索框 + 登录卡片 + 营销 banner + logo/头像/二维码装饰图 + 隐藏验证码图；
+- 验证码输入框包在 `.ant-form-item` / `.ant-input-group` 里（模拟 Ant Design 结构），
+  另有手机号/邮箱（预填）、密码（预填）、短信验证码（空）等干扰输入；
+- 验证码由页面按 `test/index.html` 同款算法生成（渐变底 + 干扰线 + 噪点 + 彩色旋转字形），
+  由后端以 PNG 下发；后端保存真值，校验**不区分大小写**（真实站点常见约定）；
+- 用户协议自动勾选、「7 天免登录」不得被勾、其他输入框不得被填充；
+- 提交后：错误 → 后端换一张新验证码（`img.src` 变化）→ 扩展需重新识别填充 → 再次提交。
+
+| 用例 | 验证点 |
+|------|--------|
+| `login` | 真实登录链路：先**故意填错**触发「拒绝 → 换图 → 重新识别」，再识别正确后登录成功；同时校验干扰输入未被填充、协议已勾选 |
+| `slider` | 极验风格拼图滑块：背景挖圆形缺口 + 从背景裁出的拼图块，扩展用 pointer 事件真实拖拽，后端按 ±6px 容差校验落点 |
+| `spa` | 验证码组件整个节点重建（旧引用失效）后，站点规则仍能命中新节点并继续识别 |
+| `crossorigin` | 跨域且无 CORS 头的图床 → 后台 `fetchImageData` 代抓 → 仍能识别填充 |
+| `rule` | 懒加载 3s 后才渲染的组件 + 站点规则（`solveDelayMs/retryMs/maxWaitMs`）重试生效 |
+| `iframe` | 内嵌合作方登录框：按 frameId 定向的右键识别由子框架应答并出结果 toast |
+| `settings` | 改设置不刷新页面立即生效（关闭 autoFill 不再填充，恢复后继续填充） |
+| `model` | `activeModelId` 指向不存在的模型 → 回退内置模型并提示用户 |
+| `import` | 导入非法/合法配置都不会清空订阅与模型注册表 |
+
+```bash
+bun run build:extension                      # 必须先构建
+pip install playwright && playwright install chromium
+python test/e2e/extension_smoke.py           # 全部用例
+python test/e2e/extension_smoke.py login     # 只跑名字含 login 的用例
+```
+
+如果想验证用例本身有效，可以临时撤掉某个修复再跑对应用例：
+
+- 把 `content.ts` 的 `chrome.runtime.onMessage.addListener(handleMessage)` 挪回子框架门控之后
+  → `iframe` 报 `Receiving end does not exist`；
+- 去掉 content 的 `chrome.storage.onChanged` 监听 → `settings` 报「关闭 autoFill 后仍被填充」；
+- 恢复导入前的 `storage.local.clear()` → `import` 报「合法导入把订阅清掉了」。
+
+> 脚本依赖 Python + 本地 Chromium，不进 CI；发版前本地跑一遍即可。每次运行会打印
+> 登录尝试次数与验证码命中情况（不区分大小写），可作为模型回归的粗粒度指标。
+
+## Firefox 端到端测试（MV3 + 真 Firefox）
+
+`e2e/firefox_smoke.py` 用 **Selenium + geckodriver** 启动真实 Firefox，通过
+`install_addon(..., temporary=True)` 装入 `dist/firefox`（MV3），复用同一套迷你后端与测试页。
+Playwright 的 Firefox 不支持加载扩展，所以这里单独走 geckodriver。
+
+| 用例 | 验证点 |
+|------|--------|
+| `login` | MV3 事件页启动 → `ort.min.js` + `background.js`(经典 IIFE) 加载模型 → OCR 填充 → 登录成功；干扰输入不被改写、协议自动勾选 |
+| `slider` | 通过扩展 options 页写入 `siteRules` → 拼图滑块由背景页 Worker 匹配 + 真实拖拽，后端按 ±6px 校验 |
+
+```bash
+bun run build:firefox
+pip install selenium
+# geckodriver: https://github.com/mozilla/geckodriver/releases
+set MIERU_GECKODRIVER=C:\path\to\geckodriver.exe
+set MIERU_FIREFOX=C:\path\to\firefox.exe        # 可选，默认用 Playwright 缓存的 Firefox
+python test/e2e/firefox_smoke.py
+```
+
+同时建议跑一遍 Mozilla 官方校验（manifest/权限/API 规范）：
+
+```bash
+npx web-ext lint --source-dir dist/firefox
+```
+
+MV3 迁移要点（本项目已按此实现）：
+
+- Firefox 不支持 `background.service_worker`，MV3 用 `background.scripts` 事件页；脚本按顺序执行且必须是**经典脚本**，所以背景页用 esbuild 打成单个 IIFE，并由 manifest 先加载 `ort.min.js`（设置 `window.ort`）。
+- `action` 取代 `browser_action`；`<all_urls>` 移到 `host_permissions`；CSP 改成 `{ "extension_pages": ... }` 对象；`web_accessible_resources` 不再需要（内容脚本不加载任何扩展资源），减少模型文件对所有站点的暴露。
+- `browser_specific_settings.gecko.data_collection_permissions` 是 AMO 的硬性要求（Firefox 140+ 桌面 / 142+ Android），配合 `strict_min_version: 142.0` 可消除 web-ext lint 的 Android 版本告警。

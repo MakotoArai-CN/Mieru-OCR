@@ -15,7 +15,9 @@
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, Image, loadImage } from '@napi-rs/canvas';
+import { OCREngine } from '../src/core/ocr-engine';
+import { DetectionEngine } from '../src/core/detection-engine';
 import * as ort from 'onnxruntime-node';
 
 import { slideMatch, type ImageLike } from '../src/core/slide-detector';
@@ -33,6 +35,12 @@ function argNum(name: string, def: number): number {
   return Number.isFinite(n) ? n : def;
 }
 
+let randomState = argNum('--seed', 20260908) >>> 0;
+function random(): number {
+  randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0;
+  return randomState / 4294967296;
+}
+
 const SLIDER_N = argNum('--slider-n', 40);
 const CLICK_N = argNum('--click-n', 8);
 const SLIDER_TOL = argNum('--slider-tol', 6); // px
@@ -42,7 +50,9 @@ const SLIDER_TOL = argNum('--slider-tol', 6); // px
 const SUB_PATH = resolve(__dirname, 'subscription.json');
 const OCR_MODEL = resolve(REPO, 'public/common.onnx');
 const CHARSETS = resolve(REPO, 'public/charsets.json');
-const DET_MODEL = resolve(__dirname, 'fixtures/common_det.onnx');
+const DET_MODEL = existsSync(resolve(__dirname, 'fixtures/common_det.onnx'))
+  ? resolve(__dirname, 'fixtures/common_det.onnx')
+  : resolve(REPO, 'public/common_det.onnx');
 
 // ─── 日志 ────────────────────────────────────────────────────────────────────
 
@@ -123,9 +133,9 @@ function puzzlePath(ctx: any, w: number, h: number): void {
   ctx.closePath();
 }
 
-function renderSliderPuzzle(): { bg: ImageLike; piece: ImageLike; gapX: number; gapY: number } {
-  const gapX = 90 + Math.floor(Math.random() * (BG_W - TPL - 110));
-  const gapY = Math.floor((BG_H - TPL) / 2 + (Math.random() - 0.5) * 30);
+export function renderSliderPuzzle(): { bg: ImageLike; piece: ImageLike; gapX: number; gapY: number } {
+  const gapX = 90 + Math.floor(random() * (BG_W - TPL - 110));
+  const gapY = Math.floor((BG_H - TPL) / 2 + (random() - 0.5) * 30);
 
   const bgC = createCanvas(BG_W, BG_H);
   const bctx = bgC.getContext('2d');
@@ -135,17 +145,17 @@ function renderSliderPuzzle(): { bg: ImageLike; piece: ImageLike; gapX: number; 
   bctx.fillStyle = grad;
   bctx.fillRect(0, 0, BG_W, BG_H);
   for (let i = 0; i < 80; i++) {
-    bctx.fillStyle = `rgba(255,255,255,${0.05 + Math.random() * 0.25})`;
+    bctx.fillStyle = `rgba(255,255,255,${0.05 + random() * 0.25})`;
     bctx.beginPath();
-    bctx.arc(Math.random() * BG_W, Math.random() * BG_H, 3 + Math.random() * 16, 0, Math.PI * 2);
+    bctx.arc(random() * BG_W, random() * BG_H, 3 + random() * 16, 0, Math.PI * 2);
     bctx.fill();
   }
   for (let i = 0; i < 6; i++) {
-    bctx.strokeStyle = `rgba(0,0,0,${0.1 + Math.random() * 0.2})`;
+    bctx.strokeStyle = `rgba(0,0,0,${0.1 + random() * 0.2})`;
     bctx.lineWidth = 1;
     bctx.beginPath();
-    bctx.moveTo(Math.random() * BG_W, 0);
-    bctx.lineTo(Math.random() * BG_W, BG_H);
+    bctx.moveTo(random() * BG_W, 0);
+    bctx.lineTo(random() * BG_W, BG_H);
     bctx.stroke();
   }
 
@@ -234,16 +244,16 @@ function renderClickSelect(): { image: ImageLike; truth: CsTruth[]; order: strin
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, CS_W, CS_H);
   for (let i = 0; i < 60; i++) {
-    ctx.fillStyle = `rgba(120,140,170,${0.04 + Math.random() * 0.10})`;
+    ctx.fillStyle = `rgba(120,140,170,${0.04 + random() * 0.10})`;
     ctx.beginPath();
-    ctx.arc(Math.random() * CS_W, Math.random() * CS_H, 4 + Math.random() * 14, 0, Math.PI * 2);
+    ctx.arc(random() * CS_W, random() * CS_H, 4 + random() * 14, 0, Math.PI * 2);
     ctx.fill();
   }
 
   const pool = Array.from(CS_POOL);
   const chosen: string[] = [];
   while (chosen.length < CS_K) {
-    const c = pool[Math.floor(Math.random() * pool.length)];
+    const c = pool[Math.floor(random() * pool.length)];
     if (!chosen.includes(c)) chosen.push(c);
   }
 
@@ -251,21 +261,21 @@ function renderClickSelect(): { image: ImageLike; truth: CsTruth[]; order: strin
   const truth: CsTruth[] = [];
   chosen.forEach((ch, idx) => {
     const col = idx % cols, row = Math.floor(idx / cols);
-    const cx = cellW * col + cellW / 2 + (Math.random() - 0.5) * cellW * 0.35;
-    const cy = cellH * row + cellH / 2 + (Math.random() - 0.5) * cellH * 0.35;
+    const cx = cellW * col + cellW / 2 + (random() - 0.5) * cellW * 0.35;
+    const cy = cellH * row + cellH / 2 + (random() - 0.5) * cellH * 0.35;
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate((Math.random() - 0.5) * 0.35);
+    ctx.rotate((random() - 0.5) * 0.35);
     ctx.font = `bold ${font}px "Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = `hsl(${Math.floor(Math.random() * 360)},70%,26%)`;
+    ctx.fillStyle = `hsl(${Math.floor(random() * 360)},70%,26%)`;
     ctx.fillText(ch, 0, 0);
     ctx.restore();
     truth.push({ char: ch, cx, cy, r: font * 0.75 });
   });
 
-  const order = chosen.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+  const order = chosen.slice().sort(() => random() - 0.5).slice(0, 3);
   const img = ctx.getImageData(0, 0, CS_W, CS_H);
   return {
     image: { data: new Uint8ClampedArray(img.data), width: CS_W, height: CS_H },
@@ -274,196 +284,62 @@ function renderClickSelect(): { image: ImageLike; truth: CsTruth[]; order: strin
   };
 }
 
-/** 最小 YOLOX det 解码（对齐 DetectionEngine）。 */
+// Keep preprocessing and decoding identical to the extension; only adapt DOM and runtime.
+(globalThis as any).HTMLImageElement = Image;
+(globalThis as any).document = { createElement: () => createCanvas(1, 1) };
+const nodeOrt = {
+  env: { wasm: {} },
+  Tensor: ort.Tensor,
+  InferenceSession: {
+    create: (model: ArrayBuffer) => ort.InferenceSession.create(new Uint8Array(model), {
+      executionProviders: ['cpu'], graphOptimizationLevel: 'all',
+    }),
+  },
+};
+
 class NodeDet {
-  private session!: ort.InferenceSession;
-  private grid: { gx: number; gy: number; stride: number }[] | null = null;
-  private readonly S = 416;
-  private readonly thr = 0.1;
-  private readonly nmsIou = 0.45;
-
+  private engine!: DetectionEngine;
   async init(modelPath: string) {
-    this.session = await ort.InferenceSession.create(modelPath);
+    this.engine = new DetectionEngine({
+      getOrt: async () => nodeOrt,
+      getModel: async () => ({ model: new Uint8Array(readFileSync(modelPath)).buffer }),
+    });
+    await this.engine.init();
   }
-
-  private getGrid(n: number) {
-    if (this.grid && this.grid.length === n) return this.grid;
-    const cells: { gx: number; gy: number; stride: number }[] = [];
-    for (const stride of [8, 16, 32]) {
-      const g = this.S / stride;
-      for (let gy = 0; gy < g; gy++) {
-        for (let gx = 0; gx < g; gx++) cells.push({ gx, gy, stride });
-      }
-    }
-    this.grid = cells;
-    return cells;
-  }
-
-  async detect(image: ImageLike): Promise<{ x: number; y: number; w: number; h: number; conf: number }[]> {
-    const S = this.S;
-    const { data, width: srcW, height: srcH } = image;
-    const r = Math.min(S / srcH, S / srcW);
-    const newW = Math.max(1, Math.round(srcW * r));
-    const newH = Math.max(1, Math.round(srcH * r));
-    const plane = S * S;
-    const chw = new Float32Array(3 * plane);
-    chw.fill(114);
-    const xRatio = srcW / newW;
-    const yRatio = srcH / newH;
-    for (let y = 0; y < newH; y++) {
-      const py = y * yRatio;
-      const y1 = Math.floor(py);
-      const y2 = Math.min(y1 + 1, srcH - 1);
-      const fy = py - y1;
-      for (let x = 0; x < newW; x++) {
-        const px = x * xRatio;
-        const x1 = Math.floor(px);
-        const x2 = Math.min(x1 + 1, srcW - 1);
-        const fx = px - x1;
-        const wa = (1 - fx) * (1 - fy), wb = fx * (1 - fy), wc = (1 - fx) * fy, wd = fx * fy;
-        const i11 = (y1 * srcW + x1) * 4, i12 = (y1 * srcW + x2) * 4;
-        const i21 = (y2 * srcW + x1) * 4, i22 = (y2 * srcW + x2) * 4;
-        const R = data[i11] * wa + data[i12] * wb + data[i21] * wc + data[i22] * wd;
-        const G = data[i11 + 1] * wa + data[i12 + 1] * wb + data[i21 + 1] * wc + data[i22 + 1] * wd;
-        const B = data[i11 + 2] * wa + data[i12 + 2] * wb + data[i21 + 2] * wc + data[i22 + 2] * wd;
-        const off = y * S + x;
-        chw[off] = B;
-        chw[plane + off] = G;
-        chw[2 * plane + off] = R;
-      }
-    }
-    const inputName = this.session.inputNames[0];
-    const tensor = new ort.Tensor('float32', chw, [1, 3, S, S]);
-    const results = await this.session.run({ [inputName]: tensor });
-    const out = results[this.session.outputNames[0]];
-    const dims = out.dims as number[];
-    const numAnchors = dims[1];
-    const step = dims[2];
-    const od = out.data as Float32Array;
-    const grid = this.getGrid(numAnchors);
-    const boxes: { x: number; y: number; w: number; h: number; conf: number }[] = [];
-    for (let a = 0; a < numAnchors; a++) {
-      const off = a * step;
-      const obj = od[off + 4];
-      let cls = 1;
-      if (step > 5) {
-        cls = od[off + 5];
-        for (let c = 1; c < step - 5; c++) if (od[off + 5 + c] > cls) cls = od[off + 5 + c];
-      }
-      const score = obj * cls;
-      if (score < this.thr) continue;
-      const cell = grid[a];
-      const cx = (od[off] + cell.gx) * cell.stride;
-      const cy = (od[off + 1] + cell.gy) * cell.stride;
-      const bw = Math.exp(od[off + 2]) * cell.stride;
-      const bh = Math.exp(od[off + 3]) * cell.stride;
-      let x1 = (cx - bw / 2) / r, y1 = (cy - bh / 2) / r;
-      let x2 = (cx + bw / 2) / r, y2 = (cy + bh / 2) / r;
-      x1 = Math.max(0, Math.min(x1, srcW));
-      y1 = Math.max(0, Math.min(y1, srcH));
-      x2 = Math.max(0, Math.min(x2, srcW));
-      y2 = Math.max(0, Math.min(y2, srcH));
-      if (x2 <= x1 || y2 <= y1) continue;
-      boxes.push({ x: x1, y: y1, w: x2 - x1, h: y2 - y1, conf: score });
-    }
-    boxes.sort((a, b) => b.conf - a.conf);
-    // simple NMS
-    const kept: typeof boxes = [];
-    for (const b of boxes) {
-      let suppress = false;
-      for (const k of kept) {
-        const ix1 = Math.max(b.x, k.x), iy1 = Math.max(b.y, k.y);
-        const ix2 = Math.min(b.x + b.w, k.x + k.w), iy2 = Math.min(b.y + b.h, k.y + k.h);
-        const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
-        const uni = b.w * b.h + k.w * k.h - inter;
-        if (uni > 0 && inter / uni > this.nmsIou) { suppress = true; break; }
-      }
-      if (!suppress) kept.push(b);
-    }
-    return kept;
-  }
+  detect(image: ImageLike) { return this.engine.detect(image); }
+  destroy() { return this.engine.destroy(); }
 }
 
 class NodeOcr {
-  private session!: ort.InferenceSession;
-  private charsets: string[] = [];
-
+  private engine!: OCREngine;
   async init(modelPath: string, charsetsPath: string) {
-    this.session = await ort.InferenceSession.create(modelPath);
-    this.charsets = JSON.parse(readFileSync(charsetsPath, 'utf-8'));
+    this.engine = new OCREngine({
+      getOrt: async () => nodeOrt,
+      getModel: async () => ({
+        model: new Uint8Array(readFileSync(modelPath)).buffer,
+        charsets: JSON.parse(readFileSync(charsetsPath, 'utf8')),
+      }),
+    });
+    await this.engine.init();
   }
 
-  /** 对齐 ddddocr common：高 64、宽等比、/255、CHW 灰度。 */
   async recognizeCrop(image: ImageLike, box: { x: number; y: number; w: number; h: number }): Promise<string> {
-    const sx = Math.max(0, Math.round(box.x));
-    const sy = Math.max(0, Math.round(box.y));
-    const sw = Math.max(1, Math.round(box.w));
-    const sh = Math.max(1, Math.round(box.h));
+    const sx = Math.max(0, Math.round(box.x)), sy = Math.max(0, Math.round(box.y));
+    const sw = Math.max(1, Math.round(box.w)), sh = Math.max(1, Math.round(box.h));
     const pad = Math.max(2, Math.round(Math.min(sw, sh) * 0.15));
-
-    // 白底裁剪
-    const cw = sw + pad * 2;
-    const ch = sh + pad * 2;
-    const crop = createCanvas(cw, ch);
-    const cctx = crop.getContext('2d');
-    cctx.fillStyle = '#ffffff';
-    cctx.fillRect(0, 0, cw, ch);
-    // 把 RGBA 整图贴回去再 crop
-    const full = createCanvas(image.width, image.height);
-    const fctx = full.getContext('2d');
-    const imgData = fctx.createImageData(image.width, image.height);
-    imgData.data.set(image.data);
-    fctx.putImageData(imgData, 0, 0);
-    cctx.drawImage(full, sx - pad, sy - pad, cw, ch, 0, 0, cw, ch);
-
-    // resize 到高 64
-    const targetH = 64;
-    const targetW = Math.max(1, Math.round(cw * (targetH / ch)));
-    const resized = createCanvas(targetW, targetH);
-    const rctx = resized.getContext('2d');
-    rctx.fillStyle = '#ffffff';
-    rctx.fillRect(0, 0, targetW, targetH);
-    rctx.drawImage(crop, 0, 0, targetW, targetH);
-    const rd = rctx.getImageData(0, 0, targetW, targetH).data;
-
-    const plane = targetW * targetH;
-    const tensor = new Float32Array(plane);
-    for (let i = 0; i < plane; i++) {
-      const o = i * 4;
-      // 灰度 /255
-      tensor[i] = (0.299 * rd[o] + 0.587 * rd[o + 1] + 0.114 * rd[o + 2]) / 255;
-    }
-    // ddddocr common 输入名固定 input1
-    const inputName = this.session.inputNames.includes('input1')
-      ? 'input1'
-      : this.session.inputNames[0];
-    const t = new ort.Tensor('float32', tensor, [1, 1, targetH, targetW]);
-    const results = await this.session.run({ [inputName]: t });
-    const outName = this.session.outputNames.includes('output')
-      ? 'output'
-      : this.session.outputNames[0];
-    return this.decode(results[outName]);
+    const cw = sw + pad * 2, ch = sh + pad * 2;
+    const crop = createCanvas(cw, ch), ctx = crop.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cw, ch);
+    const full = createCanvas(image.width, image.height), fullCtx = full.getContext('2d');
+    const pixels = fullCtx.createImageData(image.width, image.height);
+    pixels.data.set(image.data);
+    fullCtx.putImageData(pixels, 0, 0);
+    ctx.drawImage(full, sx - pad, sy - pad, cw, ch, 0, 0, cw, ch);
+    const input = await loadImage(crop.toBuffer('image/png'));
+    return (await this.engine.recognize(input as unknown as HTMLImageElement)).text;
   }
-
-  /** 对齐 src/core/ocr-engine.ts decodeOutput：输出已是类别索引序列。 */
-  private decode(output: ort.Tensor): string {
-    const data = output.data as any;
-    const indices: number[] = [];
-    for (let i = 0; i < data.length; i++) {
-      const v = data[i];
-      indices.push(typeof v === 'bigint' ? Number(v) : Math.round(Number(v)));
-    }
-    const result: string[] = [];
-    let prev = -1;
-    for (const idx of indices) {
-      if (idx === prev) continue;
-      prev = idx;
-      if (idx <= 0 || idx >= this.charsets.length) continue;
-      const ch = this.charsets[idx];
-      if (ch) result.push(ch);
-    }
-    return result.join('');
-  }
+  destroy() { return this.engine.destroy(); }
 }
 
 async function testClickSelect(): Promise<boolean> {
@@ -545,8 +421,10 @@ async function testClickSelect(): Promise<boolean> {
   info(`det 召回合格率 ${detRate.toFixed(0)}%  单字 OCR ${charRate.toFixed(0)}% (${charCorrect}/${charTotal})  题面可匹配 ${orderRate.toFixed(0)}%`);
 
   // 合成宋体/黑体字，OCR 通常较好；阈值保守
-  const pass = detRate >= 70 && (charTotal === 0 || charRate >= 50);
-  if (pass) ok('文字点选识别通过（det≥70% 且 OCR≥50%，或无字符样本）');
+  await det.destroy();
+  await ocr.destroy();
+  const pass = detRate >= 70 && charTotal > 0 && charRate >= 50 && orderRate >= 50;
+  if (pass) ok('文字点选识别通过（det≥70%、OCR≥50%、题面匹配≥50%）');
   else fail(`文字点选识别未达标：det=${detRate.toFixed(0)}% OCR=${charRate.toFixed(0)}%`);
   return pass;
 }
@@ -571,7 +449,7 @@ async function main() {
   process.exit(all ? 0 : 1);
 }
 
-main().catch((e) => {
+if (import.meta.main) main().catch((e) => {
   console.error(e);
   process.exit(2);
 });

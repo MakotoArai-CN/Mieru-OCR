@@ -8,6 +8,8 @@ dist/
 .vscode/
 .idea/
 .playwright-mcp/
+.playwright-cli/
+output/playwright/
 .openclaude/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
@@ -25,6 +27,7 @@ test/fixtures/*.onnx
 
 # 打包生成的浏览器 bundle（源码在，产物可重建）
 test/playground/playground.bundle.js
+test/browser/*.bundle.js
 tools/analyzer/analyzer.bundle.js
 
 # 系统杂项
@@ -32,3 +35,7 @@ Thumbs.db
 Desktop.ini
 *.tmp
 *.swp
+
+# Python 端到端测试（test/e2e）缓存
+__pycache__/
+*.pyc

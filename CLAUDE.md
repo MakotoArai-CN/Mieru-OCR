@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mieru-OCR is a browser-based offline CAPTCHA recognition tool using the DDDDOCR model via ONNX Runtime Web. It ships as three variants: a userscript (Tampermonkey/Violentmonkey), a Chrome/Edge extension (Manifest V3), and a Firefox extension (Manifest V2). All OCR inference runs client-side with no backend.
+Mieru-OCR is a browser-based offline CAPTCHA recognition tool using the DDDDOCR model via ONNX Runtime Web. It ships as three variants: a userscript (Tampermonkey/Violentmonkey), a Chrome/Edge extension (Manifest V3), and a Firefox extension (Manifest V3). All OCR inference runs client-side with no backend.
 
 Primary language is Chinese (comments, UI strings, commit messages).
 
@@ -20,7 +20,13 @@ bun run build:all            # Build all three variants sequentially
 bun run type-check           # TypeScript type checking (tsc --noEmit)
 ```
 
-There are no automated tests. The benchmark tool (`benchmark.ts`) evaluates model accuracy with `bun run benchmark.ts`.
+Automated tests:
+- `bun test ./test` — unit tests for the shared core (25 cases)
+- `python test/e2e/extension_smoke.py` — real Chromium + unpacked MV3 extension e2e (login/OCR/slider/CORS/iframe/settings/model/import)
+- `python test/e2e/firefox_smoke.py` — real Firefox + temporary MV3 add-on e2e (Selenium + geckodriver)
+- `npx web-ext lint --source-dir dist/firefox` — official Mozilla add-on validation
+
+The benchmark tool (`benchmark.ts`) evaluates model accuracy with `bun run benchmark.ts`.
 
 ## Architecture
 
@@ -35,7 +41,7 @@ src/extension/     Browser extension variant (multi-entry: background, content, 
 Each build target has its own Vite config:
 - `vite.config.ts` - Userscript (uses `vite-plugin-monkey`)
 - `vite.config.browser.ts` - Chrome/Edge MV3 extension (custom `copyPublicAssets` plugin)
-- `vite.config.firefox.ts` - Firefox MV2 extension
+- `vite.config.firefox.ts` - Firefox MV3 extension
 
 Path aliases: `@core/*` -> `src/core/*`, `@userscript/*` -> `src/userscript/*`, `@extension/*` -> `src/extension/*`
 
@@ -59,7 +65,7 @@ The extension uses Chrome's offscreen document pattern for ONNX inference since 
 4. **Popup** (`popup/`) - Shows recognition results and site stats
 5. **Options** (`options/`) - Full settings page
 
-Firefox variants (`*-firefox.ts`) use MV2 background pages instead of service workers/offscreen documents.
+Firefox variants (`*-firefox.ts`) use an MV3 event page (`background.scripts` + classic IIFE bundle) instead of service workers/offscreen documents; Chrome uses the offscreen document pattern.
 
 ### Versioning
 
@@ -71,3 +77,4 @@ The `version` file at repo root is the source of truth. CI reads it and syncs to
 - Quantized model variants are in `models/` (for benchmarking, not bundled by default)
 - ONNX Runtime WASM files are copied from `node_modules/onnxruntime-web/dist/` during extension builds
 - For the userscript, ONNX Runtime is loaded via CDN `@require`, and models are downloaded from GitHub mirrors and cached in IndexedDB
+
