@@ -139,6 +139,7 @@ Chromium，并起一个迷你后端（验证码真值、登录校验、换图接
 | `settings` | 改设置不刷新页面立即生效（关闭 autoFill 不再填充，恢复后继续填充） |
 | `model` | `activeModelId` 指向不存在的模型 → 回退内置模型并提示用户 |
 | `import` | 导入非法/合法配置都不会清空订阅与模型注册表 |
+| `layout` | 设置页保存按钮 `position: fixed` 在右下角：滚动前后位置不变、高级设置同样固定 |
 
 ```bash
 bun run build:extension                      # 必须先构建

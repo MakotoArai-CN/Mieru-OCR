@@ -177,7 +177,7 @@ body {
 .main-content {
   flex: 1;
   margin-left: var(--sidebar-width);
-  padding: 32px 48px;
+  padding: 32px 48px 112px;
   max-width: 100%;
 }
 
@@ -185,7 +185,7 @@ body {
   .main-content {
     margin-left: 0;
     padding: 16px;
-    padding-bottom: calc(var(--sidebar-mobile-height) + 24px);
+    padding-bottom: calc(var(--sidebar-mobile-height) + 104px);
     max-width: 100%;
   }
 }
@@ -368,6 +368,16 @@ body {
   opacity: 0;
   width: 0;
   height: 0;
+}
+
+/* 仅油猴生效的设置项在扩展里被禁用：给出明确的视觉反馈 */
+.switch input:disabled+.slider {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.switch:has(input:disabled) {
+  cursor: not-allowed;
 }
 
 .slider {
@@ -569,6 +579,44 @@ body {
   }
 }
 
+/* 保存按钮固定在右下角：长设置页不用滚到底才能保存。
+   只给 general/advanced 两个保存栏加这个类，其它 action-bar 保持文档流。 */
+.action-bar-fixed {
+  position: fixed;
+  right: 32px;
+  bottom: 24px;
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--radius);
+  /* 旧版浏览器不支持 color-mix 时退化为不透明背景 */
+  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+  z-index: 90;
+}
+
+.action-bar-fixed .btn {
+  min-width: 112px;
+}
+
+@media screen and (max-width: 768px) {
+  .action-bar-fixed {
+    left: 16px;
+    right: 16px;
+    bottom: calc(var(--sidebar-mobile-height) + 12px);
+    padding: 8px 12px;
+    margin: 0;
+    border: 1px solid var(--border);
+    z-index: 900;
+  }
+
+  .action-bar-fixed .btn {
+    width: 100%;
+  }
+}
+
 .rules-list {
   min-height: 100px;
 }
@@ -695,7 +743,8 @@ body {
   .toast {
     left: 16px;
     right: 16px;
-    bottom: calc(var(--sidebar-mobile-height) + 16px);
+    /* 让出固定的保存按钮，避免提示盖住按钮 */
+    bottom: calc(var(--sidebar-mobile-height) + 80px);
   }
 }
 

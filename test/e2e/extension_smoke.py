@@ -1220,6 +1220,63 @@ def main() -> int:
 
             run_case("import: 导入配置不误删订阅/模型注册表", case_import)
 
+        # 9) 设置页保存按钮固定在右下角，不随页面滚动
+        if matches("layout"):
+            def case_layout():
+                page = context.new_page()
+                page.set_viewport_size({"width": 960, "height": 520})
+                page.goto(f"chrome-extension://{extension_id}/options.html", wait_until="domcontentloaded")
+                page.wait_for_selector("#btn-save-general", state="visible")
+
+                def snapshot():
+                    return page.evaluate(
+                        """() => {
+                            const btn = document.getElementById('btn-save-general');
+                            const rect = btn.getBoundingClientRect();
+                            return {
+                                position: getComputedStyle(btn.closest('.action-bar')).position,
+                                top: rect.top, right: rect.right, bottom: rect.bottom,
+                                vw: window.innerWidth, vh: window.innerHeight,
+                                scrollable: document.documentElement.scrollHeight > window.innerHeight + 40,
+                            };
+                        }"""
+                    )
+
+                before = snapshot()
+                assert before["position"] == "fixed", f"保存栏没有固定定位: {before['position']}"
+                assert before["scrollable"], "页面没有可滚动内容，用例无法验证固定效果"
+
+                page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+                page.wait_for_timeout(300)
+                after = snapshot()
+                assert abs(after["top"] - before["top"]) < 1, f"滚动后按钮位置改变: {before} → {after}"
+                assert abs(after["right"] - before["right"]) < 1, f"滚动后按钮横向位置改变: {before} → {after}"
+                assert after["right"] > after["vw"] - 120, f"按钮不在右下角（右）: {after}"
+                assert after["bottom"] > after["vh"] - 120, f"按钮不在右下角（下）: {after}"
+
+                page.click('.nav-item[data-section="advanced"]')
+                page.wait_for_timeout(300)
+                adv = page.evaluate(
+                    """() => {
+                        const btn = document.getElementById('btn-save-advanced');
+                        const rect = btn.getBoundingClientRect();
+                        return {
+                            position: getComputedStyle(btn.closest('.action-bar')).position,
+                            right: rect.right, bottom: rect.bottom,
+                            vw: window.innerWidth, vh: window.innerHeight,
+                        };
+                    }"""
+                )
+                assert adv["position"] == "fixed", f"高级设置的保存栏没有固定定位: {adv['position']}"
+                assert adv["right"] > adv["vw"] - 120 and adv["bottom"] > adv["vh"] - 120, f"高级保存按钮不在右下角: {adv}"
+                page.close()
+                return (
+                    f"滚动前后位置不变（right={after['right']:.0f}, bottom={after['bottom']:.0f}），"
+                    f"高级设置同样固定"
+                )
+
+            run_case("layout: 保存按钮固定在右下角不随滚动", case_layout)
+
         context.close()
 
     print("\n===== 汇总 =====")

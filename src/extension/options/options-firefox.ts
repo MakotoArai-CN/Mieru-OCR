@@ -118,8 +118,8 @@ async function init(): Promise<void> {
   renderKeywordChipGroups();
   bindEvents();
   await loadSettings();
-  markUserscriptOnlyAssistToggles();
   translatePage();
+  markUserscriptOnlyAssistToggles();
   await loadRules();
   await loadStats();
   await loadSubscriptions();
@@ -318,8 +318,8 @@ function bindLanguageSwitcher(): void {
       } else {
         setLocale(lang as Locale);
       }
+      translatePage();
       markUserscriptOnlyAssistToggles();
-  translatePage();
       // Re-render all dynamically generated content
       renderKeywordChipGroups();
       bindKeywordChipGroups();
@@ -1717,6 +1717,9 @@ function markUserscriptOnlyAssistToggles(): void {
     input.disabled = true;
     input.closest('.switch-group')?.classList.add('is-userscript-only');
     const hint = input.closest('.switch-group')?.querySelector('.hint');
-    if (hint) hint.textContent = t('settings.interactiveRuleDriven');
+    if (hint) {
+      hint.removeAttribute('data-i18n');
+      hint.textContent = t('settings.interactiveRuleDriven');
+    }
   }
 }
