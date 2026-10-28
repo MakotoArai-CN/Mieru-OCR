@@ -53,6 +53,10 @@ REPO = Path(__file__).resolve().parents[2]
 FIREFOX_DIST = REPO / "dist" / "firefox"
 
 
+def ffs_repo() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
 def find_firefox() -> str:
     env = os.environ.get("MIERU_FIREFOX")
     if env and Path(env).exists():
@@ -108,6 +112,45 @@ def extension_uuid(driver) -> str:
     mapping = json.loads(match.group(1).replace('\\"', '"'))
     assert "Mieru-OCR@makotoarai" in mapping, f"UUID 映射里没有本扩展: {mapping}"
     return mapping["Mieru-OCR@makotoarai"]
+
+
+
+def install_det_model(driver, origin_a: str) -> None:
+    """Firefox 下用 WebDriver 给 <input type=file> 塞 20MB 文件后，页面读 arrayBuffer 会挂起
+    （Marionette 的 file 注入限制）。这里改成从测试后端拉模型字节，按产品同样的结构
+    写入 IndexedDB + storage.local，等价于「已上传」状态。"""
+    driver.get(f"moz-extension://{extension_uuid(driver)}/options.html")
+    time.sleep(0.8)
+    driver.set_script_timeout(60)
+    result = driver.execute_async_script(
+        """
+        const origin = arguments[0];
+        const done = arguments[arguments.length - 1];
+        fetch(origin + '/__model').then((r) => r.arrayBuffer()).then((buf) => new Promise((resolve, reject) => {
+            const req = indexedDB.open('DdddOCRExtensionModels');
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains('models')) db.createObjectStore('models', { keyPath: 'id' });
+            };
+            req.onsuccess = () => {
+                const db = req.result;
+                const tx = db.transaction(['models'], 'readwrite');
+                const complete = new Promise((res, rej) => {
+                    tx.oncomplete = () => res(true);
+                    tx.onerror = () => rej(tx.error);
+                    tx.onabort = () => rej(tx.error);
+                });
+                tx.objectStore('models').put({ id: '__det__', modelBlob: buf, charsets: [] });
+                complete.then(() => resolve({ size: buf.byteLength }));
+            };
+            req.onerror = () => reject(req.error);
+        })).then((info) => browser.storage.local.set({
+            detModelMeta: { source: 'uploaded', name: 'common_det.onnx', size: info.size, savedAt: Date.now() },
+        }).then(() => done('ok'))).catch((e) => done('err:' + (e && e.message || e)));
+        """,
+        origin_a,
+    )
+    assert result == "ok", f"检测模型写入失败: {result}"
 
 
 def set_site_rule(driver, uuid: str, origin_a: str, rule: dict) -> None:
@@ -241,6 +284,41 @@ def main() -> int:
                 rows.append(f"{label} 偏差 {result['gap']}px")
             return "；".join(rows)
         run_case("slider: MV3 背景页 Worker 匹配 + 真实拖拽（含变体）", case_slider)
+
+        def case_clickselect():
+            # 1) 安装检测模型（见 install_det_model 注释）
+            install_det_model(driver, origin_a)
+
+            # 2) 站点规则
+            set_site_rule(driver, uuid, origin_a, {
+                "_path": "/click",
+                "hostname": "127.0.0.1",
+                "selector": "#click-box",
+                "subType": "click-select",
+                "fullUrl": f"{origin_a}/click",
+                "enabled": True,
+                "createdAt": int(time.time() * 1000),
+                "updatedAt": int(time.time() * 1000),
+            })
+
+            # 3) 页面
+            driver.get(f"{origin_a}/click")
+            deadline = time.time() + 60
+            state = None
+            while time.time() < deadline:
+                state = driver.execute_script(
+                    "return window.__state && window.__state.result ? "
+                    "{ result: window.__state.result, expected: window.__state.expected, "
+                    "  detail: window.__state.detail } : null"
+                )
+                if state:
+                    break
+                time.sleep(0.3)
+            assert state, "60s 内没有完成点选"
+            assert state["result"] == "success", f"点选顺序错误: {state}"
+            return f"题序 {''.join(state['expected'])} 全部点中"
+
+        run_case("clickselect: 文字点选按题序自动点击", case_clickselect)
 
     finally:
         try:

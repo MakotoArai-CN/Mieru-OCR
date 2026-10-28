@@ -1811,10 +1811,16 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
       try {
         detector.highlight(captcha);
         await waitForReady(captcha);
-        const res = await solveClickSelect(captcha, {
-          labelBoxes: labelBoxesViaBackground,
-          onLog: (m) => Logger.info('[click-select]', m),
-        });
+        let res: Awaited<ReturnType<typeof solveClickSelect>>;
+        try {
+          res = await solveClickSelect(captcha, {
+            labelBoxes: labelBoxesViaBackground,
+            onLog: (m) => Logger.info('[click-select]', m),
+          });
+        } catch (error) {
+          Logger.warn('文字点选求解异常:', (error as Error)?.message || error);
+          throw error;
+        }
         if (res.success) {
           Logger.info('文字点选辅助点击完成:', res);
           detector.markElementProcessed(captcha.element);

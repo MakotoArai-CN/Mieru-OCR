@@ -22,8 +22,8 @@ bun run type-check           # TypeScript type checking (tsc --noEmit)
 
 Automated tests:
 - `bun test ./test` — unit tests for the shared core (38 cases)
-- `python test/e2e/extension_smoke.py` — real Chromium + unpacked MV3 extension e2e (login/OCR/slider/CORS/iframe/settings/model/import)
-- `python test/e2e/firefox_smoke.py` — real Firefox + temporary MV3 add-on e2e (Selenium + geckodriver)
+- `python test/e2e/extension_smoke.py` — real Chromium + unpacked MV3 extension e2e (login/OCR/slider variants/CORS/iframe/settings/model/import/click-select)
+- `python test/e2e/firefox_smoke.py` — real Firefox + temporary MV3 add-on e2e (Selenium + geckodriver): login, slider variants, click-select
 - `npx web-ext lint --source-dir dist/firefox` — official Mozilla add-on validation
 
 The benchmark tool (`benchmark.ts`) evaluates model accuracy with `bun run benchmark.ts`.

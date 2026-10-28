@@ -70,7 +70,9 @@ function cropToDataURL(image: ImageLike, box: DetectionBox): string {
   const sh = Math.max(1, Math.round(box.h));
 
   const full = makeCanvas(image.width, image.height);
-  full.ctx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+  const pixels = full.ctx.createImageData(image.width, image.height);
+  for (let i = 0; i < pixels.data.length; i++) pixels.data[i] = image.data[i];
+  full.ctx.putImageData(pixels, 0, 0);
 
   const pad = Math.max(2, Math.round(Math.min(sw, sh) * 0.15));
   const cw = sw + pad * 2;

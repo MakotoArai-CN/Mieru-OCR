@@ -682,6 +682,7 @@ export function slideMatch(
     }
   }
 
+
   // 内容有一定相关性时做小范围微调，消掉边缘匹配的 1~3px 量化误差。
   if (contentScore >= 0.2) {
     const refined = refineByContent(

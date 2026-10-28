@@ -56,7 +56,13 @@ export function elementToImageData(el: HTMLCanvasElement | HTMLImageElement): Im
     const ctx = c.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
     ctx.drawImage(el as CanvasImageSource, 0, 0, w, h);
-    return ctx.getImageData(0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    // Firefox 内容脚本（隔离沙箱）里 getImageData 返回的 data 是 Xray 包装的
+    // Uint8ClampedArray，直接传给 putImageData/TypedArray.set 会 "Permission denied"。
+    // 复制成本 O(w*h*4)，对验证码尺寸可忽略。
+    const copy = new Uint8ClampedArray(img.data.length);
+    for (let i = 0; i < copy.length; i++) copy[i] = img.data[i];
+    return { data: copy, width: w, height: h };
   } catch {
     return null; // tainted / 跨域不可读
   }

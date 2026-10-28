@@ -30,6 +30,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import random
 import socket
 import sys
 import secrets
@@ -121,6 +122,29 @@ class Handler(BaseHTTPRequestHandler):
             STATE["sliders"][token] = float(body.get("x", 0))
             self._json(200, {"token": token})
             return
+        if path == "/api/click/verify":
+            body = self._read_json()
+            entry = CLICK_POOL.get(int(body.get("id", 0)))
+            if not entry:
+                self._json(404, {"ok": False, "error": "unknown id"})
+                return
+            clicked = []
+            for click in body.get("clicks", []):
+                cx, cy = float(click.get("x", -1)), float(click.get("y", -1))
+                nearest = None
+                best = 45.0
+                for pos in entry["positions"]:
+                    dist = ((pos["x"] - cx) ** 2 + (pos["y"] - cy) ** 2) ** 0.5
+                    if dist < best:
+                        best = dist
+                        nearest = pos["char"]
+                clicked.append(nearest or "?")
+            self._json(200, {
+                "ok": clicked == entry["order"],
+                "clicked": clicked,
+                "expected": entry["order"],
+            })
+            return
         if path == "/api/slider/verify":
             body = self._read_json()
             truth = STATE["sliders"].get(str(body.get("token")))
@@ -141,6 +165,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/captcha":
             self._json(200, {"id": self._issue()})
             return
+        if path == "/api/click":
+            item = make_click_captcha()
+            self._json(200, {"id": item["id"], "prompt": item["prompt"]})
+            return
+        if path == "/api/click.png":
+            cid = int((query.get("id") or ["0"])[0])
+            entry = CLICK_POOL.get(cid)
+            if not entry:
+                self._respond(404, b"no click captcha", "text/plain")
+                return
+            self._respond(200, entry["png"], "image/png")
+            return
         if path == "/api/captcha.png":
             idx = int((query.get("id") or ["0"])[0])
             entry = STATE["pool"].get(idx)
@@ -152,6 +188,13 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/captcha.png", "/img/captcha.png"):
             # 跨域图床样张：懒生成，故意不带 Access-Control-Allow-Origin
             self._respond(200, ensure_cross_image()["png"], "image/png")
+            return
+        if path == "/__model":
+            model = REPO / "public" / "common_det.onnx"
+            if not model.exists():
+                self._respond(404, b"no model", "text/plain")
+                return
+            self._respond(200, model.read_bytes(), "application/octet-stream")
             return
         if path.startswith("/assets/"):
             # logo / banner / avatar / 二维码等装饰图：1x1 灰点即可，只用来制造干扰噪声
@@ -597,11 +640,110 @@ SLIDER_PAGE = """<!doctype html>
 PAGES: dict[str, str] = {}
 
 
+CLICK_CHARS = "春夏秋冬天地人山水火木金土"
+_CLICK_ID = 0
+CLICK_POOL: dict = {}
+
+
+def make_click_captcha() -> dict:
+    """生成一张文字点选验证码：4 个汉字随机散落，答案（点击顺序）只存在服务端。"""
+    from PIL import Image, ImageDraw, ImageFont
+
+    w, h = 300, 150
+    img = Image.new("RGB", (w, h), (244, 247, 252))
+    draw = ImageDraw.Draw(img)
+    # 干扰线 + 噪点（低频，避免把字糊掉）
+    for _ in range(6):
+        draw.line(
+            [(random.randint(0, w), random.randint(0, h)), (random.randint(0, w), random.randint(0, h))],
+            fill=(200 + random.randint(0, 40), 205 + random.randint(0, 35), 215 + random.randint(0, 30)),
+            width=1,
+        )
+    for _ in range(300):
+        draw.point((random.randint(0, w), random.randint(0, h)), fill=(190, 196, 210))
+
+    chars = random.sample(CLICK_CHARS, 4)
+    font_path = next((f for f in (Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "msyh.ttc",
+                                   Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "simhei.ttf",
+                                   Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")) if f.exists()), None)
+    assert font_path, "缺少中文字体（msyh.ttc / simhei.ttf）"
+    font = ImageFont.truetype(str(font_path), 34)
+
+    positions = []
+    for i, ch in enumerate(chars):
+        x = 18 + i * 70 + random.randint(-8, 8)
+        y = 45 + random.randint(-18, 18)
+        color = (random.randint(20, 70), random.randint(20, 70), random.randint(90, 160))
+        draw.text((x, y), ch, font=font, fill=color)
+        positions.append({"char": ch, "x": x + 17, "y": y + 20})
+
+    import io
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    global _CLICK_ID
+    _CLICK_ID += 1
+    cid = _CLICK_ID
+    CLICK_POOL[cid] = {"order": chars, "positions": positions, "png": buf.getvalue()}
+    return {"id": cid, "prompt": "".join(chars), "png": buf.getvalue()}
+
+
+CLICK_PAGE = """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>安全验证</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; display: flex;
+         justify-content: center; padding-top: 60px; background: #f7f8fa; }
+  .click-card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  #click-prompt { font-size: 14px; color: #1f2329; margin: 0 0 12px; }
+  #click-img { display: block; border-radius: 6px; cursor: pointer; }
+  #click-msg { font-size: 13px; color: #646a73; margin: 10px 0 0; min-height: 18px; }
+</style></head><body>
+<div id="click-box" class="click-card">
+  <p id="click-prompt">请依次点击：</p>
+  <img id="click-img" width="300" height="150" alt="click captcha">
+  <p id="click-msg"></p>
+</div>
+<script>
+  const state = { id: null, result: null, clicks: [], expected: [], detail: null };
+  window.__state = state;
+  (async () => {
+    const resp = await fetch('/api/click');
+    const data = await resp.json();
+    state.id = data.id;
+    state.expected = data.prompt.split('');
+    document.getElementById('click-prompt').textContent = '请依次点击：' + state.expected.join(' ');
+    const img = document.getElementById('click-img');
+    img.src = '/api/click.png?id=' + data.id;
+    img.addEventListener('click', async (event) => {
+      if (state.result !== null) return;
+      const rect = img.getBoundingClientRect();
+      const x = Math.round((event.clientX - rect.left) * (img.naturalWidth / rect.width));
+      const y = Math.round((event.clientY - rect.top) * (img.naturalHeight / rect.height));
+      state.clicks.push({ x, y });
+      if (state.clicks.length < state.expected.length) return;
+      const res = await fetch('/api/click/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: state.id, clicks: state.clicks }),
+      });
+      const verdict = await res.json();
+      state.detail = verdict;
+      state.result = verdict.ok ? 'success' : 'fail';
+      document.getElementById('click-msg').textContent = verdict.ok
+        ? '验证通过'
+        : `失败：点击 ${verdict.clicked.join('')}，期望 ${verdict.expected.join('')}`;
+    });
+  })();
+</script>
+</body></html>
+"""
+
+
 def build_pages(origin_b: str) -> None:
     PAGES["/login"] = LOGIN_PAGE
     PAGES["/crossorigin"] = CROSS_PAGE.replace("%ORIGIN_B%", origin_b)
     PAGES["/slider"] = SLIDER_PAGE
     PAGES["/rule"] = RULE_PAGE
+    PAGES["/click"] = CLICK_PAGE
     PAGES["/frame"] = """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>合作方嵌入</title></head>
 <body style="font-family:sans-serif;margin:24px">
@@ -1210,6 +1352,78 @@ def main() -> int:
                     sw_eval(worker, "async () => { await chrome.storage.local.set({ activeModelId: '__builtin__' }); return true; }")
 
             run_case("model: 自定义模型缺失时回退并提示", case_model)
+
+        # 8.5) 文字点选：检测模型 + OCR 标字 + 按题序点击
+        if matches("clickselect"):
+            def case_clickselect():
+                url = f"{origin_a}/click"
+                # 1) 上传检测模型（用仓库里的 common_det.onnx，不依赖联网）
+                opts_page = context.new_page()
+                opts_page.goto(f"chrome-extension://{extension_id}/options.html", wait_until="domcontentloaded")
+                opts_page.wait_for_timeout(600)
+                opts_page.click('[data-section="models"]')
+                opts_page.wait_for_selector("#btn-upload-det-model", state="visible")
+                opts_page.set_input_files("#det-model-file", str(REPO / "public" / "common_det.onnx"))
+                opts_page.click("#btn-upload-det-model")
+                status = ""
+                for _ in range(60):
+                    opts_page.wait_for_timeout(300)
+                    status = opts_page.eval_on_selector("#det-model-status", "el => el.textContent || ''")
+                    if "common_det" in status:
+                        break
+                opts_page.close()
+                assert "失败" not in status, f"检测模型上传失败: {status}"
+
+                # 2) 站点规则：点选容器
+                sw_eval(
+                    worker,
+                    """async ([origin]) => {
+                        const url = origin + '/click';
+                        const rules = (await chrome.storage.local.get('siteRules')).siteRules || {};
+                        rules[url] = {
+                            hostname: new URL(url).hostname,
+                            selector: '#click-box',
+                            subType: 'click-select',
+                            fullUrl: url,
+                            enabled: true,
+                            createdAt: Date.now(),
+                            updatedAt: Date.now(),
+                        };
+                        await chrome.storage.local.set({ siteRules: rules });
+                        return true;
+                    }""",
+                    [origin_a],
+                )
+
+                # 3) 打开页面，等扩展按题序点击
+                page = context.new_page()
+                logs: list[str] = []
+                console_collector(page, logs)
+                page.bring_to_front()
+                page.goto(url, wait_until="domcontentloaded")
+                try:
+                    page.wait_for_function(
+                        "() => window.__state && window.__state.result !== null",
+                        timeout=45000,
+                    )
+                except Exception:
+                    info = page.evaluate(
+                        "() => ({ clicks: window.__state.clicks, expected: window.__state.expected, "
+                        "  detail: window.__state.detail })"
+                    )
+                    print("       [diag] " + json.dumps(info, ensure_ascii=False))
+                    print("       [diag] console:\n" + "\n".join(logs[-12:]))
+                    page.close()
+                    raise
+                info = page.evaluate(
+                    "() => ({ result: window.__state.result, detail: window.__state.detail, "
+                    "  expected: window.__state.expected })"
+                )
+                page.close()
+                assert info["result"] == "success", f"点选顺序错误: {info}"
+                return f"题序 {''.join(info['expected'])} 全部点中"
+            run_case("clickselect: 文字点选按题序自动点击", case_clickselect)
+
 
         # 8) 导入配置不误删订阅
         if matches("import"):

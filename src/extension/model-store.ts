@@ -304,8 +304,11 @@ export async function saveModel(input: {
 
   const d = await openDb();
   const tx = d.transaction([STORE_NAME], 'readwrite');
+  // 先挂 oncomplete 再发请求：Firefox 上事务可能在请求后极快完成，
+  // 晚注册的 oncomplete 会永远不触发（表现为上传卡在"正在校验"）。
+  const done = txComplete(tx);
   tx.objectStore(STORE_NAME).put({ id, modelBlob: input.modelBuffer, charsets: input.charsets } as ModelData);
-  await txComplete(tx);
+  await done;
 
   metas.push(meta);
   await saveMeta(metas);
@@ -347,8 +350,9 @@ export async function deleteModel(id: string): Promise<void> {
 
   const d = await openDb();
   const tx = d.transaction([STORE_NAME], 'readwrite');
+  const done = txComplete(tx);
   tx.objectStore(STORE_NAME).delete(id);
-  await txComplete(tx);
+  await done;
 
   // If active model was deleted, fall back to builtin
   const active = await getActiveModelId();
@@ -417,8 +421,9 @@ export async function saveDetModel(
 ): Promise<DetModelMeta> {
   const d = await openDb();
   const tx = d.transaction([STORE_NAME], 'readwrite');
+  const done = txComplete(tx);
   tx.objectStore(STORE_NAME).put({ id: DET_MODEL_ID, modelBlob: modelBuffer, charsets: [] } as ModelData);
-  await txComplete(tx);
+  await done;
   const full: DetModelMeta = { ...meta, size: modelBuffer.byteLength, savedAt: Date.now() };
   await storage.set({ [DET_META_KEY]: full });
   try {
@@ -435,8 +440,9 @@ export async function saveDetModel(
 export async function clearDetModel(): Promise<void> {
   const d = await openDb();
   const tx = d.transaction([STORE_NAME], 'readwrite');
+  const done = txComplete(tx);
   tx.objectStore(STORE_NAME).delete(DET_MODEL_ID);
-  await txComplete(tx);
+  await done;
   await storage.set({ [DET_META_KEY]: null });
 }
 
