@@ -123,8 +123,8 @@ Chromium，并起一个迷你后端（验证码真值、登录校验、换图接
 - Header + 顶部搜索框 + 登录卡片 + 营销 banner + logo/头像/二维码装饰图 + 隐藏验证码图；
 - 验证码输入框包在 `.ant-form-item` / `.ant-input-group` 里（模拟 Ant Design 结构），
   另有手机号/邮箱（预填）、密码（预填）、短信验证码（空）等干扰输入；
-- 验证码由页面按 `test/index.html` 同款算法生成（渐变底 + 干扰线 + 噪点 + 彩色旋转字形），
-  由后端以 PNG 下发；后端保存真值，校验**不区分大小写**（真实站点常见约定）；
+- 验证码由**后端用 captcha（Pillow）库现生成**（随机系统字体 + 干扰线 + 噪点 + 扭曲），
+  以 PNG 下发；真值只存在服务端、页面拿不到，校验**不区分大小写**（真实站点常见约定）；
 - 用户协议自动勾选、「7 天免登录」不得被勾、其他输入框不得被填充；
 - 提交后：错误 → 后端换一张新验证码（`img.src` 变化）→ 扩展需重新识别填充 → 再次提交。
 
@@ -144,7 +144,7 @@ Chromium，并起一个迷你后端（验证码真值、登录校验、换图接
 
 ```bash
 bun run build:extension                      # 必须先构建
-pip install playwright && playwright install chromium
+pip install playwright captcha && playwright install chromium
 python test/e2e/extension_smoke.py           # 全部用例
 python test/e2e/extension_smoke.py login     # 只跑名字含 login 的用例
 ```

@@ -110,36 +110,6 @@ def extension_uuid(driver) -> str:
     return mapping["Mieru-OCR@makotoarai"]
 
 
-def seed_pool(driver, origin_a: str, count: int = 40) -> None:
-    driver.get(f"{origin_a}/login")
-    time.sleep(1.0)
-    items = driver.execute_script(
-        """
-        const alphabet = arguments[0], count = arguments[1];
-        const items = [];
-        for (let i = 0; i < count; i++) {
-            let code = '';
-            for (let k = 0; k < 4; k++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-            items.push({ code, png: window.__makeCaptcha(code) });
-        }
-        return items;
-        """,
-        ALPHABET,
-        count,
-    )
-    result = driver.execute_async_script(
-        """
-        const done = arguments[arguments.length - 1];
-        fetch('/__seed', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: arguments[0] }),
-        }).then(r => r.json()).then(done).catch(e => done({ error: String(e) }));
-        """,
-        items,
-    )
-    assert result.get("ok"), f"验证码池注入失败: {result}"
-
-
 def set_site_rule(driver, uuid: str, origin_a: str, rule: dict) -> None:
     """通过扩展 options 页写入 siteRules（MV3 里 background 无法从页面直接访问）。"""
     driver.get(f"moz-extension://{uuid}/options.html")
@@ -207,7 +177,6 @@ def main() -> int:
         time.sleep(1.5)
         uuid = extension_uuid(driver)
         print(f"[setup] extension uuid={uuid}")
-        seed_pool(driver, origin_a)
 
         def case_login():
             driver.get(f"{origin_a}/login?redirect=%2Fdashboard")

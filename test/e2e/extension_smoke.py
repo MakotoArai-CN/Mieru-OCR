@@ -7,8 +7,8 @@ Mieru-OCR 真实业务场景 e2e（真 Chromium + 未打包扩展 + 迷你后端
   * 页面：Header + 搜索框 + 登录卡片 + 营销 banner + logo/头像/二维码装饰图 + 隐藏验证码图，
     验证码输入框在 .ant-form-item / .ant-input-group 这类框架壳里，另有短信验证码、
     手机号/邮箱、密码等干扰输入框。
-  * 验证码：由页面按 test/index.html 同款算法生成（渐变底 + 干扰线 + 噪点 + 彩色旋转字形），
-    经「后端」以 PNG 下发；服务端保存真值，验证码**不区分大小写**（真实站点的常见约定）。
+  * 验证码：由后端用 captcha（Pillow）库现生成（随机字体 + 干扰线 + 噪点 + 扭曲），
+    以 PNG 下发；真值只存在服务端（页面拿不到），校验**不区分大小写**（真实站点的常见约定）。
   * 链路：自动勾选协议 → 自动识别并填充 → 用户点登录 → 后端校验 → 失败则换一张新验证码
     （img.src 变化）→ 扩展需重新识别填充 → 直到登录成功。这条「失败换图重试」是真实业务里
     最容易踩坏的路径。
@@ -32,6 +32,7 @@ import json
 import os
 import socket
 import sys
+import secrets
 import tempfile
 import threading
 import time
@@ -44,16 +45,21 @@ REPO = Path(__file__).resolve().parents[2]
 DIST = REPO / "dist" / "extension"
 
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-PALETTE = ["#4a90e2", "#e8a0b4", "#52c48c", "#f5a623", "#9b59b6", "#e74c3c"]
-# 1x1 灰色 PNG：logo / banner / avatar / 二维码等装饰图用，只制造干扰噪声
+# 真实验证码生成：captcha（Pillow）库 + 常见无衬线字体
+_IMAGE_CAPTCHA = None
+FONT_CANDIDATES = [
+    Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "arial.ttf",
+    Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "calibri.ttf",
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+]
 PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
 
 STATE: dict = {
-    "pool": [],       # [{"code": str, "png": bytes}]，id 即下标
-    "next": 0,        # 下一张验证码
-    "cross_origin": b"",  # 跨域图床用的 PNG
+    "pool": {},       # id -> {"code": str, "png": bytes}，后端用 captcha 库生成
+    "next": 0,        # 下一个验证码 id
+    "cross": None,    # 跨域图床样张（懒生成）
     "logins": [],     # 每次登录尝试的 [{id, captcha, ok}]
     "sliders": {},    # token -> 真值 gapX
     "slider_tries": 0,
@@ -61,45 +67,6 @@ STATE: dict = {
 }
 
 # 真实感验证码：与 test/index.html 的 createCaptchaDataUrl 同款（彩色/旋转/噪点/渐变底）
-CAPTCHA_JS = r"""
-(window.__makeCaptcha = (code, w = 120, h = 45) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, w, h);
-  grad.addColorStop(0, '#f0f7ff');
-  grad.addColorStop(1, '#fce8ef');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-  const palette = PALETTE;
-  for (let i = 0; i < 3; i++) {
-    ctx.strokeStyle = `rgba(74, 144, 226, ${0.2 + Math.random() * 0.2})`;
-    ctx.beginPath();
-    ctx.moveTo(Math.random() * w, Math.random() * h);
-    ctx.lineTo(Math.random() * w, Math.random() * h);
-    ctx.stroke();
-  }
-  for (let i = 0; i < 24; i++) {
-    ctx.fillStyle = `rgba(232, 160, 180, ${0.3 + Math.random() * 0.3})`;
-    ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
-  }
-  ctx.font = `bold ${Math.floor(h * 0.55)}px Arial`;
-  ctx.textBaseline = 'middle';
-  const startX = 8;
-  const spacing = (w - 16) / code.length;
-  for (let i = 0; i < code.length; i++) {
-    ctx.save();
-    ctx.translate(startX + i * spacing + spacing / 2, h / 2);
-    ctx.rotate((Math.random() - 0.5) * 0.3);
-    ctx.fillStyle = palette[Math.floor(Math.random() * palette.length)];
-    ctx.fillText(code[i], -ctx.measureText(code[i]).width / 2, 0);
-    ctx.restore();
-  }
-  return canvas.toDataURL('image/png').split(',')[1];
-});
-"""
-
-
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -135,20 +102,9 @@ class Handler(BaseHTTPRequestHandler):
     # ── 路由 ──────────────────────────────────────────────────────────────
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
-        if path == "/__seed":
-            data = self._read_json()
-            for item in data.get("items", []):
-                STATE["pool"].append({"code": item["code"], "png": base64.b64decode(item["png"])})
-            self._json(200, {"ok": True, "count": len(STATE["pool"])})
-            return
-        if path == "/__put-image":
-            length = int(self.headers.get("Content-Length") or 0)
-            STATE["cross_origin"] = self.rfile.read(length)
-            self._json(200, {"ok": True, "bytes": len(STATE["cross_origin"])})
-            return
         if path == "/api/login":
             body = self._read_json()
-            entry = STATE["pool"][int(body.get("id", -1))] if body.get("id") is not None else None
+            entry = STATE["pool"].get(int(body.get("id", -1))) if body.get("id") is not None else None
             guess = str(body.get("captcha", ""))
             # 真实站点常见约定：验证码不区分大小写
             ok = bool(entry) and guess.strip().upper() == entry["code"].upper()
@@ -187,18 +143,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/captcha.png":
             idx = int((query.get("id") or ["0"])[0])
-            entry = STATE["pool"][idx] if 0 <= idx < len(STATE["pool"]) else None
+            entry = STATE["pool"].get(idx)
             if not entry:
                 self._respond(404, b"no captcha", "text/plain")
                 return
             self._respond(200, entry["png"], "image/png")
             return
         if path in ("/captcha.png", "/img/captcha.png"):
-            if not STATE["cross_origin"]:
-                self._respond(404, b"no image", "text/plain")
-                return
-            # 故意不带 Access-Control-Allow-Origin：模拟真实图床
-            self._respond(200, STATE["cross_origin"], "image/png")
+            # 跨域图床样张：懒生成，故意不带 Access-Control-Allow-Origin
+            self._respond(200, ensure_cross_image()["png"], "image/png")
             return
         if path.startswith("/assets/"):
             # logo / banner / avatar / 二维码等装饰图：1x1 灰点即可，只用来制造干扰噪声
@@ -212,12 +165,11 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _issue() -> int:
-        # 页面可能在验证码池注入前就请求 /api/captcha（例如预热页），此时返回 -1 → PNG 404
-        if not STATE["pool"]:
-            return -1
-        idx = STATE["next"] % len(STATE["pool"])
+        # 每次请求都由后端用真实验证码库现生成一张，页面端永远拿不到答案。
         STATE["next"] += 1
-        return idx
+        cid = STATE["next"]
+        STATE["pool"][cid] = make_captcha()
+        return cid
 
 
 class QuietServer(ThreadingHTTPServer):
@@ -267,10 +219,6 @@ LOGIN_PAGE = """<!doctype html>
   .logout-decor { position: fixed; right: 24px; bottom: 24px; display: flex; gap: 12px; align-items: end; }
   #hidden-captcha { display: none; }
 </style>
-<script>
-window.PALETTE = %PALETTE%;
-</script>
-<script>%CAPTCHA_JS%</script>
 </head>
 <body>
 <header>
@@ -386,14 +334,19 @@ FRAME_PAGE = """<!doctype html>
 <body>
 <p>合作方登录框（iframe）</p>
 <form><label>验证码 <input id="inner-input" name="captcha"></label>
-<img id="inner-img" src="/api/captcha.png?id=0" class="captcha-image" width="120" height="45"></form>
+<img id="inner-img" class="captcha-image" width="120" height="45"></form>
+<script>
+  // 验证码由后端按需生成：先取 id，再加载图片
+  fetch('/api/captcha').then((r) => r.json()).then((data) => {
+    document.getElementById('inner-img').src = '/api/captcha.png?id=' + data.id;
+  });
+</script>
 </body></html>
 """
 
 RULE_PAGE = """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>懒加载组件</title>
 <style>body{font-family:sans-serif;margin:24px} canvas{border:1px solid #ddd}</style>
-<script>%CAPTCHA_JS%</script>
 </head><body>
 <p>该验证码组件在弹窗打开后才渲染（模拟懒加载）</p>
 <p><input id="late-input" name="q1"></p>
@@ -645,13 +598,10 @@ PAGES: dict[str, str] = {}
 
 
 def build_pages(origin_b: str) -> None:
-    PAGES["/login"] = (
-        LOGIN_PAGE.replace("%PALETTE%", json.dumps(PALETTE))
-        .replace("%CAPTCHA_JS%", CAPTCHA_JS)
-    )
+    PAGES["/login"] = LOGIN_PAGE
     PAGES["/crossorigin"] = CROSS_PAGE.replace("%ORIGIN_B%", origin_b)
     PAGES["/slider"] = SLIDER_PAGE
-    PAGES["/rule"] = RULE_PAGE.replace("%CAPTCHA_JS%", CAPTCHA_JS)
+    PAGES["/rule"] = RULE_PAGE
     PAGES["/frame"] = """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>合作方嵌入</title></head>
 <body style="font-family:sans-serif;margin:24px">
@@ -765,49 +715,29 @@ def console_collector(page, sink: list[str]):
     page.on("pageerror", lambda err: sink.append(f"pageerror: {err}"))
 
 
-def seed_captcha_pool(page, origin_a: str, count: int = 40) -> None:
-    page.goto(f"{origin_a}/login", wait_until="domcontentloaded")
-    items = page.evaluate(
-        """async ([alphabet, count]) => {
-            const out = [];
-            for (let i = 0; i < count; i++) {
-                let code = '';
-                for (let k = 0; k < 4; k++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-                out.push({ code, png: window.__makeCaptcha(code) });
-            }
-            return out;
-        }""",
-        [ALPHABET, count],
-    )
-    resp = page.evaluate(
-        """async ([items]) => (await fetch('/__seed', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }),
-        })).json()""",
-        [items],
-    )
-    assert resp.get("ok"), f"验证码池注入失败: {resp}"
+def make_captcha(code: str | None = None) -> dict:
+    """用成熟的 captcha 库（Pillow）生成真实风格验证码，页面端只拿图片、拿不到答案。"""
+    global _IMAGE_CAPTCHA
+    if _IMAGE_CAPTCHA is None:
+        from captcha.image import ImageCaptcha
+
+        fonts = [str(f) for f in (FONT_CANDIDATES) if f.exists()]
+        _IMAGE_CAPTCHA = ImageCaptcha(width=120, height=45, fonts=fonts) if fonts else ImageCaptcha(width=120, height=45)
+    if code is None:
+        code = "".join(secrets.choice(ALPHABET) for _ in range(4))
+    data = _IMAGE_CAPTCHA.generate(code)
+    return {"code": code, "png": data.getvalue()}
 
 
-def seed_cross_origin_image(page, origin_a: str) -> None:
-    page.goto(f"{origin_a}/login", wait_until="domcontentloaded")
-    code = page.evaluate(
-        """async ([alphabet]) => {
-            let code = '';
-            for (let k = 0; k < 4; k++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-            const canvas = window.__makeCaptcha(code);
-            const binary = atob(canvas);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            await fetch('/__put-image', { method: 'POST', body: bytes });
-            return code;
-        }""",
-        [ALPHABET],
-    )
-    return code
+def ensure_cross_image() -> dict:
+    """跨域图床样张：第一次请求时生成，之后复用。"""
+    if STATE["cross"] is None:
+        STATE["cross"] = make_captcha()
+    return STATE["cross"]
 
 
-def captcha_truth(idx: int) -> str:
-    return STATE["pool"][idx]["code"]
+def captcha_truth(cid: int) -> str:
+    return STATE["pool"][cid]["code"]
 
 
 def find_tab_id(worker, url_prefix: str):
@@ -907,19 +837,8 @@ def main() -> int:
             if existing.url.startswith("chrome-extension://"):
                 existing.close()
 
-        prep = context.new_page()
-        for seed_attempt in range(2):
-            try:
-                seed_captcha_pool(prep, origin_a)
-                break
-            except Exception as exc:  # noqa: BLE001
-                if seed_attempt == 1:
-                    raise
-                print(f"[setup] 验证码池注入失败，重试: {exc}")
-                prep.wait_for_timeout(500)
-        cross_truth = seed_cross_origin_image(prep, origin_a)
-        prep.close()
-        print(f"[setup] 验证码池 {len(STATE['pool'])} 张；跨域样张真值={cross_truth}")
+        cross_truth = ensure_cross_image()["code"]
+        print(f"[setup] 验证码由 captcha 库按需生成；跨域样张真值={cross_truth}")
 
         # 1) 真实登录链路：识别 → 填错 → 换图 → 重识别 → 直到成功
         if matches("login"):
@@ -1218,14 +1137,15 @@ def main() -> int:
                 frames = list_frames(worker, tab_id)
                 inner = next((f for f in frames if isinstance(f, dict) and f.get("path") == "/inner"), None)
                 assert inner, f"没有 /inner 子框架: {frames}"
-                message = {"action": "recognizeImageBySrc", "srcUrl": f"{origin_a}/api/captcha.png?id=0"}
+                frame = next((f for f in page.frames if f != page.main_frame), None)
+                assert frame is not None
+                inner_src = frame.eval_on_selector("#inner-img", "el => el.src")
+                message = {"action": "recognizeImageBySrc", "srcUrl": inner_src}
                 top = send_to_frame(worker, tab_id, message, 0)
                 assert top["ok"], f"顶层应答失败: {top}"
                 result = send_to_frame(worker, tab_id, message, inner["frameId"])
                 assert result["ok"], f"子框架未应答: {result}"
                 assert result["response"] and result["response"].get("success"), f"子框架识别失败: {result}"
-                frame = next((f for f in page.frames if f != page.main_frame), None)
-                assert frame is not None
                 try:
                     frame.wait_for_selector("#Mieru-ctx-toast", timeout=8000)
                 except Exception:
