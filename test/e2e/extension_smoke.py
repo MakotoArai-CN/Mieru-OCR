@@ -465,7 +465,9 @@ SLIDER_PAGE = """<!doctype html>
   const variant = params.get('variant') || 'circle';
   // 背景重排场景用异形（带凹弧）而不是圆形：圆形轮廓和背景里的圆斑容易混淆，
   // 真实站点的拼图也多为异形。
-  const shapeKind = (variant === 'jigsaw' || variant === 'scrambled') ? 'jigsaw' : 'circle';
+  const shapeKind = (variant === 'jigsaw' || variant === 'scrambled' || variant === 'rotate') ? 'jigsaw' : 'circle';
+  // 站点用 CSS 把拼图块转过一个角度：模拟 rotate 变体
+  const rotateDeg = variant === 'rotate' ? 10 : 0;
   const latePiece = params.get('late') === '1';
   const state = { token: null, gapX: 0, dragX: 0, dragging: false, drags: 0, result: null, gap: null };
   window.__state = state;
@@ -566,6 +568,18 @@ SLIDER_PAGE = """<!doctype html>
     shapePath(fc, 0, 0, S);
     fc.stroke();
 
+    let pieceCanvas = fin;
+    if (rotateDeg) {
+      const rotated = document.createElement('canvas');
+      rotated.width = S;
+      rotated.height = S;
+      const rc = rotated.getContext('2d');
+      rc.translate(S / 2, S / 2);
+      rc.rotate((rotateDeg * Math.PI) / 180);
+      rc.drawImage(fin, -S / 2, -S / 2);
+      pieceCanvas = rotated;
+    }
+
     // 背景缺口：同形状描边
     b.save();
     b.lineWidth = 3;
@@ -577,7 +591,7 @@ SLIDER_PAGE = """<!doctype html>
     b.restore();
 
     bgImg.src = bg.toDataURL('image/png');
-    const pieceSrc = fin.toDataURL('image/png');
+    const pieceSrc = pieceCanvas.toDataURL('image/png');
     if (latePiece) {
       pieceImg.removeAttribute('src');
       window.setTimeout(() => { pieceImg.src = pieceSrc; }, 1500);
@@ -1132,6 +1146,7 @@ def main() -> int:
                     ("variant=blur", "模糊拼图"),
                     ("variant=scrambled", "背景重排"),
                     ("late=1", "拼图晚加载"),
+                    ("variant=rotate", "旋转拼图"),
                 ):
                     page = context.new_page()
                     page.bring_to_front()
@@ -1157,7 +1172,7 @@ def main() -> int:
                     rows.append(f"{label} 偏差 {info['gap']}px")
                 return "；".join(rows)
 
-            run_case("variants: 异形/模糊/错拼/晚加载滑块", case_slider_variants)
+            run_case("variants: 异形/模糊/错拼/晚加载/旋转滑块", case_slider_variants)
 
         # 2) 组件重渲染：旧节点失效后，规则必须重新命中新节点
         if matches("spa"):

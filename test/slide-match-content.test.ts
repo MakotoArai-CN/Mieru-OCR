@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createCanvas } from '@napi-rs/canvas';
-import { maskedContentScore, matchTemplate, slideMatch, type ImageLike } from '../src/core/slide-detector';
+import { alphaBBox, maskedContentScore, matchTemplate, slideMatch, type ImageLike } from '../src/core/slide-detector';
 
 /**
  * 拼图滑块回归：背景 = 渐变 + 随机色块/椭圆 + 噪点，拼图块 = 从缺口处裁出的圆形碎片。
@@ -232,11 +232,40 @@ function makeShapePuzzle(seed: number, opts: { shape: 'circle' | 'jigsaw'; scram
   return { bg, piece: fin, gapX };
 }
 
+
+/** 模拟站点用 CSS 旋转拼图块（绕画布中心）。 */
+function rotateCanvas(src: ReturnType<typeof createCanvas>, deg: number) {
+  const out = createCanvas(src.width, src.height);
+  const c = out.getContext('2d');
+  c.translate(src.width / 2, src.height / 2);
+  c.rotate((deg * Math.PI) / 180);
+  c.drawImage(src, -src.width / 2, -src.height / 2);
+  return out;
+}
+
 test('slideMatch handles non-circular (jigsaw) pieces', () => {
   for (let seed = 1; seed <= 4; seed++) {
     const { bg, piece, gapX } = makeShapePuzzle(seed * 7919 + 13, { shape: 'jigsaw' });
     const result = slideMatch(toImageLike(piece), toImageLike(bg));
     expect(Math.abs(result.x - gapX)).toBeLessThanOrEqual(6);
+  }
+});
+
+
+test('slideMatch tolerates small piece rotation (site-side CSS rotate)', () => {
+  // 站点可能把拼图块转过几度。现有管线（边缘 + 内容校验/直搜）应能吸收 ±15°，
+  // 这条用例锁住该能力，防止后续改动内容校验时悄悄退化。
+  for (const deg of [-15, -8, 8, 15]) {
+    for (let seed = 1; seed <= 3; seed++) {
+      const { bg, piece, gapX } = makeShapePuzzle(seed * 7919 + 13, { shape: 'jigsaw' });
+      const rotated = rotateCanvas(piece, deg);
+      const uprightBox = alphaBBox(toImageLike(piece));
+      const rotatedBox = alphaBBox(toImageLike(rotated));
+      // slideMatch 返回 alpha bbox 左上角；旋转会改变 bbox 偏移，这里把它补回去。
+      const expected = gapX + ((rotatedBox?.x ?? 0) - (uprightBox?.x ?? 0));
+      const result = slideMatch(toImageLike(rotated), toImageLike(bg));
+      expect(Math.abs(result.x - expected)).toBeLessThanOrEqual(6);
+    }
   }
 });
 

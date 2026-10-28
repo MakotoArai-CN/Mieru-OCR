@@ -100,6 +100,8 @@ export async function solveSlider(
   let pieceScore = NaN;
   /** 模板位置的内容相关性（拼图块与背景是否同一块内容），用于低分时兜底判断。 */
   let pieceContent = NaN;
+  /** slideMatch 内部最终采纳的方法（shape-match/content-search 表示已通过严格校验）。 */
+  let pieceMethod = '';
   const piece = captcha.sliderPiece ? elementToImageData(captcha.sliderPiece) : null;
   if (piece) {
     let m: SlideMatchResult;
@@ -118,6 +120,7 @@ export async function solveSlider(
     pieceX = m.x;
     pieceScore = m.score;
     pieceContent = m.contentScore;
+    pieceMethod = m.method;
     candidates.push({ x: m.x, conf: Math.max(0, m.score), method: m.method, weight: 1.6 });
     const content = Number.isFinite(m.contentScore) ? m.contentScore.toFixed(2) : 'n/a';
     log(`slideMatch: x=${m.x}px score=${m.score.toFixed(3)} content=${content} margin=${m.margin.toFixed(3)} method=${m.method} (${m.elapsed.toFixed(0)}ms)`);
@@ -132,19 +135,26 @@ export async function solveSlider(
   log(`缺口候选: ${candidates.map((c) => `${c.method}@${Math.round(c.x)}(${c.conf.toFixed(2)})`).join(', ')}`
     + ` → 融合 x=${fused ? Math.round(fused.x) : '?'} agree=${fused?.agree ?? 0}`);
 
-  // 内容相关性很高时，即使边缘 NCC 分数低，位置也是可信的：拼图块与背景是同一块
-  // 内容，错位时相关性会明显下降。反之，低分模板若用列边缘/亮度融合"补救"，
-  // 在照片类背景上经常被强纹理带到完全错误的位置（实测 Firefox 出现 90px 偏差，
-  // 而同一次匹配的内容相关性是 0.99）。
-  const contentOk = Number.isFinite(pieceContent) && pieceContent >= 0.85;
+  // 位置可信度按三条独立信号判断（任一成立即可，融合只作最后兜底）：
+  //   1) 边缘 NCC 分数达标；
+  //   2) 内容相关性 ≥0.55：拼图块与缺口是同一块内容，错位时相关性会掉到 0 附近；
+  //      旋转过的拼图块相关性约 0.6~0.7，仍远高于错误位置；
+  //   3) slideMatch 内部已采纳 shape-match / content-search：这两条路径本身要求
+  //      轮廓分 ≥0.5 或内容分 ≥0.8，等价于已经通过了一次严格校验。
+  // 低分模板若改用「列边缘 + 亮度」融合"补救"，在照片/高密度纹理背景上经常被强
+  // 纹理带到完全错误的位置（实测偏差 49~90px，而同一次匹配的内容相关性是 0.65~0.99）。
+  const contentOk = Number.isFinite(pieceContent) && pieceContent >= 0.55;
+  const methodTrusted = pieceMethod === 'shape-match' || pieceMethod === 'content-search';
 
-  if (piece && (pieceScore >= minScore || contentOk)) {
+  if (piece && (pieceScore >= minScore || contentOk || methodTrusted)) {
     // 模板匹配可信（分数够高，或内容验证通过）：以其为准，其余两路仅作记录/印证。
     gapXNative = pieceX;
     score = pieceScore;
-    method = contentOk && pieceScore < minScore ? 'template-match(content)' : 'template-match';
-    if (contentOk && pieceScore < minScore) {
-      log(`边缘分偏低(${pieceScore.toFixed(3)} < ${minScore})，但内容相关性 ${pieceContent.toFixed(3)} → 采用模板位置`);
+    method = pieceScore >= minScore || methodTrusted
+      ? 'template-match'
+      : (contentOk ? 'template-match(content)' : 'template-match');
+    if (pieceScore < minScore) {
+      log(`边缘分偏低(${pieceScore.toFixed(3)} < ${minScore})，但${contentOk ? `内容相关性 ${pieceContent.toFixed(3)}` : `内部方法 ${pieceMethod}`}可信 → 采用模板位置`);
     }
   } else if (piece) {
     // 模板匹配置信低：要求列边缘 + 亮度两路互相印证（agree≥2）才接受融合结果，否则放弃。

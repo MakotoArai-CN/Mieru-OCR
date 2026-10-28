@@ -266,6 +266,7 @@ def main() -> int:
                 ("?variant=blur", "模糊"),
                 ("?variant=scrambled", "背景重排"),
                 ("?late=1", "拼图晚加载"),
+                ("?variant=rotate", "旋转"),
             ):
                 driver.get(f"{origin_a}/slider{query}")
                 deadline = time.time() + 30
