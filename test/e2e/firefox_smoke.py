@@ -247,20 +247,31 @@ def main() -> int:
                 "createdAt": int(time.time() * 1000),
                 "updatedAt": int(time.time() * 1000),
             })
-            driver.get(f"{origin_a}/slider")
-            deadline = time.time() + 40
-            while time.time() < deadline:
-                result = driver.execute_script(
-                    "return window.__state && window.__state.result ? "
-                    "{ result: window.__state.result, gap: window.__state.gap, "
-                    "  dragX: window.__state.dragX, truth: window.__state.gapX } : null"
-                )
-                if result:
-                    assert result["result"] == "success", f"滑块验证失败: {result}"
-                    return f"滑块通过，落点 {result['dragX']:.1f}px（真值 {result['truth']}px，偏差 {result['gap']}px）"
-                time.sleep(0.3)
-            raise AssertionError("40s 内没有触发滑块拖拽")
-        run_case("slider: MV3 背景页 Worker 匹配 + 真实拖拽", case_slider)
+            rows = []
+            for query, label in (
+                ("", "圆形"),
+                ("?variant=jigsaw", "凹弧"),
+                ("?variant=blur", "模糊"),
+                ("?variant=scrambled", "背景重排"),
+                ("?late=1", "拼图晚加载"),
+            ):
+                driver.get(f"{origin_a}/slider{query}")
+                deadline = time.time() + 30
+                result = None
+                while time.time() < deadline:
+                    result = driver.execute_script(
+                        "return window.__state && window.__state.result ? "
+                        "{ result: window.__state.result, gap: window.__state.gap, "
+                        "  dragX: window.__state.dragX, truth: window.__state.gapX } : null"
+                    )
+                    if result:
+                        break
+                    time.sleep(0.3)
+                assert result, f"{label}：30s 内没有触发拖拽"
+                assert result["result"] == "success", f"{label} 落点失败: {result}"
+                rows.append(f"{label} 偏差 {result['gap']}px")
+            return "；".join(rows)
+        run_case("slider: MV3 背景页 Worker 匹配 + 真实拖拽（含变体）", case_slider)
 
     finally:
         try:

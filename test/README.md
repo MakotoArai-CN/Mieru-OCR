@@ -132,6 +132,7 @@ Chromium，并起一个迷你后端（验证码真值、登录校验、换图接
 |------|--------|
 | `login` | 真实登录链路：先**故意填错**触发「拒绝 → 换图 → 重新识别」，再识别正确后登录成功；同时校验干扰输入未被填充、协议已勾选 |
 | `slider` | 极验风格拼图滑块：背景挖圆形缺口 + 从背景裁出的拼图块，扩展用 pointer 事件真实拖拽，后端按 ±6px 容差校验落点 |
+| `variants` | 滑块变体：凹弧异形拼图、模糊拼图、背景被重排（内容对不上，只能靠轮廓）、拼图块晚 1.5s 加载 |
 | `spa` | 验证码组件整个节点重建（旧引用失效）后，站点规则仍能命中新节点并继续识别 |
 | `crossorigin` | 跨域且无 CORS 头的图床 → 后台 `fetchImageData` 代抓 → 仍能识别填充 |
 | `rule` | 懒加载 3s 后才渲染的组件 + 站点规则（`solveDelayMs/retryMs/maxWaitMs`）重试生效 |
@@ -167,7 +168,7 @@ Playwright 的 Firefox 不支持加载扩展，所以这里单独走 geckodriver
 | 用例 | 验证点 |
 |------|--------|
 | `login` | MV3 事件页启动 → `ort.min.js` + `background.js`(经典 IIFE) 加载模型 → OCR 填充 → 登录成功；干扰输入不被改写、协议自动勾选 |
-| `slider` | 通过扩展 options 页写入 `siteRules` → 拼图滑块由背景页 Worker 匹配 + 真实拖拽，后端按 ±6px 校验 |
+| `slider` | 通过扩展 options 页写入 `siteRules` → 拼图滑块由背景页 Worker 匹配 + 真实拖拽；覆盖圆形/凹弧/模糊/背景重排/晚加载 5 种变体，后端按 ±6px 校验 |
 
 ```bash
 bun run build:firefox

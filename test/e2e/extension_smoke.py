@@ -462,9 +462,15 @@ SLIDER_PAGE = """<!doctype html>
   <button id="slider-reset" type="button">重新加载验证码</button>
 </div>
 <script>
-  // 极验风格拼图滑块：背景挖一个圆形缺口，拼图块是从同一张背景裁出的圆形碎片。
-  // 拖拽用 pointer 事件（扩展侧 solveSlider 派发的正是 pointerdown/move/up）。
+  // 极验风格拼图滑块。?variant=jigsaw|blur|scrambled 切换拼图形态，
+  // ?late=1 让拼图块的 src 晚 1.5s 才设置（回归"图片未加载完就取像素"的问题）。
   const W = 300, H = 150, S = 50, MAX = W - S;
+  const params = new URLSearchParams(location.search);
+  const variant = params.get('variant') || 'circle';
+  // 背景重排场景用异形（带凹弧）而不是圆形：圆形轮廓和背景里的圆斑容易混淆，
+  // 真实站点的拼图也多为异形。
+  const shapeKind = (variant === 'jigsaw' || variant === 'scrambled') ? 'jigsaw' : 'circle';
+  const latePiece = params.get('late') === '1';
   const state = { token: null, gapX: 0, dragX: 0, dragging: false, drags: 0, result: null, gap: null };
   window.__state = state;
   const bgImg = document.getElementById('slider-bg');
@@ -473,7 +479,24 @@ SLIDER_PAGE = """<!doctype html>
   const fill = document.getElementById('slider-fill');
   const msg = document.getElementById('slider-msg');
 
-  function buildPuzzle() {
+  function shapePath(ctx, x, y, s) {
+    ctx.beginPath();
+    if (shapeKind === 'jigsaw') {
+      // 方形 + 顶边一个凹进去的半圆（非圆形、带曲线轮廓）
+      const r = s * 0.18;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + s / 2 - r, y);
+      ctx.arc(x + s / 2, y, r, Math.PI, 0, false);
+      ctx.lineTo(x + s, y);
+      ctx.lineTo(x + s, y + s);
+      ctx.lineTo(x, y + s);
+      ctx.closePath();
+    } else {
+      ctx.arc(x + s / 2, y + s / 2, s / 2 - 2, 0, Math.PI * 2);
+    }
+  }
+
+  function paintBackground(seedRandom) {
     const bg = document.createElement('canvas');
     bg.width = W; bg.height = H;
     const b = bg.getContext('2d');
@@ -483,8 +506,6 @@ SLIDER_PAGE = """<!doctype html>
     grad.addColorStop(1, '#7fb3d5');
     b.fillStyle = grad;
     b.fillRect(0, 0, W, H);
-    // 高熵「照片感」背景：随机色块/椭圆 + 噪点。真实滑块背景都是照片，
-    // 用重复的圆形图案会让模板匹配出现竞争峰（曾出现偏移 100+px 的误匹配）。
     for (let i = 0; i < 120; i++) {
       b.fillStyle = `hsla(${Math.floor(Math.random() * 360)}, ${60 + Math.random() * 35}%, ${25 + Math.random() * 55}%, ${0.65 + Math.random() * 0.3})`;
       const x = Math.random() * W;
@@ -503,28 +524,70 @@ SLIDER_PAGE = """<!doctype html>
       b.fillStyle = `rgba(255,255,255,${Math.random() * 0.14})`;
       b.fillRect(Math.random() * W, Math.random() * H, 1 + Math.random() * 2, 1 + Math.random() * 2);
     }
+    return bg;
+  }
 
+  function buildPuzzle() {
+    const bg = paintBackground();
+    const b = bg.getContext('2d');
     const gapX = 70 + Math.floor(Math.random() * (W - S - 120));
     const gapY = 15 + Math.floor(Math.random() * (H - S - 30));
 
+    // 拼图块：从背景（或另一张图，模拟"背景被重排"）裁剪，按形状做 alpha 蒙版
+    const source = variant === 'scrambled' ? paintBackground() : bg;
     const piece = document.createElement('canvas');
     piece.width = S; piece.height = S;
     const p = piece.getContext('2d');
-    p.drawImage(bg, gapX, gapY, S, S, 0, 0, S, S);
-    p.globalCompositeOperation = 'destination-in';
-    p.beginPath(); p.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2); p.fill();
-    p.globalCompositeOperation = 'source-over';
-    p.lineWidth = 3; p.strokeStyle = 'rgba(255,255,255,.92)';
-    p.beginPath(); p.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2); p.stroke();
+    p.save();
+    shapePath(p, 0, 0, S);
+    p.clip();
+    p.drawImage(source, gapX, gapY, S, S, 0, 0, S, S);
+    p.restore();
+    if (variant === 'blur') {
+      const blurred = document.createElement('canvas');
+      blurred.width = S; blurred.height = S;
+      const bc = blurred.getContext('2d');
+      bc.filter = 'blur(1.5px)';
+      bc.drawImage(piece, 0, 0);
+      var output = blurred;
+    } else {
+      var output = piece;
+    }
+    const mask = document.createElement('canvas');
+    mask.width = S; mask.height = S;
+    shapePath(mask.getContext('2d'), 0, 0, S);
+    mask.getContext('2d').fill();
 
+    const fin = document.createElement('canvas');
+    fin.width = S; fin.height = S;
+    const fc = fin.getContext('2d');
+    fc.drawImage(output, 0, 0);
+    fc.globalCompositeOperation = 'destination-in';
+    fc.drawImage(mask, 0, 0);
+    fc.globalCompositeOperation = 'source-over';
+    fc.lineWidth = 3;
+    fc.strokeStyle = 'rgba(255,255,255,.92)';
+    shapePath(fc, 0, 0, S);
+    fc.stroke();
+
+    // 背景缺口：同形状描边
     b.save();
-    b.lineWidth = 3; b.strokeStyle = 'rgba(255,255,255,.95)';
-    b.shadowColor = 'rgba(0,0,0,.5)'; b.shadowBlur = 6;
-    b.beginPath(); b.arc(gapX + S / 2, gapY + S / 2, S / 2 - 2, 0, Math.PI * 2); b.stroke();
+    b.lineWidth = 3;
+    b.strokeStyle = 'rgba(255,255,255,.95)';
+    b.shadowColor = 'rgba(0,0,0,.5)';
+    b.shadowBlur = 6;
+    shapePath(b, gapX, gapY, S);
+    b.stroke();
     b.restore();
 
     bgImg.src = bg.toDataURL('image/png');
-    pieceImg.src = piece.toDataURL('image/png');
+    const pieceSrc = fin.toDataURL('image/png');
+    if (latePiece) {
+      pieceImg.removeAttribute('src');
+      window.setTimeout(() => { pieceImg.src = pieceSrc; }, 1500);
+    } else {
+      pieceImg.src = pieceSrc;
+    }
     pieceImg.style.top = gapY + 'px';
     pieceImg.style.left = '0px';
     handle.style.left = '0px';
@@ -977,6 +1040,63 @@ def main() -> int:
                 raise AssertionError(f"3 次拖拽均未通过: {attempts}")
 
             run_case("slider: 拼图滑块真实拖拽（后端校验落点）", case_slider)
+
+        # 1.6) 滑块变体：异形 / 模糊 / 背景重排 / 拼图晚加载
+        if matches("variants"):
+            def case_slider_variants():
+                url = f"{origin_a}/slider"
+                sw_eval(
+                    worker,
+                    """async ([origin]) => {
+                        const url = origin + '/slider';
+                        const rules = (await chrome.storage.local.get('siteRules')).siteRules || {};
+                        rules[url] = {
+                            hostname: new URL(url).hostname,
+                            selector: '#slider-box',
+                            subType: 'slider',
+                            dragProfile: 'fast',
+                            fullUrl: url,
+                            enabled: true,
+                            createdAt: Date.now(),
+                            updatedAt: Date.now(),
+                        };
+                        await chrome.storage.local.set({ siteRules: rules });
+                        return true;
+                    }""",
+                    [origin_a],
+                )
+                rows = []
+                for query, label in (
+                    ("variant=jigsaw", "凹弧拼图"),
+                    ("variant=blur", "模糊拼图"),
+                    ("variant=scrambled", "背景重排"),
+                    ("late=1", "拼图晚加载"),
+                ):
+                    page = context.new_page()
+                    page.bring_to_front()
+                    page.goto(f"{url}?{query}", wait_until="domcontentloaded")
+                    try:
+                        page.wait_for_function(
+                            "() => window.__state && window.__state.result !== null",
+                            timeout=30000,
+                        )
+                    except Exception:
+                        info = page.evaluate(
+                            "() => ({ drags: window.__state.drags, dragX: window.__state.dragX, "
+                            "truth: window.__state.gapX, token: window.__state.token })"
+                        )
+                        page.close()
+                        raise AssertionError(f"{label} 在 30s 内未触发拖拽: {info}")
+                    info = page.evaluate(
+                        "() => ({ result: window.__state.result, gap: window.__state.gap, "
+                        "dragX: window.__state.dragX, truth: window.__state.gapX })"
+                    )
+                    page.close()
+                    assert info["result"] == "success", f"{label} 落点失败: {info}"
+                    rows.append(f"{label} 偏差 {info['gap']}px")
+                return "；".join(rows)
+
+            run_case("variants: 异形/模糊/错拼/晚加载滑块", case_slider_variants)
 
         # 2) 组件重渲染：旧节点失效后，规则必须重新命中新节点
         if matches("spa"):
