@@ -1,3 +1,4 @@
+import { copyWasmRuntime, bundleContentScript } from './scripts/extension-assets';
 import { defineConfig, createLogger } from 'vite';
 import { resolve } from 'path';
 import { copyFileSync, mkdirSync, existsSync, readdirSync, rmSync, statSync, readFileSync, writeFileSync } from 'fs';
@@ -58,25 +59,6 @@ function copyDirRecursive(srcDir: string, destDir: string): void {
   }
 }
 
-async function bundleContentScript(distDir: string, entryPath: string, isFirefox = false): Promise<void> {
-  const esbuild = await import('esbuild');
-  await esbuild.build({
-    entryPoints: [entryPath],
-    bundle: true,
-    format: 'iife',
-    platform: 'browser',
-    target: ['es2020'],
-    tsconfig: resolve(__dirname, 'tsconfig.json'),
-    outfile: resolve(distDir, 'content.js'),
-    allowOverwrite: true,
-    legalComments: 'none',
-    logLevel: 'silent',
-    // 这道 esbuild 编译独立于 vite，不继承其 define——必须在此单独注入，
-    // 否则 content script 运行时抛 __FIREFOX__ is not defined，且因为
-    // logLevel: 'silent' 构建期不会有任何警告。
-    define: { __FIREFOX__: String(isFirefox) },
-  });
-}
 
 function copyPublicAssets() {
   return {
@@ -137,34 +119,7 @@ function copyPublicAssets() {
         console.log('Copied test.html');
       }
 
-      const ortDistDir = resolve(__dirname, 'node_modules/onnxruntime-web/dist');
-      if (existsSync(ortDistDir)) {
-        const files = readdirSync(ortDistDir);
-        const runtimeFiles = files.filter((f) => {
-          if (f === 'ort.min.js') return true;
-          if (f.startsWith('ort-') && f.endsWith('.wasm')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.mjs')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.worker.js')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.jsep.mjs')) return true;
-          if (f.startsWith('ort-') && f.endsWith('.jsep.wasm')) return true;
-          return false;
-        });
-
-        runtimeFiles.forEach((file) => {
-          const srcPath = resolve(ortDistDir, file);
-          const destPath = resolve(distDir, file);
-          if (existsSync(srcPath)) {
-            copyFileSync(srcPath, destPath);
-            console.log(`Copied ${file}`);
-          }
-        });
-
-        if (!runtimeFiles.includes('ort.min.js')) {
-          console.warn('ort.min.js not found in onnxruntime-web/dist, runtime may fail');
-        }
-      } else {
-        console.warn('onnxruntime-web dist not found, skipping runtime files...');
-      }
+      copyWasmRuntime(distDir);
 
       const distIconsDir = resolve(distDir, 'icons');
       if (!existsSync(distIconsDir)) {
@@ -263,6 +218,7 @@ function copyPublicAssets() {
 }
 
 export default defineConfig({
+  publicDir: false,
   customLogger: makeQuietLogger(),
   // 平台判定用构建期常量，便于 tree-shaking 掉另一端的死分支。
   // 注意 content script 走 bundleContentScript 的 esbuild 二次编译，需在那里单独 define。

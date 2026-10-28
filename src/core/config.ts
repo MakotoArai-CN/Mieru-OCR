@@ -94,6 +94,17 @@ export const CONSTANTS = {
   ],
 };
 
+/**
+ * 过短、极易误伤的排除词。这类词只应在 URL / alt 上参与匹配：
+ * 现代站点（尤其 Tailwind）的类名里 `shadow-md` 含 "ad"、`bg-white` 含 "bg"，
+ * 用子串匹配会把真正的验证码图片整体排除掉（漏识别）。
+ */
+export const AMBIGUOUS_EXCLUDE_PATTERNS: string[] = ['ad', 'bg'];
+
+/** 在 className / id 上判断排除词时应使用的列表（剔除会误伤的短词）。 */
+export const STYLE_EXCLUDE_PATTERNS: string[] = CONSTANTS.EXCLUDE_PATTERNS
+  .filter((pattern) => !AMBIGUOUS_EXCLUDE_PATTERNS.includes(pattern));
+
 export const DEFAULT_CONFIG: OCRConfig = {
   debugMode: false,
   autoDetect: true,

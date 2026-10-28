@@ -118,6 +118,7 @@ async function init(): Promise<void> {
   renderKeywordChipGroups();
   bindEvents();
   await loadSettings();
+  markUserscriptOnlyAssistToggles();
   translatePage();
   await loadRules();
   await loadStats();
@@ -317,7 +318,8 @@ function bindLanguageSwitcher(): void {
       } else {
         setLocale(lang as Locale);
       }
-      translatePage();
+      markUserscriptOnlyAssistToggles();
+  translatePage();
       // Re-render all dynamically generated content
       renderKeywordChipGroups();
       bindKeywordChipGroups();
@@ -734,7 +736,9 @@ async function loadRules(): Promise<void> {
 
   rulesList.innerHTML = Object.entries(rules).map(([key, rule]: [string, any]) => {
     const displayKey = key.length > 40 ? `${key.substring(0, 40)}...` : key;
-    const selectorDisplay = rule.selector.length > 30 ? `${rule.selector.substring(0, 30)}...` : rule.selector;
+    // 规则可能来自导入 / 订阅，不一定有 selector；缺字段时不能让整个列表崩掉。
+    const selectorText = String(rule?.selector || '');
+    const selectorDisplay = selectorText.length > 30 ? `${selectorText.substring(0, 30)}...` : selectorText;
     return `
       <div class="rule-item" data-key="${escapeHtml(key)}">
         <div class="rule-info">
@@ -906,17 +910,13 @@ async function addBulkRules(): Promise<void> {
     if (!Array.isArray(rules)) throw new Error(t('rules.formatError'));
 
     let count = 0;
-    for (const rule of rules) {
-      if (!rule.hostname || !rule.selector) continue;
+    for (const raw of rules) {
+      const imported = normalizeImportedRule(raw);
+      if (!imported) continue;
       await browser.runtime.sendMessage({
         action: 'saveSiteRule',
-        hostname: rule.hostname,
-        rule: {
-          selector: rule.selector,
-          inputSelector: rule.inputSelector,
-          fullUrl: rule.fullUrl,
-          enabled: true,
-        },
+        hostname: imported.hostname,
+        rule: imported.rule,
       });
       count++;
     }
@@ -938,15 +938,22 @@ async function exportRules(): Promise<void> {
     rules = {};
   }
 
-  const exportData = Object.entries(rules).map(([key, rule]: [string, any]) => ({
-    hostname: rule.hostname || key,
-    selector: rule.selector,
-    inputSelector: rule.inputSelector,
-    fullUrl: rule.fullUrl,
-    urlPattern: rule.urlPattern,
-  }));
+  // 导出全部字段，避免「导出→导入」丢失 urlPattern / urlMatch / subType / 求解调度参数。
+  const exportData = Object.entries(rules).map(([key, rule]: [string, any]) => {
+    const { subscriptionId: _ignored, ...rest } = rule;
+    return { ...rest, hostname: rule.hostname || key };
+  });
 
   downloadJson(exportData, 'Mieru-rules.json');
+}
+
+/** 导入规则归一化：必须含 hostname + selector，去掉订阅归属标记，其余字段原样保留。 */
+function normalizeImportedRule(raw: any): { hostname: string; rule: Record<string, any> } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const hostname = typeof raw.hostname === 'string' ? raw.hostname : '';
+  if (!hostname || typeof raw.selector !== 'string' || !raw.selector.trim()) return null;
+  const { subscriptionId: _ignored, ...rest } = raw;
+  return { hostname, rule: { ...rest, enabled: raw.enabled !== false } };
 }
 
 async function exportConfig(): Promise<void> {
@@ -1183,30 +1190,31 @@ async function handleFileImport(event: Event): Promise<void> {
     if (importMode === 'rules') {
       if (!Array.isArray(data)) throw new Error(t('rules.formatError'));
       for (const rule of data) {
-        if (!rule.hostname || !rule.selector) continue;
+        const imported = normalizeImportedRule(rule);
+        if (!imported) continue;
         await browser.runtime.sendMessage({
           action: 'saveSiteRule',
-          hostname: rule.hostname,
-          rule: {
-            selector: rule.selector,
-            inputSelector: rule.inputSelector,
-            fullUrl: rule.fullUrl,
-            enabled: true,
-          },
+          hostname: imported.hostname,
+          rule: imported.rule,
         });
       }
       await loadRules();
       showToast(t('rules.imported'), 'success');
     } else if (importMode === 'config') {
-      await browser.storage.local.clear();
+      // 见 options.ts 同名逻辑：不能 clear()，否则订阅与模型注册表会被一起抹掉；
+      // 且必须先校验载荷，避免误选规则数组时静默写入出厂配置。
+      if (!isPlainObject(data) || (!isPlainObject(data.settings) && !isPlainObject(data.siteRules))) {
+        throw new Error(t('config.invalidFormat'));
+      }
       await browser.storage.local.set(normalizeConfigData(data));
       await loadSettings();
       await loadRules();
       await loadStats();
       showToast(t('config.imported'), 'success');
     }
-  } catch {
-    showToast(t('config.importFailed'), 'error');
+  } catch (error) {
+    const detail = error instanceof SyntaxError ? '' : (error as Error)?.message;
+    showToast(detail ? `${t('config.importFailed')}: ${detail}` : t('config.importFailed'), 'error');
   }
 
   (elements.fileImport as HTMLInputElement).value = '';
@@ -1221,7 +1229,7 @@ async function resetAll(): Promise<void> {
   });
   if (!ok) return;
   try {
-    await browser.storage.local.clear();
+    // 同「导入配置」：只重置配置相关的三个键，保留订阅、模型注册表与规则统计。
     await browser.storage.local.set(normalizeConfigData({}));
     await loadSettings();
     await loadRules();
@@ -1696,3 +1704,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 export { };
+
+/**
+ * 滑块/文字点选辅助的三个开关只对油猴脚本生效（扩展版改为站点规则驱动）。
+ * 留着可点击但不生效会误导用户，这里禁用并换成说明文案。
+ */
+function markUserscriptOnlyAssistToggles(): void {
+  const ids = ['enableSliderPuzzleAssist', 'enableSingleSliderAssist', 'enableClickSelectAssist'];
+  for (const id of ids) {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    if (!input) continue;
+    input.disabled = true;
+    input.closest('.switch-group')?.classList.add('is-userscript-only');
+    const hint = input.closest('.switch-group')?.querySelector('.hint');
+    if (hint) hint.textContent = t('settings.interactiveRuleDriven');
+  }
+}

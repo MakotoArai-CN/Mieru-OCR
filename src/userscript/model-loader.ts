@@ -1,5 +1,6 @@
 import { CONSTANTS } from '@core/config';
 import { t } from '@core/i18n';
+import { looksLikeOnnxBuffer, isValidCharsets } from '@core/onnx-validate';
 import type { CachedModel, OCRConfig } from '@core/types';
 
 const CACHE_KEY = 'ddddocr_model_cache';
@@ -62,6 +63,14 @@ export class ModelCache {
                 }
 
                 if (cached.version !== CONSTANTS.MODEL_VERSION) {
+                    this.delete();
+                    resolve(null);
+                    return;
+                }
+
+                // 旧版本可能把镜像返回的 HTML 错误页当模型缓存下来；这里顺手自愈。
+                if (!looksLikeOnnxBuffer(cached.model) || !isValidCharsets(cached.charsets)) {
+                    console.warn('⚠️ 缓存的模型文件无效，已清除并重新下载');
                     this.delete();
                     resolve(null);
                     return;
@@ -177,6 +186,12 @@ export class ModelCache {
                     resolve(null);
                     return;
                 }
+                if (!looksLikeOnnxBuffer(cached.model)) {
+                    console.warn('⚠️ 缓存的检测模型无效，已清除并重新下载');
+                    this.deleteDet();
+                    resolve(null);
+                    return;
+                }
                 resolve(cached.model);
             };
         });
@@ -281,10 +296,11 @@ export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: strin
 
     if (config.useUploadedModel) {
         const uploaded = await cache.getUploadedModel();
-        if (uploaded) {
+        if (uploaded && looksLikeOnnxBuffer(uploaded.model) && isValidCharsets(uploaded.charsets)) {
             console.log('✅ 使用上传的模型');
             return { model: uploaded.model, charsets: uploaded.charsets };
         }
+        if (uploaded) console.warn('⚠️ 上传的模型无效（已忽略）');
     }
 
     if (config.autoDownload === false) {
@@ -311,6 +327,15 @@ export async function loadModel(): Promise<{ model: ArrayBuffer; charsets: strin
                 downloadFile(buildURL(mirror, CONSTANTS.MODEL_PATH)),
                 downloadJSON<string[]>(buildURL(mirror, CONSTANTS.CHARSETS_PATH)),
             ]);
+
+            // 镜像返回 200 的错误页（HTML / JSON 报错）不能当模型缓存：
+            // 只判「下载成功」会把垃圾写进 IndexedDB，之后每次建会话都失败。
+            if (!looksLikeOnnxBuffer(modelData)) {
+                throw new Error('下载内容不是有效的 ONNX 模型');
+            }
+            if (!isValidCharsets(charsetsData)) {
+                throw new Error('charsets.json 内容不是非空字符串数组');
+            }
 
             model = modelData;
             charsets = charsetsData;
@@ -360,7 +385,9 @@ export async function loadDetModel(): Promise<{ model: ArrayBuffer }> {
         const mirror = CONSTANTS.GITHUB_MIRRORS[i];
         try {
             console.log(`🌐 检测模型镜像 [${i + 1}/${CONSTANTS.GITHUB_MIRRORS.length}]: ${mirror}`);
-            model = await downloadFile(buildURL(mirror, CONSTANTS.DET_MODEL_PATH), 60000);
+            const buf = await downloadFile(buildURL(mirror, CONSTANTS.DET_MODEL_PATH), 60000);
+            if (!looksLikeOnnxBuffer(buf)) throw new Error('下载内容不是有效的 ONNX 模型');
+            model = buf;
             console.log(`✅ 检测模型下载成功 (${(model.byteLength / 1024 / 1024).toFixed(2)} MB)`);
             break;
         } catch (error) {
@@ -385,6 +412,14 @@ export async function saveUploadedModel(modelFile: File, charsetsFile: File): Pr
     const modelData = await modelFile.arrayBuffer();
     const charsetsText = await charsetsFile.text();
     const charsets = JSON.parse(charsetsText) as string[];
+
+    // 上传也要验：否则坏文件会进 IndexedDB，之后每次识别都失败且提示不明确。
+    if (!looksLikeOnnxBuffer(modelData)) {
+        throw new Error('模型文件不是有效的 ONNX 模型（魔数校验失败）');
+    }
+    if (!isValidCharsets(charsets)) {
+        throw new Error('字符表必须是非空字符串数组');
+    }
 
     const cache = new ModelCache();
     await cache.setUploadedModel(modelData, charsets);

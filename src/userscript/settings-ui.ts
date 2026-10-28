@@ -31,6 +31,59 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+/**
+ * 导入配置的字段级校验。以前是 `saveConfig(JSON.parse(text))` 直接合并，
+ * 任何类型错误（例如把 whitelist 写成字符串）都能让 isWhitelisted() 抛 TypeError、
+ * 整个脚本失效；数组里的 `</textarea>` 还会在渲染设置面板时闭合标签。
+ * 这里按 DEFAULT_CONFIG 的类型逐项过滤，非法字段直接丢弃。
+ */
+function sanitizeImportedConfig(raw: unknown): Partial<OCRConfig> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const source = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const isStringArray = (v: unknown): v is string[] =>
+    Array.isArray(v) && v.every((item) => typeof item === 'string');
+
+  for (const key of Object.keys(DEFAULT_CONFIG) as (keyof OCRConfig)[]) {
+    if (!(key in source)) continue;
+    // calculateRules 是对象数组，结构单独校验，不能走下面的字符串数组分支。
+    if (key === 'calculateRules') continue;
+    const value = source[key];
+    const def = DEFAULT_CONFIG[key];
+    if (Array.isArray(def)) {
+      if (isStringArray(value)) out[key] = value;
+      continue;
+    }
+    if (typeof def === 'boolean') {
+      if (typeof value === 'boolean') out[key] = value;
+      continue;
+    }
+    if (typeof def === 'string') {
+      if (typeof value !== 'string') continue;
+      // 枚举字段白名单，避免写入页面无法识别的值。
+      if (key === 'theme' && !['light', 'dark', 'auto'].includes(value)) continue;
+      if (key === 'language' && !['auto', 'zh', 'ja', 'en'].includes(value)) continue;
+      if (key === 'calculateOutputMode' && !['result', 'equation'].includes(value)) continue;
+      if (key === 'detModelPreference' && !['auto', 'local'].includes(value)) continue;
+      out[key] = value;
+    }
+  }
+
+  if (Array.isArray(source.calculateRules)) {
+    out.calculateRules = (source.calculateRules as unknown[])
+      .filter((rule): rule is CalculateRule => {
+        if (!rule || typeof rule !== 'object') return false;
+        const r = rule as Record<string, unknown>;
+        return typeof r.pattern === 'string'
+          && (r.matchType === 'wildcard' || r.matchType === 'regex')
+          && (r.outputMode === 'result' || r.outputMode === 'equation');
+      })
+      .map((rule) => ({ ...rule, enabled: rule.enabled !== false }));
+  }
+
+  return out as Partial<OCRConfig>;
+}
+
 function formatTime(timestamp: number): string {
   if (!timestamp) return '-';
   const date = new Date(timestamp);
@@ -990,14 +1043,14 @@ export class SettingsUI {
             <div class="Mieru-card-title">${t('whitelist.settings')}</div>
             ${this.renderSwitchRow('enableWhitelist', t('whitelist.title'), t('whitelist.settings'), config.enableWhitelist)}
             <div id="whitelistArea" style="display: ${config.enableWhitelist ? 'block' : 'none'}">
-              <textarea class="Mieru-textarea" data-key="whitelist" placeholder="example.com&#10;*.example.com&#10;sub.example.com">${(config.whitelist || []).join('\n')}</textarea>
+              <textarea class="Mieru-textarea" data-key="whitelist" placeholder="example.com&#10;*.example.com&#10;sub.example.com">${escapeHtml((config.whitelist || []).join('\n'))}</textarea>
               <div class="Mieru-hint">${window.location.hostname}</div>
             </div>
           </div>
           <div class="Mieru-card">
             <div class="Mieru-card-title">${t('blacklist.title')}</div>
             <div class="Mieru-row-label">${t('blacklist.label')}</div>
-            <textarea class="Mieru-textarea" data-key="siteBlacklist" placeholder="${t('blacklist.placeholder')}">${(config.siteBlacklist || []).join('\n')}</textarea>
+            <textarea class="Mieru-textarea" data-key="siteBlacklist" placeholder="${t('blacklist.placeholder')}">${escapeHtml((config.siteBlacklist || []).join('\n'))}</textarea>
             <div class="Mieru-hint">${t('blacklist.hint')}</div>
           </div>
           <div class="Mieru-card">
@@ -1687,12 +1740,11 @@ export class SettingsUI {
 
   private exportSiteRules(): void {
     const rules = getSiteRules();
-    const exportData = Object.entries(rules).map(([key, rule]) => ({
-      hostname: rule.hostname || key,
-      selector: rule.selector,
-      inputSelector: rule.inputSelector,
-      fullUrl: rule.fullUrl,
-    }));
+    // 导出全部字段，避免「导出→导入」丢掉 urlPattern / subType / 求解调度参数。
+    const exportData = Object.entries(rules).map(([key, rule]) => {
+      const { subscriptionId: _ignored, ...rest } = rule as unknown as Record<string, unknown> & { subscriptionId?: string };
+      return { ...rest, hostname: rule.hostname || key };
+    });
     this.downloadJson(exportData, 'Mieru-rules.json');
   }
 
@@ -1707,17 +1759,16 @@ export class SettingsUI {
         const text = await file.text();
         const rules = JSON.parse(text);
         if (!Array.isArray(rules)) throw new Error(t('rules.formatError'));
+        let imported = 0;
         for (const rule of rules) {
-          if (!rule.hostname || !rule.selector) continue;
-          saveSiteRule(rule.hostname, {
-            selector: rule.selector,
-            inputSelector: rule.inputSelector,
-            fullUrl: rule.fullUrl,
-            enabled: true,
-          });
+          if (!rule || typeof rule !== 'object') continue;
+          if (typeof rule.hostname !== 'string' || typeof rule.selector !== 'string' || !rule.selector.trim()) continue;
+          const { subscriptionId: _ignored, hostname, ...rest } = rule as Record<string, any>;
+          saveSiteRule(hostname, { ...rest, enabled: rule.enabled !== false });
+          imported++;
         }
         this.refreshSiteRulesList();
-        Dialog.show({ title: t('common.success'), content: t('rules.importedCount', rules.length), icon: '' });
+        Dialog.show({ title: t('common.success'), content: t('rules.importedCount', imported), icon: '' });
       } catch {
         Dialog.show({ title: t('common.error'), content: t('rules.importFormatError'), icon: '' });
       }
@@ -1798,7 +1849,11 @@ export class SettingsUI {
       if (!file) return;
       try {
         const text = await file.text();
-        const config = JSON.parse(text);
+        const config = sanitizeImportedConfig(JSON.parse(text));
+        if (Object.keys(config).length === 0) {
+          Dialog.show({ title: t('common.error'), content: t('config.importError'), icon: '' });
+          return;
+        }
         saveConfig(config);
         Dialog.show({ title: t('common.success'), content: t('config.importedRefresh'), icon: '' });
       } catch {

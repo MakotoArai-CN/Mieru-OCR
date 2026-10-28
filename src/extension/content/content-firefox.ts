@@ -1,3 +1,4 @@
+import { imageLikeToDataURL, matchSlider } from './interaction-client';
 import './content.css';
 import { CaptchaDetector, type DetectedCaptcha, type GuessedElement } from '@core/captcha-detector';
 import { AutoFill } from '@core/auto-fill';
@@ -55,10 +56,8 @@ let submitSelector = '';
 let siteBlacklist: string[] = [];
 let deepScan = false;
 
-// 交互式验证码辅助开关——一律默认关闭，仅用户在设置里开启后才启用。
-let enableSliderPuzzleAssist = false;
-let enableSingleSliderAssist = false;
-let enableClickSelectAssist = false;
+// 交互式辅助开关：扩展版的滑块/点选改由站点规则驱动，这三个开关只在油猴脚本生效，
+// 这里只保留 Cloudflare 交互辅助（真正被本文件使用）。
 let enableInteractiveCaptchaAssist = false;
 
 let guessedElements: GuessedElement[] = [];
@@ -96,6 +95,43 @@ function setInteractiveCooldown(el: Element, ok: boolean, customMs?: number): vo
 function wasInteractiveSuccess(el: Element): boolean {
   const c = interactiveCooldown.get(el);
   return !!c && c.ok;
+}
+
+/**
+ * OCR 类验证码的失败退避。hasElementChanged() 对未标记过的元素恒为 true，而
+ * markElementProcessed() 只在成功后调用——失败时 2s 定时器会无限重发同一个 OCR 请求。
+ *
+ * 冷却连带元素指纹一起记录：真实页面常先插入 <img> 再设 src，图片换了内容就该立即重试。
+ */
+const OCR_COOLDOWN_FAIL_MS = 15000;
+const OCR_COOLDOWN_TRANSIENT_MS = 3000;
+const ocrCooldown = new WeakMap<Element, { until: number; fingerprint: string }>();
+function ocrFingerprint(el: Element): string {
+  if (el instanceof HTMLImageElement) return el.currentSrc || el.src || '';
+  if (el instanceof HTMLCanvasElement) {
+    try { return el.toDataURL(); } catch { return 'canvas'; }
+  }
+  return '';
+}
+function isOcrCoolingDown(el: Element): boolean {
+  const entry = ocrCooldown.get(el);
+  if (!entry) return false;
+  if (Date.now() >= entry.until) {
+    ocrCooldown.delete(el);
+    return false;
+  }
+  return entry.fingerprint === ocrFingerprint(el);
+}
+function setOcrCooldown(el: Element, ms: number = OCR_COOLDOWN_FAIL_MS): void {
+  ocrCooldown.set(el, { until: Date.now() + ms, fingerprint: ocrFingerprint(el) });
+}
+function clearOcrCooldown(el: Element): void {
+  ocrCooldown.delete(el);
+}
+/** 图片尚未加载好属于暂时性失败，短退避即可。 */
+function isTransientOcrFailure(error: unknown): boolean {
+  const message = String((error as Error)?.message || error || '');
+  return /超时|加载失败|未就绪|未加载|timeout|not loaded/i.test(message);
 }
 
 // 规则命中后的求解调度（1.2.3）：solveDelayMs / retryMs / maxWaitMs，应对懒加载/动画验证码。
@@ -205,10 +241,6 @@ async function initSettings(): Promise<void> {
       autoCheckAgreement = response.settings.autoCheckAgreement !== false;
       preserveFocus = !!response.settings.preserveFocus;
       deepScan = !!response.settings.deepScan;
-      // 交互辅助开关：缺省 undefined → false，确保默认关闭。
-      enableSliderPuzzleAssist = !!response.settings.enableSliderPuzzleAssist;
-      enableSingleSliderAssist = !!response.settings.enableSingleSliderAssist;
-      enableClickSelectAssist = !!response.settings.enableClickSelectAssist;
       enableInteractiveCaptchaAssist = !!response.settings.enableInteractiveCaptchaAssist;
       calculateRules = response.settings.calculateRules || [];
       agreementSelectors = response.settings.agreementSelectors || [];
@@ -285,7 +317,24 @@ function buildCaptchaFromElement(element: Element, id: string, inputElement: HTM
   };
 }
 
+function pruneStaleCustomElements(): void {
+  if (customCaptchaElement && !customCaptchaElement.isConnected) {
+    // SPA 重渲染替换掉验证码元素后，继续沿用旧节点会让自动识别永久停在旧元素上。
+    Logger.debug('缓存的验证码元素已脱离文档，重新匹配规则');
+    customCaptchaElement = null;
+    customCaptchaSubType = null;
+    customRuleKey = null;
+    customDragProfile = undefined;
+    void checkAndApplySiteRule();
+  }
+  if (customInputElement && !customInputElement.isConnected) {
+    Logger.debug('缓存的输入框已脱离文档，已解除绑定');
+    customInputElement = null;
+  }
+}
+
 function resolveInputElementForCaptcha(captchaElement: Element): HTMLInputElement | null {
+  if (customInputElement && !customInputElement.isConnected) customInputElement = null;
   if (customInputElement) return customInputElement;
   const bySelector = queryInputElementBySelector(inputSelector);
   if (bySelector) return bySelector;
@@ -314,10 +363,43 @@ function buildCaptchasFromSelector(selector: string): DetectedCaptcha[] {
   return result;
 }
 
+let settingsRefreshTimer: number | null = null;
+/** 设置热更新：options 页直接写 storage，不再经 background 广播，故在此监听变更。 */
+function handleSettingsChanged(changes: { [key: string]: any }, areaName: string): void {
+  if (areaName !== 'local' || !changes.settings || contextInvalidated) return;
+  if (settingsRefreshTimer) clearTimeout(settingsRefreshTimer);
+  settingsRefreshTimer = window.setTimeout(() => {
+    settingsRefreshTimer = null;
+    void refreshSettings();
+  }, 150);
+}
+
+async function refreshSettings(): Promise<void> {
+  if (!guardContext()) return;
+  await initSettings();
+  if (!IS_TOP_FRAME) return;
+  if (autoDetectEnabled && !autoDetectorStarted) startAutoDetector();
+  if (!isBlacklisted()) void checkAndApplySiteRule();
+}
+
 async function init(): Promise<void> {
   await initSettings();
 
-  // 子框架启动门控：未启用「深度扫描」时直接退出，避免在广告 / 分析 iframe 中徒增开销。
+  // 监听器必须先于子框架门控注册：background 的右键菜单是按 frameId 定向发送的，
+  // 子框架没有监听时 iframe 内右键识别会静默失败。
+  browser.runtime.onMessage.addListener((message: any, sender: any) => {
+    // 子框架只处理定向右键识别；其余（scan/getStatus 等）交给顶层应答，
+    // 避免 deepScan 下被广告 / 分析 iframe 抢答。
+    if (!IS_TOP_FRAME && message?.action !== 'recognizeImageBySrc') return undefined;
+    return new Promise((resolve) => {
+      handleMessage(message, sender, resolve);
+    });
+  });
+  if (browser.storage?.onChanged) {
+    browser.storage.onChanged.addListener(handleSettingsChanged);
+  }
+
+  // 自动扫描门控：未启用「深度扫描」时子框架直接退出。
   if (!IS_TOP_FRAME && !deepScan) {
     return;
   }
@@ -335,12 +417,6 @@ async function init(): Promise<void> {
       requestParentHostInfo();
     }
   }
-
-  browser.runtime.onMessage.addListener((message: any, sender: any) => {
-    return new Promise((resolve) => {
-      handleMessage(message, sender, resolve);
-    });
-  });
 
   setTimeout(async () => {
     if (isBlacklisted()) {
@@ -424,7 +500,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
     }
     let imageData: string;
     if (imgEl) {
-      imageData = await detector.captureImage({
+      imageData = await captureImageForOCR({
         id: 'ctx-' + Date.now(),
         element: imgEl,
         type: 'image',
@@ -450,6 +526,7 @@ async function handleRecognizeImageBySrc(srcUrl: string, sendResponse: (r: any) 
       return;
     }
     let resultText: string = response.text;
+    maybeNotifyModelFallback(response);
     if (autoCalculate) {
       resultText = Calculator.processResult(
         response.text,
@@ -534,8 +611,11 @@ async function deliverContextResult(
   const ok = payload as { result: string; filled: boolean; fillSkipReason: 'no-input' | 'fill-error' | null; autoFillEnabled: boolean };
   let copied = false;
   try {
-    await navigator.clipboard.writeText(ok.result);
-    copied = true;
+    // 剪贴板可能长时间不 settle（失焦 / iframe 权限策略），不能阻塞结果 toast。
+    await Promise.race([
+      navigator.clipboard.writeText(ok.result).then(() => { copied = true; }),
+      new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+    ]);
   } catch (e) {
     Logger.warn('剪贴板写入失败:', e);
   }
@@ -682,74 +762,147 @@ async function checkAndApplySiteRule(): Promise<void> {
         matchedRuleKey = key;
       }
     }
-    if (matchedRule) {
-      pushEvent('rule-match', {
-        data: {
-          rule: matchedRuleKey ? hashString(matchedRuleKey) : undefined,
-          urlMatch: matchedRule.urlMatch || (matchedRule.fullUrl ? 'origin-path' : matchedRule.urlPattern ? 'prefix' : 'hostname'),
-          subType: matchedRule.subType || 'ocr',
-        },
-      });
-      // 交互式规则（滑块/点选）：目标是容器，不能 normalizeCaptchaElement（会下钻成内部 canvas）。
-      if (matchedRule.subType === 'slider' || matchedRule.subType === 'click-select') {
-        const container = document.querySelector(matchedRule.selector);
-        if (container) {
-          const interactive = detector.buildInteractiveCaptcha(container, matchedRule.subType, 'rule');
-          if (interactive) {
-            customCaptchaElement = container;
-            customCaptchaSubType = matchedRule.subType;
-            customRuleKey = matchedRuleKey;
-            customDragProfile = matchedRule.dragProfile;
-            currentCaptcha = interactive;
-            Logger.info('应用站点规则（交互式）:', {
-              subType: matchedRule.subType,
-              ...interactive.elementInfo,
-              viaFrameRule: !!matchedRule.frameSelector,
-              topFrame: IS_TOP_FRAME,
-            });
-            detector.highlight(currentCaptcha);
-            setTimeout(() => detector.unhighlight(currentCaptcha!), 1200);
-            if (autoSolveOnRuleEnabled) {
-              scheduleRuleSolve(matchedRule);
-            }
-          } else {
-            Logger.warn('交互式规则容器内无 canvas/img:', matchedRule.selector);
-          }
-        } else {
-          Logger.warn('规则选择器未匹配到元素:', matchedRule.selector);
-        }
-        return;
-      }
-      const element = normalizeCaptchaElement(document.querySelector(matchedRule.selector));
-      if (element) {
-        let inputEl: HTMLInputElement | null = null;
-        if (matchedRule.inputSelector) {
-          inputEl = queryInputElementBySelector(matchedRule.inputSelector);
-        }
-        if (!inputEl) {
-          inputEl = detector.findRelatedInput(element);
-        }
-        customCaptchaElement = element;
-        customInputElement = inputEl;
-        customRuleKey = matchedRuleKey;
-        currentCaptcha = buildCaptchaFromElement(element, 'rule-selected', inputEl);
-        Logger.info('应用站点规则, 验证码元素:', {
-          ...currentCaptcha.elementInfo,
-          viaFrameRule: !!matchedRule.frameSelector,
-          topFrame: IS_TOP_FRAME,
-        });
-        detector.highlight(currentCaptcha);
-        setTimeout(() => detector.unhighlight(currentCaptcha!), 1200);
-        if (autoSolveOnRuleEnabled) {
-          scheduleRuleSolve(matchedRule);
-        }
-      } else {
-        Logger.warn('规则选择器未匹配到元素:', matchedRule.selector);
-      }
+    if (!matchedRule) return;
+
+    pushEvent('rule-match', {
+      data: {
+        rule: matchedRuleKey ? hashString(matchedRuleKey) : undefined,
+        urlMatch: matchedRule.urlMatch || (matchedRule.fullUrl ? 'origin-path' : matchedRule.urlPattern ? 'prefix' : 'hostname'),
+        subType: matchedRule.subType || 'ocr',
+      },
+    });
+
+    pendingRule = matchedRule;
+    pendingRuleKey = matchedRuleKey;
+    if (applyMatchedSiteRule(matchedRule, matchedRuleKey)) {
+      cancelRuleApplyRetry();
+    } else {
+      // 元素可能还没渲染（弹窗 / 懒加载 / 入场动画）；交互式验证码只走规则路径，
+      // 错过这次就再也不会生效，所以要在 maxWaitMs 内重试。
+      scheduleRuleApplyRetry();
     }
   } catch (error) {
     Logger.error('检查网站规则失败:', error);
   }
+}
+
+/** 安全 querySelector：坏选择器只记警告，不中断整条规则流程。 */
+function queryElementSafe(selector: string | undefined | null): Element | null {
+  if (!selector || !selector.trim()) return null;
+  try {
+    return document.querySelector(selector);
+  } catch (e) {
+    Logger.warn('无效的规则选择器:', selector, e);
+    return null;
+  }
+}
+
+/** 应用命中的规则；返回 false 表示元素尚未出现（可重试）。 */
+function applyMatchedSiteRule(rule: SiteRule & { hostname: string }, key: string | null): boolean {
+  if (rule.subType === 'slider' || rule.subType === 'click-select') {
+    const container = queryElementSafe(rule.selector);
+    if (!container) {
+      Logger.debug('交互式规则容器尚未出现:', rule.selector);
+      return false;
+    }
+    if (customCaptchaElement === container && customCaptchaSubType === rule.subType) return true;
+    const interactive = detector.buildInteractiveCaptcha(container, rule.subType, 'rule');
+    if (!interactive) {
+      Logger.debug('交互式规则容器内尚无 canvas/img:', rule.selector);
+      return false;
+    }
+    customCaptchaElement = container;
+    customCaptchaSubType = rule.subType;
+    customRuleKey = key;
+    customDragProfile = rule.dragProfile;
+    currentCaptcha = interactive;
+    Logger.info('应用站点规则（交互式）:', {
+      subType: rule.subType,
+      ...interactive.elementInfo,
+      viaFrameRule: !!rule.frameSelector,
+      topFrame: IS_TOP_FRAME,
+    });
+    detector.highlight(currentCaptcha);
+    setTimeout(() => detector.unhighlight(currentCaptcha!), 1200);
+    if (autoSolveOnRuleEnabled) {
+      scheduleRuleSolve(rule);
+    }
+    return true;
+  }
+
+  const element = normalizeCaptchaElement(queryElementSafe(rule.selector));
+  if (!element) {
+    Logger.debug('规则选择器尚未命中:', rule.selector);
+    return false;
+  }
+  if (customCaptchaElement === element && customCaptchaSubType === null) return true;
+
+  let inputEl: HTMLInputElement | null = null;
+  if (rule.inputSelector) {
+    inputEl = queryInputElementBySelector(rule.inputSelector);
+  }
+  if (!inputEl) {
+    inputEl = detector.findRelatedInput(element);
+  }
+  customCaptchaElement = element;
+  customInputElement = inputEl;
+  customRuleKey = key;
+  currentCaptcha = buildCaptchaFromElement(element, 'rule-selected', inputEl);
+  Logger.info('应用站点规则, 验证码元素:', {
+    ...currentCaptcha.elementInfo,
+    viaFrameRule: !!rule.frameSelector,
+    topFrame: IS_TOP_FRAME,
+  });
+  detector.highlight(currentCaptcha);
+  setTimeout(() => detector.unhighlight(currentCaptcha!), 1200);
+  if (autoSolveOnRuleEnabled) {
+    scheduleRuleSolve(rule);
+  }
+  return true;
+}
+
+let ruleApplyTimer: number | null = null;
+let ruleApplyRetryDeadline = 0;
+let pendingRule: (SiteRule & { hostname: string }) | null = null;
+let pendingRuleKey: string | null = null;
+
+function cancelRuleApplyRetry(): void {
+  if (ruleApplyTimer) {
+    clearTimeout(ruleApplyTimer);
+    ruleApplyTimer = null;
+  }
+  ruleApplyRetryDeadline = 0;
+  pendingRule = null;
+  pendingRuleKey = null;
+}
+
+/** 规则命中但元素尚未渲染时，最多重试到规则的 maxWaitMs（缺省 15s）。 */
+function scheduleRuleApplyRetry(): void {
+  if (ruleApplyTimer || !pendingRule) return;
+  const configured = typeof pendingRule.maxWaitMs === 'number' && pendingRule.maxWaitMs > 0
+    ? pendingRule.maxWaitMs
+    : 15000;
+  ruleApplyRetryDeadline = Date.now() + Math.min(configured, 60000);
+  const tick = () => {
+    ruleApplyTimer = null;
+    if (!pendingRule) return;
+    if (customCaptchaElement) {
+      cancelRuleApplyRetry();
+      return;
+    }
+    if (applyMatchedSiteRule(pendingRule, pendingRuleKey)) {
+      Logger.info('规则延迟命中并已应用:', pendingRule.selector);
+      cancelRuleApplyRetry();
+      return;
+    }
+    if (Date.now() >= ruleApplyRetryDeadline) {
+      Logger.warn('规则重试超时，放弃应用:', pendingRule.selector);
+      cancelRuleApplyRetry();
+      return;
+    }
+    ruleApplyTimer = window.setTimeout(tick, 600);
+  };
+  ruleApplyTimer = window.setTimeout(tick, 600);
 }
 
 function frameUrlMatchesSelf(frameUrl: string | undefined): boolean {
@@ -795,6 +948,7 @@ function checkAgreementBoxes(): void {
 
 function handleScan(sendResponse: (response: any) => void): void {
   try {
+    pruneStaleCustomElements();
     const captchas = customCaptchaElement
       ? [buildCaptchaFromElement(customCaptchaElement, 'custom', resolveInputElementForCaptcha(customCaptchaElement))]
       : (captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.scan());
@@ -840,6 +994,7 @@ async function handleRecognize(captchaId: string, sendResponse: (response: any) 
     return;
   }
   try {
+    pruneStaleCustomElements();
     let captcha: DetectedCaptcha | null = null;
     if (customCaptchaElement) {
       captcha = buildCaptchaFromElement(customCaptchaElement, 'custom-selected', resolveInputElementForCaptcha(customCaptchaElement));
@@ -859,10 +1014,11 @@ async function handleRecognize(captchaId: string, sendResponse: (response: any) 
 
     detector.highlight(captcha);
     await waitForReady(captcha);
-    const imageData = await detector.captureImage(captcha);
+    const imageData = await captureImageForOCR(captcha);
     const response = await browser.runtime.sendMessage({ action: 'recognizeCaptcha', imageData });
     detector.unhighlight(captcha);
     if (response && response.success) {
+      maybeNotifyModelFallback(response);
       let resultText = response.text;
       if (autoCalculate) {
         resultText = Calculator.processResult(response.text, { autoCalculate: true, outputMode: 'result', rules: calculateRules }, location.hostname);
@@ -897,6 +1053,7 @@ async function handleFill(text: string, options: any, sendResponse: (response: a
 }
 
 async function handleGetStatus(sendResponse: (response: any) => void): Promise<void> {
+  pruneStaleCustomElements();
   const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.getDetectedCaptchas();
   const resolvedInput = customInputElement || queryInputElementBySelector(inputSelector) || currentCaptcha?.inputElement;
 
@@ -1136,6 +1293,7 @@ async function saveAndRecognize(captchaSelectorArg?: string, inputSelectorArg?: 
 
 async function handlePreviewCaptcha(captchaId: string, sendResponse: (response: any) => void): Promise<void> {
   try {
+    pruneStaleCustomElements();
     let captcha: DetectedCaptcha | null = null;
     if (customCaptchaElement) {
       captcha = buildCaptchaFromElement(customCaptchaElement, 'preview', resolveInputElementForCaptcha(customCaptchaElement));
@@ -1147,7 +1305,7 @@ async function handlePreviewCaptcha(captchaId: string, sendResponse: (response: 
       captcha = captchaId ? captchas.find(c => c.id === captchaId) || null : detector.getMostLikelyCaptcha();
     }
     if (!captcha) throw new Error(t('content.captchaNotFound'));
-    const imageData = await detector.captureImage(captcha);
+    const imageData = await captureImageForOCR(captcha);
     showCaptchaPreview(imageData, captcha);
     sendResponse({ success: true, imageData });
   } catch (error) {
@@ -1220,6 +1378,7 @@ function isContextValid(): boolean {
 }
 
 function destroyAutoDetector(): void {
+  document.removeEventListener('visibilitychange', resumeAutoScan);
   contextInvalidated = true;
   autoDetectEnabled = false;
   autoDetectorStarted = false;
@@ -1302,21 +1461,38 @@ function looksInteractive(node: HTMLElement): boolean {
   }
 }
 
+function resumeAutoScan(): void {
+  if (document.hidden) return;
+  detector.invalidateScan();
+  scheduleAutoSolve();
+}
+
 function startAutoDetector(): void {
   if (autoDetectorStarted) return;
   autoDetectorStarted = true;
+  document.addEventListener('visibilitychange', resumeAutoScan);
   scheduleInitialAuto();
   observer = new MutationObserver((mutations) => {
     if (!guardContext()) return;
+    if (document.hidden) {
+      detector.invalidateScan();
+      return;
+    }
     let shouldCheckAgreements = false;
     let triggerScan = false;
     for (const mutation of mutations) {
       if (isInsideScrollableContainer(mutation.target)) continue;
 
+      if (mutation.target instanceof SVGElement ||
+          (mutation.type === 'attributes' && ['class', 'style'].includes(mutation.attributeName || '') &&
+            mutation.target instanceof Element && mutation.target.querySelector('img, canvas, svg, input'))) {
+        triggerScan = true;
+      }
+
       if (mutation.type === 'childList') {
         mutation.addedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            if (node.matches('img, canvas, svg')) triggerScan = true;
+            if (node.matches('img, canvas, svg, input')) triggerScan = true;
             else if (node.querySelector('img, canvas, svg')) triggerScan = true;
             else if (node.style && node.style.backgroundImage) triggerScan = true;
             else if (looksInteractive(node)) triggerScan = true;
@@ -1336,20 +1512,26 @@ function startAutoDetector(): void {
         }
       }
     }
-    if (triggerScan) scheduleAutoSolve();
+    if (triggerScan) {
+      for (const mutation of mutations) detector.invalidateScan(mutation.target);
+      scheduleAutoSolve();
+    }
     if (shouldCheckAgreements) scheduleAgreementCheck();
   });
   observer.observe(document.body, {
     childList: true, subtree: true, attributes: true,
-    attributeFilter: ['src', 'data-src', 'srcset', 'style', 'href'],
+    attributeFilter: ['src', 'data-src', 'srcset', 'style', 'class', 'href'],
   });
   intervalTimer = window.setInterval(() => {
-    if (!guardContext()) return;
+    if (document.hidden || !autoDetectEnabled || !guardContext()) return;
     void maybeAssistCloudflare();
-    const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.scan();
+    const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.scanCached();
     if (!captchas || captchas.length === 0) return;
     let changed = false;
-    for (const c of captchas) { if (detector.hasElementChanged(c.element)) { changed = true; break; } }
+    for (const c of captchas) {
+      if (isOcrCoolingDown(c.element)) continue;
+      if (detector.hasElementChanged(c.element)) { changed = true; break; }
+    }
     if (changed) scheduleAutoSolve();
     checkAgreementBoxes();
   }, CONSTANTS.AUTO_DETECT_INTERVAL);
@@ -1399,7 +1581,7 @@ function scheduleInitialAuto(): void {
 }
 
 function scheduleAutoSolve(): void {
-  if (!autoDetectEnabled || !guardContext()) return;
+  if (document.hidden || !autoDetectEnabled || !guardContext()) return;
   const now = Date.now();
   const sinceLast = now - lastScanTriggerTime;
   if (pendingTimer) clearTimeout(pendingTimer);
@@ -1413,14 +1595,17 @@ function scheduleAutoSolve(): void {
 }
 
 function tryAutoSolveOnce(): void {
-  if (!autoDetectEnabled || !guardContext()) return;
+  if (document.hidden || !autoDetectEnabled || !guardContext()) return;
+  pruneStaleCustomElements();
 
   const fixedInput = queryInputElementBySelector(inputSelector);
 
   // 交互式自定义验证码（来自带 subType 的规则）：重建带 subType 的 captcha，
   // 不要求关联输入框，交给 internalRecognizeAndFill 的 subType 分支（受辅助开关 gate）。
   if (customCaptchaElement && customCaptchaSubType) {
-    if (detector.hasElementChanged(customCaptchaElement) && !isInteractiveCoolingDown(customCaptchaElement)) {
+    if (detector.hasElementChanged(customCaptchaElement)
+      && !isInteractiveCoolingDown(customCaptchaElement)
+      && !isOcrCoolingDown(customCaptchaElement)) {
       const captcha = detector.buildInteractiveCaptcha(customCaptchaElement, customCaptchaSubType, 'custom');
       if (captcha) internalRecognizeAndFill(captcha);
     }
@@ -1433,14 +1618,14 @@ function tryAutoSolveOnce(): void {
     // 路径产出的 captcha.id 来自 scan 而非 'custom'，会丢失 customRuleKey 关联。
     const inputEl = customInputElement || fixedInput || detector.findRelatedInput(customCaptchaElement);
     if (!inputEl) return;
-    if (detector.hasElementChanged(customCaptchaElement)) {
+    if (detector.hasElementChanged(customCaptchaElement) && !isOcrCoolingDown(customCaptchaElement)) {
       const captcha = buildCaptchaFromElement(customCaptchaElement, 'custom', inputEl);
       internalRecognizeAndFill(captcha);
     }
     return;
   }
 
-  const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.scan();
+  const captchas = captchaSelector ? buildCaptchasFromSelector(captchaSelector) : detector.scanCached();
   if (!captchas || captchas.length === 0) return;
 
   const captchasToProcess: DetectedCaptcha[] = [];
@@ -1451,6 +1636,8 @@ function tryAutoSolveOnce(): void {
     if (!inputEl) continue;
     if (!detector.hasElementChanged(captcha.element)) continue;
     if (isElementProcessing(captcha.id)) continue;
+    // 失败退避：避免不可恢复的失败（跨域画布、加载超时）每 2s 重发一次 OCR。
+    if (isOcrCoolingDown(captcha.element)) continue;
     captchasToProcess.push({ ...captcha, inputElement: inputEl });
   }
   for (const captcha of captchasToProcess) {
@@ -1462,15 +1649,6 @@ function tryAutoSolveOnce(): void {
  * 把主图像素编码成 PNG dataURL。content 与背景页之间用 browser.runtime 消息通信
  * （JSON 序列化，不能直接传 TypedArray），故点选求解需要的像素以 dataURL 过桥。
  */
-function imageLikeToDataURL(image: ImageLike): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('无法创建 2d 上下文');
-  ctx.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
-  return canvas.toDataURL();
-}
 
 /** 点选求解的 labelBoxes 回调：把主图送到背景页做检测 + OCR 标字，拿回标注框。 */
 async function labelBoxesViaBackground(image: ImageLike): Promise<LabeledBox[]> {
@@ -1478,6 +1656,42 @@ async function labelBoxesViaBackground(image: ImageLike): Promise<LabeledBox[]> 
   const resp = await browser.runtime.sendMessage({ action: 'detectText', imageData });
   if (!resp?.success) throw new Error(resp?.error || '文字检测失败');
   return (resp.boxes || []) as LabeledBox[];
+}
+
+/** 取出验证码图片的绝对 URL（img.src / background-image），拿不到或非 http(s) 返回空串。 */
+function getCaptchaImageUrl(captcha: DetectedCaptcha): string {
+  const el = captcha.innerCanvas || captcha.element;
+  let raw = '';
+  if (el instanceof HTMLImageElement) {
+    raw = el.currentSrc || el.src || '';
+  } else if (el instanceof HTMLElement) {
+    const bg = el.style.backgroundImage || window.getComputedStyle(el).backgroundImage || '';
+    const m = bg.match(/url\(['"]?(.+?)['"]?\)/);
+    if (m && m[1] && !m[1].startsWith('data:')) raw = m[1];
+  }
+  if (!raw) return '';
+  try {
+    const abs = new URL(raw, location.href);
+    return (abs.protocol === 'http:' || abs.protocol === 'https:') ? abs.href : '';
+  } catch {
+    return '';
+  }
+}
+
+/** 跨域图片会污染 canvas；此时改由背景页用扩展权限直接抓取字节。 */
+async function captureImageForOCR(captcha: DetectedCaptcha): Promise<string> {
+  try {
+    return await detector.captureImage(captcha);
+  } catch (error) {
+    const url = getCaptchaImageUrl(captcha);
+    if (!url) throw error;
+    Logger.warn('本地画布捕获失败，改为后台抓取图片:', (error as Error).message);
+    const resp = await browser.runtime.sendMessage({ action: 'fetchImageData', url });
+    if (!resp?.success || typeof resp.dataUrl !== 'string') {
+      throw new Error(resp?.error || (error as Error).message);
+    }
+    return resp.dataUrl;
+  }
 }
 
 /** 记录规则求解结果到背景页（成功率统计）；失败时按指数退避放大该元素的冷却。 */
@@ -1492,6 +1706,19 @@ function recordRuleAttemptAndBackoff(el: Element, success: boolean): void {
     .catch(() => { });
 }
 
+/** 页面右下角的轻量提示（非阻塞、无依赖）。 */
+function showMieruToast(text: string, durationMs = 6000): void {
+  try {
+    const el = document.createElement('div');
+    el.dataset.mieruToast = '1';
+    el.textContent = text;
+    el.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:360px;padding:12px 16px;background:#1a1a2e;color:#fff;font-size:13px;line-height:1.5;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '1'; });
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, durationMs);
+  } catch { /* DOM 不可用则仅日志 */ }
+}
+
 let detModelNotifiedAt = 0;
 /** 点选检测模型未就绪时的轻提示（节流 60s），引导用户去设置上传/下载模型。 */
 function notifyDetModelNotReady(reason: string): void {
@@ -1499,14 +1726,18 @@ function notifyDetModelNotReady(reason: string): void {
   const now = Date.now();
   if (now - detModelNotifiedAt < 60000) return;
   detModelNotifiedAt = now;
-  try {
-    const el = document.createElement('div');
-    el.textContent = `Mieru-OCR：文字点选需要检测模型（${reason}）。请在扩展设置 → 文字点选模型 中上传或下载。`;
-    el.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:360px;padding:12px 16px;background:#1a1a2e;color:#fff;font-size:13px;line-height:1.5;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;';
-    document.body.appendChild(el);
-    requestAnimationFrame(() => { el.style.opacity = '1'; });
-    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 6000);
-  } catch { /* DOM 不可用则仅日志 */ }
+  showMieruToast(`Mieru-OCR：文字点选需要检测模型（${reason}）。请在扩展设置 → 文字点选模型 中上传或下载。`);
+}
+
+let modelFallbackNotified = false;
+function maybeNotifyModelFallback(response: any): void {
+  const fallbackFrom = response?.fallbackFrom;
+  if (!fallbackFrom) return;
+  Logger.warn('自定义模型加载失败，已回退内置模型:', fallbackFrom);
+  pushEvent('det-model', { ok: false, data: { reason: 'fallback', model: String(fallbackFrom) } });
+  if (modelFallbackNotified) return;
+  modelFallbackNotified = true;
+  showMieruToast(`Mieru-OCR：自定义模型（${fallbackFrom}）加载失败，本次已回退到内置模型。请到设置页重新上传或更换模型。`, 8000);
 }
 
 async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void> {
@@ -1521,7 +1752,7 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
       try {
         detector.highlight(captcha);
         await waitForReady(captcha);
-        const res = await solveSlider(captcha, { profile: customDragProfile, onLog: (m) => Logger.info('[slider]', m) });
+        const res = await solveSlider(captcha, { match: matchSlider, profile: customDragProfile, onLog: (m) => Logger.info('[slider]', m) });
         if (res.success) {
           Logger.info('滑块辅助拖拽完成:', res);
           detector.markElementProcessed(captcha.element);
@@ -1591,14 +1822,17 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
     }
     detector.highlight(captcha);
     await waitForReady(captcha);
-    const imageData = await detector.captureImage(captcha);
+    const imageData = await captureImageForOCR(captcha);
     const response = await browser.runtime.sendMessage({ action: 'recognizeCaptcha', imageData });
     detector.unhighlight(captcha);
     if (!response || !response.success) {
+      // 失败退避：不可恢复的失败不能每 2s 重发。
+      setOcrCooldown(captcha.element);
       pushEvent('recognize', { ok: false, ms: Date.now() - startTime, data: { type: captcha.type } });
       return;
     }
     let resultText = response.text;
+    maybeNotifyModelFallback(response);
     if (autoCalculate) {
       resultText = Calculator.processResult(
         response.text, { autoCalculate: true, outputMode: 'result', rules: calculateRules },
@@ -1610,6 +1844,7 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
       await fillInputAndMaybeSubmit(inputEl, resultText);
     }
     detector.markElementProcessed(captcha.element);
+    clearOcrCooldown(captcha.element);
     const elapsed = typeof response.elapsed === 'number' ? response.elapsed : (Date.now() - startTime);
     pushEvent('recognize', {
       ok: true,
@@ -1623,6 +1858,9 @@ async function internalRecognizeAndFill(captcha: DetectedCaptcha): Promise<void>
     }).catch(() => { });
   } catch (e) {
     Logger.error('识别填充失败:', e);
+    setOcrCooldown(captcha.element, isTransientOcrFailure(e) ? OCR_COOLDOWN_TRANSIENT_MS : OCR_COOLDOWN_FAIL_MS);
+    // 交互式求解抛异常时也必须进冷却，否则每轮扫描都会重试。
+    if (captcha.subType) setInteractiveCooldown(captcha.element, false);
     try { detector.unhighlight(captcha); } catch { }
   } finally {
     stopProcessing(captcha.id);

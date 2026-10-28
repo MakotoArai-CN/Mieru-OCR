@@ -56,6 +56,7 @@ export class DetectionEngine {
   private session: any = null;
   private ort: any = null;
   private initialized = false;
+  private initializing: Promise<void> | null = null;
   private options: DetectionEngineOptions;
   private readonly inputSize: number;
   private readonly scoreThreshold: number;
@@ -71,6 +72,13 @@ export class DetectionEngine {
 
   async init(): Promise<void> {
     if (this.initialized) return;
+    if (!this.initializing) {
+      this.initializing = this.initialize().finally(() => { this.initializing = null; });
+    }
+    return this.initializing;
+  }
+
+  private async initialize(): Promise<void> {
     console.log('🔧 初始化目标检测引擎...');
 
     this.ort = this.options.getOrt ? await this.options.getOrt() : await this.waitForOrt();
@@ -286,10 +294,10 @@ export class DetectionEngine {
   }
 
   async destroy(): Promise<void> {
-    if (this.session) {
-      await this.session.release();
-      this.session = null;
-    }
+    await this.initializing?.catch(() => {});
+    const session = this.session;
+    this.session = null;
     this.initialized = false;
+    if (session) await session.release();
   }
 }

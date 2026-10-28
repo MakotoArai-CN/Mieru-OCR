@@ -13,6 +13,7 @@ import {
   fuseGapCandidates,
   type GapCandidate,
   type ImageLike,
+  type SlideMatchResult,
 } from '../slide-detector';
 import { humanDragTrajectory, type DragProfile } from './trajectory';
 import { dragAlong } from './pointer';
@@ -38,6 +39,7 @@ export interface SliderSolveOptions {
   /** 拖拽速度档位（来自规则 dragProfile），影响轨迹拟人程度。默认 'normal' */
   profile?: DragProfile;
   onLog?: (msg: string) => void;
+  match?: (target: ImageLike, background: ImageLike) => Promise<ReturnType<typeof slideMatch>>;
 }
 
 /** 把 canvas/img 元素读成 ImageData。跨域 tainted canvas 会抛错 → 返回 null。 */
@@ -90,11 +92,24 @@ export async function solveSlider(
   let pieceScore = NaN;
   const piece = captcha.sliderPiece ? elementToImageData(captcha.sliderPiece) : null;
   if (piece) {
-    const m = slideMatch(piece, bg);
+    let m: SlideMatchResult;
+    if (opts.match) {
+      try {
+        m = await opts.match(piece, bg);
+      } catch (error) {
+        // 扩展侧把匹配放到 offscreen 的 Worker 里（不阻塞页面主线程），但一次消息 / Worker
+        // 失败不该让整个滑块功能不可用——退回本页计算，只是多占几十毫秒主线程。
+        log(`后台匹配失败，回退本地计算: ${(error as Error)?.message || String(error)}`);
+        m = slideMatch(piece, bg);
+      }
+    } else {
+      m = slideMatch(piece, bg);
+    }
     pieceX = m.x;
     pieceScore = m.score;
     candidates.push({ x: m.x, conf: Math.max(0, m.score), method: m.method, weight: 1.6 });
-    log(`slideMatch: x=${m.x}px score=${m.score.toFixed(3)} method=${m.method} (${m.elapsed.toFixed(0)}ms)`);
+    const content = Number.isFinite(m.contentScore) ? m.contentScore.toFixed(2) : 'n/a';
+    log(`slideMatch: x=${m.x}px score=${m.score.toFixed(3)} content=${content} margin=${m.margin.toFixed(3)} method=${m.method} (${m.elapsed.toFixed(0)}ms)`);
   }
   const ce = detectGapByColumnEdges(bg, marginX);
   candidates.push({ x: ce.x, conf: ce.score, method: 'column-edge', weight: 1 });

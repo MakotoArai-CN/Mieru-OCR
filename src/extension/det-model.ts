@@ -15,6 +15,7 @@
 
 import { CONSTANTS } from '@core/config';
 import { verifyIntegrity } from '@core/integrity';
+import { looksLikeOnnxBuffer } from '@core/onnx-validate';
 import type { DetModelSpec, Subscription } from '@core/subscription';
 import { getDetModelData, getDetModelMeta, saveDetModel, type DetModelMeta } from './model-store';
 import { getStorage } from './platform';
@@ -62,8 +63,13 @@ async function downloadFromMirrors(): Promise<ArrayBuffer> {
     try {
       const url = buildMirrorUrl(mirror, CONSTANTS.DET_MODEL_PATH);
       const buf = await fetchArrayBuffer(url);
-      if (buf.byteLength > 1024) return buf;
-      lastErr = new Error('下载内容过小，疑似失败');
+      // 镜像经常以 200 返回 HTML 错误页；只判体积会把垃圾写进 IndexedDB，
+      // 之后每次建会话都失败（用户只能手动清缓存）。落盘前先验 ONNX 魔数。
+      if (!looksLikeOnnxBuffer(buf)) {
+        lastErr = new Error('下载内容不是有效的 ONNX 模型');
+        continue;
+      }
+      return buf;
     } catch (e) {
       lastErr = e as Error;
     }
@@ -117,6 +123,9 @@ async function ensureDetModelImpl(): Promise<EnsureDetResult> {
     if (!needDownload) return { ready: true, source: 'subscription' };
     try {
       const buf = await fetchArrayBuffer(spec.url);
+      if (!looksLikeOnnxBuffer(buf)) {
+        throw new Error('订阅指定的检测模型不是有效的 ONNX 文件');
+      }
       const integ = await verifyIntegrity(buf, spec.sha256);
       if (!integ.ok) {
         return { ready: false, reason: `检测模型 sha256 校验失败（期望 ${integ.expected}，实际 ${integ.actual}）` };

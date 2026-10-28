@@ -127,6 +127,13 @@ function cleanup(overlay: HTMLDivElement): void {
     if (activeOverlay === overlay) activeOverlay = null;
 }
 
+/**
+ * 被新弹窗顶掉时用来结束上一个 Promise。
+ * 不这样做的话：confirm 还开着时来了一个 alert，旧 overlay 被移除但 Promise 永远不 settle，
+ * 调用方（例如删除站点规则的 await）会永久挂起。
+ */
+let activeDismiss: (() => void) | null = null;
+
 function createBaseModal(title: string): {
     overlay: HTMLDivElement;
     modal: HTMLDivElement;
@@ -137,7 +144,10 @@ function createBaseModal(title: string): {
     ensureStyles();
 
     if (activeOverlay) {
+        const dismiss = activeDismiss;
+        activeDismiss = null;
         cleanup(activeOverlay);
+        dismiss?.();
     }
 
     const overlay = document.createElement('div');
@@ -199,10 +209,12 @@ export function showAlert(options: AlertOptions): Promise<void> {
         okBtn.textContent = options.confirmText || t('common.confirm');
 
         const done = () => {
+            activeDismiss = null;
             cleanup(overlay);
             document.removeEventListener('keydown', onKeyDown, true);
             resolve();
         };
+        activeDismiss = done;
 
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -239,10 +251,12 @@ export function showConfirm(options: ConfirmOptions): Promise<boolean> {
         okBtn.textContent = options.confirmText || t('common.confirm');
 
         const done = (value: boolean) => {
+            activeDismiss = null;
             cleanup(overlay);
             document.removeEventListener('keydown', onKeyDown, true);
             resolve(value);
         };
+        activeDismiss = () => done(false);
 
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {

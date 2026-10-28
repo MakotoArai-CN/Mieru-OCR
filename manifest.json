@@ -49,20 +49,6 @@
       "all_frames": true
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "common.onnx",
-        "common_det.onnx",
-        "charsets.json",
-        "offscreen.html",
-        "icons/*",
-        "ort-wasm-simd.wasm",
-        "ort.min.js"
-      ],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   }

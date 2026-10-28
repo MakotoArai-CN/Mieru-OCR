@@ -11,6 +11,8 @@
     "build:playground": "bun build ./test/playground/playground.ts --outfile ./test/playground/playground.bundle.js --target browser",
     "build:analyzer": "bun build ./tools/analyzer/analyzer.ts --outfile ./tools/analyzer/analyzer.bundle.js --target browser",
     "test:interaction": "bun test/interaction-selftest.ts",
+    "test": "bun test ./test",
+    "build:browser-test": "bun build ./test/browser/regression.ts --outfile ./test/browser/regression.bundle.js --target browser",
     "test:subscription-server": "bun test/server.ts",
     "type-check": "tsc --noEmit"
   },

@@ -51,7 +51,20 @@ export interface SlideMatchResult {
   y: number;
   /** 归一化互相关得分（-1..1，越接近 1 越可信） */
   score: number;
-  method: 'edge' | 'edge+alpha' | 'grayscale-fallback';
+  /**
+   * 与最佳位置不重叠的次优峰得分。真实网站背景常有重复纹理（条纹、logo 平铺、
+   * 规则图形），此时"最高分"未必是缺口。score 与 secondScore 的差距（margin）
+   * 才是可置信度的关键指标。
+   */
+  secondScore: number;
+  /** score - secondScore。差距小说明存在竞争峰，应降级到多算法融合。 */
+  margin: number;
+  /**
+   * 拼图块与该位置背景内容的逐像素相关性（-1..1）。与边缘无关的独立校验：
+   * 正确缺口≈1，错位通常 <0.5；NaN 表示拼图块没有 alpha 通道（无法校验）。
+   */
+  contentScore: number;
+  method: 'edge' | 'edge+alpha' | 'grayscale-fallback' | 'content-search';
   targetEdgeCount: number;
   elapsed: number;
   downsample: number;
@@ -214,6 +227,8 @@ export interface MatchResult {
   x: number;
   y: number;
   score: number;
+  /** 与最佳位置不重叠（相距 ≥ 模板 0.8 宽 / 0.5 高）的次优峰；没有时为 -Infinity */
+  secondScore: number;
   width: number;
   height: number;
 }
@@ -228,50 +243,71 @@ export function matchTemplate(image: GrayImage, template: GrayImage): MatchResul
     throw new Error(`Template (${tw}x${th}) larger than image (${iw}x${ih})`);
   }
 
-  // 模板均值与零均值平方和
-  let tSum = 0;
-  const N = tw * th;
-  for (let i = 0; i < N; i++) tSum += T[i];
-  const tMean = tSum / N;
-  let tSqSum = 0;
-  const Tn = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    Tn[i] = T[i] - tMean;
-    tSqSum += Tn[i] * Tn[i];
+  // Integral images make each candidate's mean and variance constant-time.
+  const pitch = iw + 1;
+  const sums = new Float64Array(pitch * (ih + 1));
+  const squares = new Float64Array(sums.length);
+  for (let y = 0; y < ih; y++) {
+    let rowSum = 0, rowSquare = 0;
+    for (let x = 0; x < iw; x++) {
+      const value = I[y * iw + x];
+      rowSum += value;
+      rowSquare += value * value;
+      const offset = (y + 1) * pitch + x + 1;
+      sums[offset] = sums[offset - pitch] + rowSum;
+      squares[offset] = squares[offset - pitch] + rowSquare;
+    }
   }
-  const tNorm = Math.sqrt(tSqSum);
+
+  let tSum = 0;
+  let tSquare = 0;
+  const N = tw * th;
+  const offsets = new Int32Array(N);
+  const weights = new Float64Array(N);
+  let active = 0;
+  for (let i = 0; i < N; i++) {
+    tSum += T[i];
+    tSquare += T[i] * T[i];
+    // Canny templates are sparse; zero pixels contribute nothing to the dot product.
+    if (T[i] !== 0) {
+      offsets[active] = Math.floor(i / tw) * iw + i % tw;
+      weights[active++] = T[i];
+    }
+  }
+  const tMean = tSum / N;
+  const tNorm = Math.sqrt(Math.max(0, tSquare - tSum * tMean));
 
   let bestScore = -Infinity, bestX = 0, bestY = 0;
+  // 次优峰：与当前最优位置"不重叠"的最高分，用来判断匹配是否唯一。
+  let secondScore = -Infinity;
+  const sepX = Math.max(1, Math.round(tw * 0.8));
+  const sepY = Math.max(1, Math.round(th * 0.5));
+  const isSeparate = (x: number, y: number, refX: number, refY: number): boolean =>
+    Math.abs(x - refX) >= sepX || Math.abs(y - refY) >= sepY;
 
   for (let y = 0; y < rh; y++) {
     for (let x = 0; x < rw; x++) {
-      let iSum = 0;
-      for (let dy = 0; dy < th; dy++) {
-        const rowOff = (y + dy) * iw + x;
-        for (let dx = 0; dx < tw; dx++) {
-          iSum += I[rowOff + dx];
-        }
-      }
-      const iMean = iSum / N;
-
-      let num = 0, iSqSum = 0;
-      for (let dy = 0; dy < th; dy++) {
-        const rowOff = (y + dy) * iw + x;
-        const tRowOff = dy * tw;
-        for (let dx = 0; dx < tw; dx++) {
-          const v = I[rowOff + dx] - iMean;
-          num += v * Tn[tRowOff + dx];
-          iSqSum += v * v;
-        }
-      }
+      const tl = y * pitch + x, tr = tl + tw;
+      const bl = (y + th) * pitch + x, br = bl + tw;
+      const iSum = sums[br] - sums[bl] - sums[tr] + sums[tl];
+      const iSquare = squares[br] - squares[bl] - squares[tr] + squares[tl];
+      const iSqSum = Math.max(0, iSquare - iSum * iSum / N);
+      let dot = 0;
+      const base = y * iw + x;
+      for (let i = 0; i < active; i++) dot += I[base + offsets[i]] * weights[i];
+      const num = dot - iSum * tMean;
       const denom = Math.sqrt(iSqSum) * tNorm;
       const score = denom > 1e-9 ? num / denom : 0;
       if (score > bestScore) {
+        // 旧最优只有在远离新最优时才算独立峰（否则只是同一个峰的邻域）。
+        if (bestScore > secondScore && isSeparate(bestX, bestY, x, y)) secondScore = bestScore;
         bestScore = score; bestX = x; bestY = y;
+      } else if (score > secondScore && isSeparate(x, y, bestX, bestY)) {
+        secondScore = score;
       }
     }
   }
-  return { x: bestX, y: bestY, score: bestScore, width: rw, height: rh };
+  return { x: bestX, y: bestY, score: bestScore, secondScore, width: rw, height: rh };
 }
 
 /** 找到 alpha 通道的非透明像素紧致包围盒（用于 has_alpha 滑块块的自动裁剪）。
@@ -312,6 +348,109 @@ function toFloatEdge(edge: EdgeImage): GrayImage {
   const out = new Float32Array(edge.data.length);
   for (let i = 0; i < edge.data.length; i++) out[i] = edge.data[i];
   return { data: out, width: edge.width, height: edge.height };
+}
+
+/**
+ * 掩膜内容相关性：只比较拼图块 alpha 覆盖到的像素，返回 -1..1 的灰度 NCC。
+ *
+ * 边缘/NCC 模板匹配只看局部边缘，遇到重复纹理背景（条纹、平铺 logo、规则图形）会出现
+ * 得分不低的"竞争峰"，把缺口定到错误位置。而拼图块与缺口是**同一块内容**，逐像素
+ * 相关性只在真实位置接近 1，错位时趋近 0 甚至为负——这是一个与边缘无关的独立校验。
+ *
+ * @param x,y 拼图块**左上角**在背景图中的坐标（不是 alpha 裁剪后的坐标）
+ */
+export function maskedContentScore(bg: ImageLike, piece: ImageLike, x: number, y: number): number {
+  const { width: pw, height: ph, data: P } = piece;
+  const { width: bw, height: bh, data: B } = bg;
+  let n = 0, sumP = 0, sumI = 0, sumW = 0;
+  let sPP = 0, sII = 0, sPI = 0;
+  for (let py = 0; py < ph; py++) {
+    const by = y + py;
+    if (by < 0 || by >= bh) continue;
+    for (let px = 0; px < pw; px++) {
+      const pi = (py * pw + px) * 4;
+      const alpha = P[pi + 3];
+      if (alpha < 128) continue;
+      const bx = x + px;
+      if (bx < 0 || bx >= bw) continue;
+      const bi = (by * bw + bx) * 4;
+      const pv = 0.299 * P[pi] + 0.587 * P[pi + 1] + 0.114 * P[pi + 2];
+      const iv = 0.299 * B[bi] + 0.587 * B[bi + 1] + 0.114 * B[bi + 2];
+      const w = alpha / 255;
+      sumP += pv * w;
+      sumI += iv * w;
+      sPP += pv * pv * w;
+      sII += iv * iv * w;
+      sPI += pv * iv * w;
+      sumW += w;
+      n++;
+    }
+  }
+  if (n < 32 || sumW < 1e-6) return Number.NaN;
+  const meanP = sumP / sumW;
+  const meanI = sumI / sumW;
+  const varP = Math.max(0, sPP / sumW - meanP * meanP);
+  const varI = Math.max(0, sII / sumW - meanI * meanI);
+  const cov = sPI / sumW - meanP * meanI;
+  const den = Math.sqrt(varP * varI);
+  return den > 1e-9 ? cov / den : 0;
+}
+
+/** 在 ±radius 像素内按内容相关性微调位置，修正边缘匹配 1~3px 的系统偏差。 */
+function refineByContent(
+  bg: ImageLike,
+  piece: ImageLike,
+  x: number,
+  y: number,
+  radius: number,
+): { x: number; y: number; score: number } {
+  let best = { x, y, score: maskedContentScore(bg, piece, x, y) };
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const score = maskedContentScore(bg, piece, x + dx, y + dy);
+      if (score > best.score) best = { x: x + dx, y: y + dy, score };
+    }
+  }
+  return best;
+}
+
+/**
+ * 内容直搜兜底：当边缘/灰度两条路径都校验不过时，直接按「拼图块内容」在背景上
+ * 做掩膜相关性扫描。为了控制成本采用"粗扫（步长 2 + 隔点采样）→ 局部精修"，
+ * 整图扫描约几十毫秒，只在可疑匹配时触发，不影响常规路径。
+ */
+function searchByContent(bg: ImageLike, piece: ImageLike): { x: number; y: number; score: number } {
+  const { width: pw, height: ph } = piece;
+  const { width: bw, height: bh } = bg;
+  const maxX = bw - pw;
+  const maxY = bh - ph;
+  if (maxX < 0 || maxY < 0) return { x: 0, y: 0, score: Number.NaN };
+
+  // 与校验同一个函数，避免两套归一化口径不一致（曾经因此拿到错误的次优解）。
+  // 步长 2：任意真实位置都在网格点 1px 内，相关性仍然接近峰值；再局部逐像素精修。
+  let best = { x: 0, y: 0, score: -2 };
+  const step = 2;
+  for (let y = 0; y <= maxY; y += step) {
+    for (let x = 0; x <= maxX; x += step) {
+      const score = maskedContentScore(bg, piece, x, y);
+      if (score > best.score) best = { x, y, score };
+    }
+  }
+  // 精修：粗扫最优附近 ±step，逐像素
+  const refined = { ...best };
+
+  for (let dy = -step; dy <= step; dy++) {
+    for (let dx = -step; dx <= step; dx++) {
+      const x = best.x + dx;
+      const y = best.y + dy;
+      if (x < 0 || y < 0 || x > maxX || y > maxY) continue;
+      const score = maskedContentScore(bg, piece, x, y);
+      if (score > refined.score) { refined.x = x; refined.y = y; refined.score = score; }
+    }
+  }
+
+  return refined;
 }
 
 function downsampleGray(gray: GrayImage, factor: number): GrayImage {
@@ -377,20 +516,81 @@ export function slideMatch(
 
   let m: MatchResult;
   let method: SlideMatchResult['method'];
+  const runEdge = (): MatchResult => matchTemplate(toFloatEdge(bgEdge), toFloatEdge(tEdge));
+  const runGray = (): MatchResult => matchTemplate(bgGray, targetGray);
   if (tEdgeCount < minEdgePixels) {
     // 边缘太少 -> 灰度匹配兜底
     method = 'grayscale-fallback';
-    m = matchTemplate(bgGray, targetGray);
+    m = runGray();
   } else {
     method = box ? 'edge+alpha' : 'edge';
-    m = matchTemplate(toFloatEdge(bgEdge), toFloatEdge(tEdge));
+    m = runEdge();
+  }
+
+  // native/downsample 坐标 -> 背景图原始坐标（拼图块 bbox 左上角）
+  const toBgCoords = (mx: number, my: number) => ({
+    x: Math.round(mx * downsample - cropOffset.x),
+    y: Math.round(my * downsample - cropOffset.y),
+  });
+
+  // maskedContentScore 吃的是「拼图块图像左上角」，而 position 是 alpha 裁剪后的
+  // bbox 左上角，两者相差 cropOffset —— 这里统一换算，避免校验/精修整体偏移。
+  const contentAt = (p: { x: number; y: number }): number =>
+    maskedContentScore(bgImgData, targetImgData, p.x - cropOffset.x, p.y - cropOffset.y);
+
+  let position = toBgCoords(m.x, m.y);
+  let contentScore = contentAt(position);
+
+  // 内容校验失败：说明这个"高分"位置其实不是同一块内容（重复纹理的竞争峰）。
+  // 用另一条匹配路径（edge ↔ gray）复算，只有内容相关性显著更高才换。
+  if (Number.isFinite(contentScore) && contentScore < 0.25) {
+    const alt = method === 'grayscale-fallback' ? runEdge() : runGray();
+    const altPosition = toBgCoords(alt.x, alt.y);
+    const altContent = contentAt(altPosition);
+    if (altContent >= 0.85 && altContent > contentScore + 0.5) {
+      m = alt;
+      position = altPosition;
+      contentScore = altContent;
+      method = method === 'grayscale-fallback' ? (box ? 'edge+alpha' : 'edge') : 'grayscale-fallback';
+    }
+  }
+
+  // 两条路径都校验不过：直接按拼图块内容在背景上扫一遍。
+  // 这是最可靠但最贵的兜底，只在"可疑匹配"时触发。
+  if (Number.isFinite(contentScore) && contentScore < 0.4) {
+    const searched = searchByContent(bgImgData, targetImgData);
+
+    if (searched.score >= 0.8 && searched.score > contentScore) {
+      position = { x: searched.x + cropOffset.x, y: searched.y + cropOffset.y };
+      contentScore = searched.score;
+      method = 'content-search';
+    }
+  }
+
+  // 内容有一定相关性时做小范围微调，消掉边缘匹配的 1~3px 量化误差。
+  if (contentScore >= 0.2) {
+    const refined = refineByContent(
+      bgImgData,
+      targetImgData,
+      position.x - cropOffset.x,
+      position.y - cropOffset.y,
+      3,
+    );
+    if (refined.score > contentScore + 1e-6) {
+      position = { x: refined.x + cropOffset.x, y: refined.y + cropOffset.y };
+      contentScore = refined.score;
+    }
   }
 
   const t1 = now();
+  const second = Number.isFinite(m.secondScore) ? m.secondScore : 0;
   return {
-    x: m.x * downsample - cropOffset.x,
-    y: m.y * downsample - cropOffset.y,
+    x: position.x,
+    y: position.y,
     score: m.score,
+    secondScore: second,
+    margin: m.score - second,
+    contentScore,
     method,
     targetEdgeCount: tEdgeCount,
     elapsed: t1 - t0,
@@ -500,3 +700,4 @@ export function fuseGapCandidates(cands: GapCandidate[], tolerance = 8): FusedGa
   }
   return best;
 }
+

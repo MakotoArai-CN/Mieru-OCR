@@ -1,31 +1,28 @@
 import type { Subscription, SubscriptionRulePackage, SubscriptionFetcher } from '@core/subscription';
-import {
-  fetchRulePackage,
-  generateSubscriptionId,
-  computeMerge,
-  isValidSubscriptionUrl,
-  shouldUpdate as shouldUpdateSub,
-} from '@core/subscription';
-import type { CalculateRule } from '@core/types';
+import { fetchRulePackage, generateSubscriptionId, isValidSubscriptionUrl, shouldUpdate } from '@core/subscription';
+import { reconcileSubscriptionRules } from '@core/subscription-rules';
 import { getDetModelMeta, clearDetModel } from './model-store';
-
-const SUBSCRIPTIONS_KEY = 'subscriptions';
-
 import { storage } from './platform';
 
-/**
- * 用 fetch() 实现拉取（扩展有 host_permissions: <all_urls>）
- */
+const SUBSCRIPTIONS_KEY = 'subscriptions';
+const STATE_KEY = 'subscriptionRuleState';
+let pending: Promise<unknown> = Promise.resolve();
+
+async function locked<T>(task: () => Promise<T>): Promise<T> {
+  // Web Locks also serialize the options page and background page/service worker.
+  if (globalThis.navigator?.locks) return await navigator.locks.request('mieru-subscriptions', task);
+  const result = pending.then(task, task);
+  pending = result.catch(() => {});
+  return result;
+}
+
 const extensionFetcher: SubscriptionFetcher = {
-  async fetch(url: string, timeout = 30000): Promise<string> {
+  async fetch(url, timeout = 30000) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeout);
     try {
       const resp = await fetch(url, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        signal: ctrl.signal,
-        cache: 'no-cache',
+        headers: { Accept: 'application/json' }, signal: ctrl.signal, cache: 'no-cache',
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       return await resp.text();
@@ -44,177 +41,88 @@ export async function saveSubscriptions(subs: Subscription[]): Promise<void> {
   await storage.set({ [SUBSCRIPTIONS_KEY]: subs });
 }
 
-export async function addSubscription(input: { url: string; name?: string; updateInterval?: number }): Promise<Subscription> {
-  if (!isValidSubscriptionUrl(input.url)) throw new Error('Invalid URL');
-  const subs = await getSubscriptions();
-  if (subs.some((s) => s.url === input.url)) throw new Error('Subscription already exists');
-  const sub: Subscription = {
-    id: generateSubscriptionId(),
-    url: input.url,
-    name: input.name || input.url,
-    enabled: true,
-    updateInterval: input.updateInterval ?? 24,
-    lastUpdated: 0,
-    lastStatus: 'never',
-    createdAt: Date.now(),
-  };
-  subs.push(sub);
-  await saveSubscriptions(subs);
-  return sub;
+async function commit(oldSubs: Subscription[], subs: Subscription[], retainId?: string): Promise<void> {
+  const current = await storage.get(['settings', 'siteRules', STATE_KEY]);
+  const state = reconcileSubscriptionRules(current.settings || {}, current.siteRules || {}, current[STATE_KEY], oldSubs, subs, retainId);
+  await storage.set({
+    settings: { ...current.settings, ...state.applied.settings },
+    siteRules: state.applied.siteRules,
+    [SUBSCRIPTIONS_KEY]: subs,
+    [STATE_KEY]: state,
+  });
 }
 
-export async function deleteSubscription(id: string, removeRules = true): Promise<void> {
-  const subs = await getSubscriptions();
-  const sub = subs.find((s) => s.id === id);
-  if (!sub) return;
-  if (removeRules && sub.cachedPackage) {
-    await removeAppliedRules(sub.cachedPackage);
-    // 该订阅曾指定检测模型，且当前缓存的检测模型正来自订阅 → 清掉，让 ensureDetModel 重新解析
-    // （回退到其它订阅 / 镜像）。用户上传的本地模型(source='uploaded')不受影响。
-    if (sub.cachedPackage.detModel) {
-      try {
-        const meta = await getDetModelMeta();
-        if (meta?.source === 'subscription') await clearDetModel();
-      } catch { /* 非致命 */ }
-    }
-  }
-  await saveSubscriptions(subs.filter((s) => s.id !== id));
-}
-
-export async function updateSubscriptionMeta(id: string, patch: Partial<Subscription>): Promise<void> {
-  const subs = await getSubscriptions();
-  const idx = subs.findIndex((s) => s.id === id);
-  if (idx < 0) return;
-  subs[idx] = { ...subs[idx], ...patch };
-  await saveSubscriptions(subs);
-}
-
-export async function refreshSubscription(
-  id: string
-): Promise<{ success: boolean; error?: string; pkg?: SubscriptionRulePackage }> {
-  const subs = await getSubscriptions();
-  const sub = subs.find((s) => s.id === id);
-  if (!sub) return { success: false, error: 'Subscription not found' };
-
-  await updateSubscriptionMeta(id, { lastStatus: 'pending' });
-
-  try {
-    const pkg = await fetchRulePackage(sub.url, extensionFetcher);
-
-    if (sub.cachedPackage) {
-      await removeAppliedRules(sub.cachedPackage);
-    }
-    await applyRulePackage(sub.id, pkg);
-
-    await updateSubscriptionMeta(id, {
-      lastStatus: 'success',
-      lastUpdated: Date.now(),
-      lastError: undefined,
-      cachedPackage: pkg,
-      name: sub.name === sub.url ? pkg.name : sub.name,
-    });
-    return { success: true, pkg };
-  } catch (e) {
-    const error = (e as Error).message || String(e);
-    await updateSubscriptionMeta(id, {
-      lastStatus: 'error',
-      lastError: error,
-      lastUpdated: Date.now(),
-    });
-    return { success: false, error };
-  }
-}
-
-async function applyRulePackage(subId: string, pkg: SubscriptionRulePackage): Promise<void> {
-  const settingsResult = await storage.get('settings');
-  const siteRulesResult = await storage.get('siteRules');
-  const settings = settingsResult.settings || {};
-  const siteRules = siteRulesResult.siteRules || {};
-
-  const merge = computeMerge(
-    pkg,
-    {
-      customIncludeKeywords: settings.customIncludeKeywords || [],
-      customExcludePatterns: settings.customExcludePatterns || [],
-      customAgreementKeywords: settings.customAgreementKeywords || [],
-      customInputExcludeKeywords: settings.customInputExcludeKeywords || [],
-      agreementSelectors: settings.agreementSelectors || [],
-      siteBlacklist: settings.siteBlacklist || [],
-      calculateRules: settings.calculateRules || [],
-      siteRulesKeys: Object.keys(siteRules),
-    },
-    subId
-  );
-
-  if (merge.includeKeywordsToAdd.length) settings.customIncludeKeywords = [...(settings.customIncludeKeywords || []), ...merge.includeKeywordsToAdd];
-  if (merge.excludePatternsToAdd.length) settings.customExcludePatterns = [...(settings.customExcludePatterns || []), ...merge.excludePatternsToAdd];
-  if (merge.agreementKeywordsToAdd.length) settings.customAgreementKeywords = [...(settings.customAgreementKeywords || []), ...merge.agreementKeywordsToAdd];
-  if (merge.inputExcludeKeywordsToAdd.length) settings.customInputExcludeKeywords = [...(settings.customInputExcludeKeywords || []), ...merge.inputExcludeKeywordsToAdd];
-  if (merge.agreementSelectorsToAdd.length) settings.agreementSelectors = [...(settings.agreementSelectors || []), ...merge.agreementSelectorsToAdd];
-  if (merge.siteBlacklistToAdd.length) settings.siteBlacklist = [...(settings.siteBlacklist || []), ...merge.siteBlacklistToAdd];
-  if (merge.calculateRulesToAdd.length) settings.calculateRules = [...(settings.calculateRules || []), ...merge.calculateRulesToAdd];
-
-  for (const { key, rule } of merge.siteRulesToWrite) {
-    siteRules[key] = {
-      ...rule,
-      hostname: rule.hostname || key,
-      enabled: true,
-      createdAt: siteRules[key]?.createdAt || Date.now(),
-      updatedAt: Date.now(),
-      subscriptionId: subId,
+export function addSubscription(input: { url: string; name?: string; updateInterval?: number }): Promise<Subscription> {
+  return locked(async () => {
+    if (!isValidSubscriptionUrl(input.url)) throw new Error('Invalid URL');
+    const subs = await getSubscriptions();
+    if (subs.some(sub => sub.url === input.url)) throw new Error('Subscription already exists');
+    const sub: Subscription = {
+      id: generateSubscriptionId(), url: input.url, name: input.name || input.url,
+      enabled: true, updateInterval: input.updateInterval ?? 24,
+      lastUpdated: 0, lastStatus: 'never', createdAt: Date.now(),
     };
-  }
-
-  await storage.set({ settings, siteRules });
+    await saveSubscriptions([...subs, sub]);
+    return sub;
+  });
 }
 
-async function removeAppliedRules(pkg: SubscriptionRulePackage): Promise<void> {
-  const settingsResult = await storage.get('settings');
-  const siteRulesResult = await storage.get('siteRules');
-  const settings = settingsResult.settings || {};
-  const siteRules = siteRulesResult.siteRules || {};
-
-  const lower = (s: string) => s.toLowerCase();
-  const removeFromList = (current: string[] | undefined, toRemove: string[] | undefined): string[] | undefined => {
-    if (!current || !toRemove || !toRemove.length) return current;
-    const set = new Set(toRemove.map(lower));
-    return current.filter((s) => !set.has(lower(s)));
-  };
-
-  if (pkg.includeKeywords) settings.customIncludeKeywords = removeFromList(settings.customIncludeKeywords, pkg.includeKeywords);
-  if (pkg.excludePatterns) settings.customExcludePatterns = removeFromList(settings.customExcludePatterns, pkg.excludePatterns);
-  if (pkg.agreementKeywords) settings.customAgreementKeywords = removeFromList(settings.customAgreementKeywords, pkg.agreementKeywords);
-  if (pkg.inputExcludeKeywords) settings.customInputExcludeKeywords = removeFromList(settings.customInputExcludeKeywords, pkg.inputExcludeKeywords);
-  if (pkg.agreementSelectors) settings.agreementSelectors = removeFromList(settings.agreementSelectors, pkg.agreementSelectors);
-  if (pkg.siteBlacklist) settings.siteBlacklist = removeFromList(settings.siteBlacklist, pkg.siteBlacklist);
-  if (pkg.calculateRules) {
-    const sigs = new Set(pkg.calculateRules.map((r) => r.pattern + '::' + r.matchType));
-    settings.calculateRules = (settings.calculateRules || []).filter(
-      (r: CalculateRule) => !sigs.has(r.pattern + '::' + r.matchType)
-    );
-  }
-
-  if (pkg.siteRules) {
-    for (const key of Object.keys(pkg.siteRules)) {
-      delete siteRules[key];
+export function deleteSubscription(id: string, removeRules = true): Promise<void> {
+  return locked(async () => {
+    const subs = await getSubscriptions();
+    const sub = subs.find(item => item.id === id);
+    if (!sub) return;
+    await commit(subs, subs.filter(item => item.id !== id), removeRules ? undefined : id);
+    if (removeRules && sub.cachedPackage?.detModel) {
+      const meta = await getDetModelMeta();
+      if (meta?.source === 'subscription' && !subs.some(item => item.id !== id && item.enabled && item.cachedPackage?.detModel)) {
+        await clearDetModel();
+      }
     }
-  }
-
-  await storage.set({ settings, siteRules });
+  });
 }
 
-/**
- * 检查并自动更新到期的订阅（service worker 调用）
- */
+export function updateSubscriptionMeta(id: string, patch: Partial<Subscription>): Promise<void> {
+  return locked(async () => {
+    const subs = await getSubscriptions();
+    if (!subs.some(sub => sub.id === id)) return;
+    const next = subs.map(sub => sub.id === id ? { ...sub, ...patch } : sub);
+    if ('enabled' in patch || 'cachedPackage' in patch) await commit(subs, next);
+    else await saveSubscriptions(next);
+  });
+}
+
+export function refreshSubscription(id: string): Promise<{ success: boolean; error?: string; pkg?: SubscriptionRulePackage }> {
+  return locked(async () => {
+    const subs = await getSubscriptions();
+    const sub = subs.find(item => item.id === id);
+    if (!sub) return { success: false, error: 'Subscription not found' };
+    await saveSubscriptions(subs.map(item => item.id === id ? { ...item, lastStatus: 'pending' } : item));
+    try {
+      const pkg = await fetchRulePackage(sub.url, extensionFetcher);
+      const next = subs.map(item => item.id === id ? {
+        ...item, lastStatus: 'success' as const, lastUpdated: Date.now(), lastError: undefined,
+        cachedPackage: pkg, name: item.name === item.url ? pkg.name : item.name,
+      } : item);
+      await commit(subs, next);
+      return { success: true, pkg };
+    } catch (error) {
+      const message = (error as Error).message || String(error);
+      await saveSubscriptions(subs.map(item => item.id === id ? {
+        ...item, lastStatus: 'error', lastError: message, lastUpdated: Date.now(),
+      } : item));
+      return { success: false, error: message };
+    }
+  });
+}
+
 export async function autoUpdateSubscriptions(): Promise<{ updated: number; failed: number }> {
-  const subs = await getSubscriptions();
   let updated = 0, failed = 0;
-  for (const sub of subs) {
-    if (shouldUpdateSub(sub)) {
-      const result = await refreshSubscription(sub.id);
-      if (result.success) updated++;
-      else failed++;
-    }
+  for (const sub of await getSubscriptions()) {
+    if (!shouldUpdate(sub)) continue;
+    const result = await refreshSubscription(sub.id);
+    if (result.success) updated++;
+    else failed++;
   }
   return { updated, failed };
 }

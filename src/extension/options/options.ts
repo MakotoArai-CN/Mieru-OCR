@@ -116,6 +116,7 @@ async function init(): Promise<void> {
   renderKeywordChipGroups();
   bindEvents();
   await loadSettings();
+  markUserscriptOnlyAssistToggles();
   translatePage();
   await loadRules();
   await loadStats();
@@ -315,7 +316,8 @@ function bindLanguageSwitcher(): void {
       } else {
         setLocale(lang as Locale);
       }
-      translatePage();
+      markUserscriptOnlyAssistToggles();
+  translatePage();
       // Re-render all dynamically generated content
       renderKeywordChipGroups();
       bindKeywordChipGroups();
@@ -723,7 +725,10 @@ async function loadRules(): Promise<void> {
 
   rulesList.innerHTML = Object.entries(rules).map(([key, rule]: [string, any]) => {
     const displayKey = key.length > 40 ? `${key.substring(0, 40)}...` : key;
-    const selectorDisplay = rule.selector.length > 30 ? `${rule.selector.substring(0, 30)}...` : rule.selector;
+    // 规则可能来自导入 / 订阅，不一定有 selector（交互式规则或坏数据）；
+    // 之前直接取 .length，一条缺字段的规则会让整个规则列表渲染失败。
+    const selectorText = String(rule?.selector || '');
+    const selectorDisplay = selectorText.length > 30 ? `${selectorText.substring(0, 30)}...` : selectorText;
     return `
       <div class="rule-item" data-key="${escapeHtml(key)}">
         <div class="rule-info">
@@ -886,17 +891,13 @@ async function addBulkRules(): Promise<void> {
     if (!Array.isArray(rules)) throw new Error(t('rules.formatError'));
 
     let count = 0;
-    for (const rule of rules) {
-      if (!rule.hostname || !rule.selector) continue;
+    for (const raw of rules) {
+      const imported = normalizeImportedRule(raw);
+      if (!imported) continue;
       await chrome.runtime.sendMessage({
         action: 'saveSiteRule',
-        hostname: rule.hostname,
-        rule: {
-          selector: rule.selector,
-          inputSelector: rule.inputSelector,
-          fullUrl: rule.fullUrl,
-          enabled: true,
-        },
+        hostname: imported.hostname,
+        rule: imported.rule,
       });
       count++;
     }
@@ -912,14 +913,22 @@ async function addBulkRules(): Promise<void> {
 async function exportRules(): Promise<void> {
   const result = await chrome.storage.local.get('siteRules');
   const rules = result.siteRules || {};
-  const exportData = Object.entries(rules).map(([key, rule]: [string, any]) => ({
-    hostname: rule.hostname || key,
-    selector: rule.selector,
-    inputSelector: rule.inputSelector,
-    fullUrl: rule.fullUrl,
-    urlPattern: rule.urlPattern,
-  }));
+  // 导出全部字段（含 urlPattern / urlMatch / matchQuery / subType / 求解调度参数），
+  // 只导 selector+fullUrl 会让「导出→导入」丢掉 URL 精度与交互式类型。
+  const exportData = Object.entries(rules).map(([key, rule]: [string, any]) => {
+    const { subscriptionId: _ignored, ...rest } = rule;
+    return { ...rest, hostname: rule.hostname || key };
+  });
   downloadJson(exportData, 'Mieru-rules.json');
+}
+
+/** 导入规则时的字段归一化：必须含 hostname + selector，去掉订阅归属标记，其余字段原样保留。 */
+function normalizeImportedRule(raw: any): { hostname: string; rule: Record<string, any> } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const hostname = typeof raw.hostname === 'string' ? raw.hostname : '';
+  if (!hostname || typeof raw.selector !== 'string' || !raw.selector.trim()) return null;
+  const { subscriptionId: _ignored, ...rest } = raw;
+  return { hostname, rule: { ...rest, enabled: raw.enabled !== false } };
 }
 
 async function exportConfig(): Promise<void> {
@@ -1142,30 +1151,33 @@ async function handleFileImport(event: Event): Promise<void> {
     if (importMode === 'rules') {
       if (!Array.isArray(data)) throw new Error(t('rules.formatError'));
       for (const rule of data) {
-        if (!rule.hostname || !rule.selector) continue;
+        const imported = normalizeImportedRule(rule);
+        if (!imported) continue;
         await chrome.runtime.sendMessage({
           action: 'saveSiteRule',
-          hostname: rule.hostname,
-          rule: {
-            selector: rule.selector,
-            inputSelector: rule.inputSelector,
-            fullUrl: rule.fullUrl,
-            enabled: true,
-          },
+          hostname: imported.hostname,
+          rule: imported.rule,
         });
       }
       await loadRules();
       showToast(t('rules.imported'), 'success');
     } else if (importMode === 'config') {
-      await chrome.storage.local.clear();
+      // 关键：不能 storage.local.clear()。同一个 store 里还存着订阅列表、已上传模型
+      // 的元数据、当前模型选择、检测模型元数据与规则统计——它们不属于「配置」，
+      // 一并清空会不可恢复地丢掉（IndexedDB 里的模型字节还会变成孤儿）。
+      // 另外必须先校验载荷，否则误选 Mieru-rules.json（顶层是数组）会静默写入出厂值。
+      if (!isPlainObject(data) || (!isPlainObject(data.settings) && !isPlainObject(data.siteRules))) {
+        throw new Error(t('config.invalidFormat'));
+      }
       await chrome.storage.local.set(normalizeConfigData(data));
       await loadSettings();
       await loadRules();
       await loadStats();
       showToast(t('config.imported'), 'success');
     }
-  } catch {
-    showToast(t('config.importFailed'), 'error');
+  } catch (error) {
+    const detail = error instanceof SyntaxError ? '' : (error as Error)?.message;
+    showToast(detail ? `${t('config.importFailed')}: ${detail}` : t('config.importFailed'), 'error');
   }
 
   (elements.fileImport as HTMLInputElement).value = '';
@@ -1180,7 +1192,7 @@ async function resetAll(): Promise<void> {
   });
   if (!ok) return;
 
-  await chrome.storage.local.clear();
+  // 同「导入配置」：只重置配置相关的三个键，保留订阅、模型注册表与规则统计。
   await chrome.storage.local.set(normalizeConfigData({}));
   await loadSettings();
   await loadRules();
@@ -1689,3 +1701,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 export { };
+
+/**
+ * 滑块/文字点选辅助的三个开关只对油猴脚本生效（扩展版改为站点规则驱动）。
+ * 留着可点击但不生效会误导用户，这里禁用并换成说明文案。
+ */
+function markUserscriptOnlyAssistToggles(): void {
+  const ids = ['enableSliderPuzzleAssist', 'enableSingleSliderAssist', 'enableClickSelectAssist'];
+  for (const id of ids) {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    if (!input) continue;
+    input.disabled = true;
+    input.closest('.switch-group')?.classList.add('is-userscript-only');
+    const hint = input.closest('.switch-group')?.querySelector('.hint');
+    if (hint) hint.textContent = t('settings.interactiveRuleDriven');
+  }
+}

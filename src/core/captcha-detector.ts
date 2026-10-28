@@ -1,4 +1,4 @@
-import { CONSTANTS, Logger } from './config';
+import { CONSTANTS, Logger, AMBIGUOUS_EXCLUDE_PATTERNS, STYLE_EXCLUDE_PATTERNS } from './config';
 import type { CaptchaElementInfo, InputElementInfo } from './types';
 
 export interface DetectedCaptcha {
@@ -46,6 +46,10 @@ const SLIDER_HANDLE_KEYWORDS = [
 
 export class CaptchaDetector {
   private detectedCaptchas: DetectedCaptcha[] = [];
+  private dirtyRoots = new Set<Element>();
+  private lastFullScan = 0;
+  private elementIds = new WeakMap<Element, string>();
+  private nextElementId = 0;
   /** Cache last logged scan count to suppress identical-result spam in diagnostics buffer. */
   private lastLoggedScanCount = -1;
   private processedElements = new WeakMap<Element, string>();
@@ -57,6 +61,7 @@ export class CaptchaDetector {
   captureForOCR: any;
 
   setCustomPatterns(include: string[], exclude: string[], agreementKeywords?: string[], inputExcludeKeywords?: string[]): void {
+    this.lastFullScan = 0;
     this.customIncludeKeywords = include.map(k => k.toLowerCase().trim()).filter(Boolean);
     this.customExcludePatterns = exclude.map(p => p.toLowerCase().trim()).filter(Boolean);
     this.customAgreementKeywords = (agreementKeywords || []).map(k => k.toLowerCase().trim()).filter(Boolean);
@@ -71,6 +76,19 @@ export class CaptchaDetector {
   private getExcludePatterns(): string[] {
     if (this.customExcludePatterns.length === 0) return CONSTANTS.EXCLUDE_PATTERNS;
     return [...CONSTANTS.EXCLUDE_PATTERNS, ...this.customExcludePatterns];
+  }
+
+  /**
+   * className / id 专用的排除词表。'ad' / 'bg' 这类短词在 Tailwind 类名里极常见
+   * （shadow-md 含 "ad"、bg-white 含 "bg"），子串匹配会把真实验证码图片整体排除。
+   * 它们只在 URL / alt 上参与匹配（见 isExcludedImage）。
+   */
+  private getStyleExcludePatterns(): string[] {
+    const custom = this.customExcludePatterns.filter(
+      (pattern) => !AMBIGUOUS_EXCLUDE_PATTERNS.includes(pattern),
+    );
+    const base = [...STYLE_EXCLUDE_PATTERNS];
+    return custom.length === 0 ? base : [...base, ...custom];
   }
 
   private getAgreementKeywords(): string[] {
@@ -101,18 +119,73 @@ export class CaptchaDetector {
     if (id.startsWith('ddddocr') || className.includes('ddddocr')) {
       return true;
     }
-    const excludePatterns = this.getExcludePatterns();
+    const excludePatterns = this.getStyleExcludePatterns();
     const combined = `${className} ${id}`.trim();
     return excludePatterns.some(pattern => combined.includes(pattern));
   }
 
-  scan(opts: { includeInteractive?: boolean } = {}): DetectedCaptcha[] {
-    this.detectedCaptchas = [];
+  invalidateScan(node?: Node): void {
+    const element = node instanceof Element ? node : node?.parentElement;
+    if (!element || element === document.body || element === document.documentElement || this.dirtyRoots.size >= 20) {
+      this.lastFullScan = 0;
+      this.dirtyRoots.clear();
+      return;
+    }
+    this.dirtyRoots.add(element.closest('form, [role="dialog"]') || element.parentElement || element);
+  }
+
+  scanCached(opts: { includeInteractive?: boolean } = {}): DetectedCaptcha[] {
+    if (Date.now() - this.lastFullScan >= 15000 || (opts.includeInteractive && this.dirtyRoots.size > 0)) {
+      return this.scan(opts);
+    }
+    const roots = [...this.dirtyRoots];
+    this.dirtyRoots.clear();
+    for (const root of roots) {
+      if (root.isConnected && !roots.some(other => other !== root && other.contains(root))) this.scan({ root });
+    }
+    this.detectedCaptchas = this.detectedCaptchas.filter(captcha => captcha.element.isConnected);
+    return this.detectedCaptchas;
+  }
+
+  private elementId(element: Element): string {
+    let id = this.elementIds.get(element);
+    if (!id) {
+      id = `captcha-${++this.nextElementId}`;
+      this.elementIds.set(element, id);
+    }
+    return id;
+  }
+
+  /**
+   * 本扩展/脚本自己注入的 UI（预览浮层、拾取器、toast、猜点提示）。
+   * 它们里面有验证码图片和 `captcha` 字样，若不排除会被当成页面验证码反复识别。
+   * 统一用 id/class 前缀 `Mieru-` 与 `data-mieru-*` 标记，`closest` 连祖先一起判断。
+   */
+  private isOwnUi(element: Element): boolean {
+    if (typeof element.closest !== 'function') return false;
+    return !!element.closest('[id^="Mieru-"], [class^="Mieru-"], [data-mieru], [data-mieru-toast]');
+  }
+
+  private candidates<T extends Element>(root: ParentNode, selector: string): T[] {
+    const children = Array.from(root.querySelectorAll<T>(selector)).filter(el => !this.isOwnUi(el));
+    if (root instanceof Element && root.matches(selector) && !this.isOwnUi(root)) children.unshift(root as T);
+    return children;
+  }
+
+  scan(opts: { includeInteractive?: boolean; root?: Element } = {}): DetectedCaptcha[] {
+    const root = opts.root || document;
+    this.detectedCaptchas = opts.root
+      ? this.detectedCaptchas.filter(captcha => captcha.element.isConnected && !root.contains(captcha.element))
+      : [];
+    if (!opts.root) {
+      this.lastFullScan = Date.now();
+      this.dirtyRoots.clear();
+    }
     Logger.time('CaptchaDetector.scan');
-    this.scanImages();
-    this.scanCanvas();
-    this.scanSvg();
-    this.scanBackgroundImages();
+    this.scanImages(root);
+    this.scanCanvas(root);
+    this.scanSvg(root);
+    this.scanBackgroundImages(root);
     // 滑块 / 文字点选盲扫默认关闭（1.2.3 起扩展改为订阅/规则驱动——误扫率高、会对普通拖拽控件
     // 误触发自动操作）。扩展的交互式求解只经 content 的 checkAndApplySiteRule → customCaptchaSubType
     // 路径。仅当调用方显式传 includeInteractive=true 时才做盲扫——目前只有 userscript 沿用
@@ -131,12 +204,12 @@ export class CaptchaDetector {
     return this.detectedCaptchas;
   }
 
-  private scanImages(): void {
-    document.querySelectorAll('img').forEach((img, index) => {
+  private scanImages(root: ParentNode): void {
+    this.candidates<HTMLImageElement>(root, 'img').forEach(img => {
       if (this.isLikelyCaptcha(img)) {
         const rect = img.getBoundingClientRect();
         const captcha: DetectedCaptcha = {
-          id: `captcha-${index}`,
+          id: this.elementId(img),
           type: 'image',
           element: img,
           src: img.src,
@@ -151,12 +224,12 @@ export class CaptchaDetector {
     });
   }
 
-  private scanCanvas(): void {
-    document.querySelectorAll('canvas').forEach((canvas, index) => {
+  private scanCanvas(root: ParentNode): void {
+    this.candidates<HTMLCanvasElement>(root, 'canvas').forEach(canvas => {
       if (this.isLikelyCanvasCaptcha(canvas)) {
         const rect = canvas.getBoundingClientRect();
         const captcha: DetectedCaptcha = {
-          id: `captcha-canvas-${index}`,
+          id: this.elementId(canvas),
           type: 'canvas',
           element: canvas,
           rect,
@@ -170,12 +243,12 @@ export class CaptchaDetector {
     });
   }
 
-  private scanSvg(): void {
-    document.querySelectorAll('svg').forEach((svg, index) => {
+  private scanSvg(root: ParentNode): void {
+    this.candidates<SVGElement>(root, 'svg').forEach(svg => {
       if (this.isLikelySvgCaptcha(svg)) {
         const rect = svg.getBoundingClientRect();
         const captcha: DetectedCaptcha = {
-          id: `captcha-svg-${index}`,
+          id: this.elementId(svg),
           type: 'svg',
           element: svg,
           rect,
@@ -189,15 +262,15 @@ export class CaptchaDetector {
     });
   }
 
-  private scanBackgroundImages(): void {
-    const candidates = document.querySelectorAll('div[style*="background"], span[style*="background"], td[style*="background"]');
-    candidates.forEach((el, index) => {
+  private scanBackgroundImages(root: ParentNode): void {
+    const candidates = this.candidates<HTMLElement>(root, 'div[style*="background"], span[style*="background"], td[style*="background"]');
+    candidates.forEach(el => {
       const htmlEl = el as HTMLElement;
       if (this.isLikelyBackgroundCaptcha(htmlEl)) {
         const rect = htmlEl.getBoundingClientRect();
         const bgImage = htmlEl.style.backgroundImage || '';
         const captcha: DetectedCaptcha = {
-          id: `captcha-bg-${index}`,
+          id: this.elementId(htmlEl),
           type: 'background',
           element: htmlEl,
           src: bgImage,
@@ -597,9 +670,12 @@ export class CaptchaDetector {
     const alt = (img.alt || '').toLowerCase();
     const className = (img.className?.toString?.() || '').toLowerCase();
     const id = (img.id || '').toLowerCase();
-    const excludePatterns = this.getExcludePatterns();
-    const combined = `${src} ${alt} ${className} ${id}`.trim();
-    return excludePatterns.some(pattern => combined.includes(pattern));
+    // URL / alt 用完整词表（文件名里的 bg.png / ad.png 有排除意义）；
+    // className / id 用剔除短词的词表，避免误伤 Tailwind 工具类。
+    const urlText = `${src} ${alt}`.trim();
+    if (this.getExcludePatterns().some(pattern => urlText.includes(pattern))) return true;
+    const styleText = `${className} ${id}`.trim();
+    return this.getStyleExcludePatterns().some(pattern => styleText.includes(pattern));
   }
 
   public isLikelyCanvasCaptcha(canvas: HTMLCanvasElement): boolean {

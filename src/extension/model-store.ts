@@ -12,6 +12,7 @@
  */
 
 import { storage } from './platform';
+import { looksLikeOnnxBuffer } from '@core/onnx-validate';
 
 const DB_NAME = 'DdddOCRExtensionModels';
 const DB_VERSION = 1;
@@ -90,10 +91,12 @@ export interface ModelData {
 }
 
 let db: IDBDatabase | null = null;
+let dbPromise: Promise<IDBDatabase> | null = null;
 
 async function openDb(): Promise<IDBDatabase> {
   if (db) return db;
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const d = req.result;
@@ -102,25 +105,37 @@ async function openDb(): Promise<IDBDatabase> {
       }
     };
     req.onsuccess = () => {
-      db = req.result;
-      resolve(db);
+      const d = req.result;
+      // 别的标签页/版本要升级时主动让路，否则它会一直卡在 blocked 状态。
+      d.onversionchange = () => {
+        try { d.close(); } catch { /* ignore */ }
+        db = null;
+        dbPromise = null;
+      };
+      d.onclose = () => {
+        db = null;
+        dbPromise = null;
+      };
+      db = d;
+      resolve(d);
     };
-    req.onerror = () => reject(req.error);
+    req.onerror = () => {
+      dbPromise = null;
+      reject(req.error);
+    };
+    // 不加这个回调时 Promise 永远不会 settle（旧版扩展到新版的升级场景会静默卡死）。
+    req.onblocked = () => {
+      dbPromise = null;
+      reject(new Error('模型数据库被其他页面占用，请关闭重复打开的设置页后重试'));
+    };
   });
+  return dbPromise;
 }
 
 /** ONNX file should start with magic bytes that indicate a protobuf-encoded ModelProto */
 function looksLikeOnnx(buffer: ArrayBuffer): boolean {
-  if (buffer.byteLength < 16) return false;
-  const view = new Uint8Array(buffer, 0, Math.min(64, buffer.byteLength));
-  // ONNX is protobuf; first byte is typically 0x08 (field 1 varint) for ir_version
-  // It's not 100% reliable but catches most non-ONNX uploads (ZIP, PNG, text...)
-  if (view[0] === 0x50 && view[1] === 0x4b) return false; // PKZIP
-  if (view[0] === 0x89 && view[1] === 0x50) return false; // PNG
-  if (view[0] === 0xff && view[1] === 0xd8) return false; // JPG
-  if (view[0] === 0x7b) return false; // '{' JSON
-  // 0x08 = (field 1, varint) — ir_version is field 1; very common first byte for ONNX
-  return view[0] === 0x08 || view[0] === 0x0a; // 0x0a = field 1 length-delimited (some encoders)
+  // 统一实现见 @core/onnx-validate（userscript / det-model 共用同一套判断）。
+  return looksLikeOnnxBuffer(buffer, 16);
 }
 
 /** Parse charsets file content. Accepts JSON array of strings, or newline-delimited. */
@@ -230,6 +245,15 @@ export async function setActiveModelId(id: string): Promise<void> {
   await storage.set({ [ACTIVE_KEY]: id });
 }
 
+/** 等待事务真正提交。请求的 onsuccess 只代表写入入队，事务仍可能因配额/磁盘错误回滚。 */
+function txComplete(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('IndexedDB 事务失败'));
+    tx.onabort = () => reject(tx.error || new Error('IndexedDB 事务中止'));
+  });
+}
+
 export async function getModelData(id: string): Promise<ModelData | null> {
   if (isBundledModelId(id)) return null;
   const d = await openDb();
@@ -279,13 +303,9 @@ export async function saveModel(input: {
   };
 
   const d = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = d.transaction([STORE_NAME], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.put({ id, modelBlob: input.modelBuffer, charsets: input.charsets } as ModelData);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  const tx = d.transaction([STORE_NAME], 'readwrite');
+  tx.objectStore(STORE_NAME).put({ id, modelBlob: input.modelBuffer, charsets: input.charsets } as ModelData);
+  await txComplete(tx);
 
   metas.push(meta);
   await saveMeta(metas);
@@ -326,13 +346,9 @@ export async function deleteModel(id: string): Promise<void> {
   await saveMeta(newMetas);
 
   const d = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = d.transaction([STORE_NAME], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  const tx = d.transaction([STORE_NAME], 'readwrite');
+  tx.objectStore(STORE_NAME).delete(id);
+  await txComplete(tx);
 
   // If active model was deleted, fall back to builtin
   const active = await getActiveModelId();
@@ -400,13 +416,9 @@ export async function saveDetModel(
   meta: Omit<DetModelMeta, 'size' | 'savedAt'>,
 ): Promise<DetModelMeta> {
   const d = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = d.transaction([STORE_NAME], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.put({ id: DET_MODEL_ID, modelBlob: modelBuffer, charsets: [] } as ModelData);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  const tx = d.transaction([STORE_NAME], 'readwrite');
+  tx.objectStore(STORE_NAME).put({ id: DET_MODEL_ID, modelBlob: modelBuffer, charsets: [] } as ModelData);
+  await txComplete(tx);
   const full: DetModelMeta = { ...meta, size: modelBuffer.byteLength, savedAt: Date.now() };
   await storage.set({ [DET_META_KEY]: full });
   try {
@@ -422,13 +434,9 @@ export async function saveDetModel(
 /** 删除检测模型（二进制 + 元数据）。 */
 export async function clearDetModel(): Promise<void> {
   const d = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = d.transaction([STORE_NAME], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.delete(DET_MODEL_ID);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  const tx = d.transaction([STORE_NAME], 'readwrite');
+  tx.objectStore(STORE_NAME).delete(DET_MODEL_ID);
+  await txComplete(tx);
   await storage.set({ [DET_META_KEY]: null });
 }
 

@@ -1,6 +1,6 @@
 import { OCREngine } from '@core/ocr-engine';
 import { AutoFill } from '@core/auto-fill';
-import { CONSTANTS, Logger } from '@core/config';
+import { CONSTANTS, Logger, STYLE_EXCLUDE_PATTERNS } from '@core/config';
 import { pushEvent } from '@core/diagnostics';
 import { Calculator } from '@core/calculator';
 import { CaptchaDetector, type DetectedCaptcha, type GuessedElement } from '@core/captcha-detector';
@@ -98,6 +98,8 @@ class AutoDetector {
   private processedElements = new WeakMap<Element, string>();
   private customCaptchaElement: Element | null = null;
   private customInputElement: HTMLInputElement | null = null;
+  /** 命中的站点规则子类型；非交互式规则为 null（按图片/canvas OCR 处理）。 */
+  private customRuleSubType: 'slider' | 'click-select' | null = null;
   /** 已尝试求解的交互式验证码容器（滑块等），避免每个扫描周期重复拖拽。 */
   private solvedInteractive = new WeakSet<Element>();
   /**
@@ -105,6 +107,12 @@ class AutoDetector {
    * 失败会每轮扫描重试 → 日志刷屏 + CPU 空转 + 观感"卡"。失败后设短冷却退避。
    */
   private interactiveCooldown = new WeakMap<Element, number>();
+  /**
+   * OCR 失败退避：hasElementChanged 对未标记元素恒为 true，而 markElementProcessed
+   * 只在成功后调用——识别失败（跨域画布 / 加载超时 / 下载失败）会每 2s 重发一次 OCR。
+   */
+  private ocrCooldown = new WeakMap<Element, number>();
+  private static readonly OCR_COOLDOWN_FAIL_MS = 15000;
   /** CF Turnstile 辅助是否已触发（每 frame 一次；assist-manual 模式会定时复位以便重复提示）。 */
   private cfAssisted = false;
 
@@ -123,8 +131,13 @@ class AutoDetector {
     this.scheduleInitialDetect();
 
     this.observer = new MutationObserver((mutations) => {
+      if (document.hidden) {
+        this.detector.invalidateScan();
+        return;
+      }
       let shouldCheckAgreements = false;
       for (const mutation of mutations) {
+        this.detector.invalidateScan(mutation.target);
         mutation.addedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
             this.checkElement(node);
@@ -214,12 +227,62 @@ class AutoDetector {
       const element = document.querySelector(matchedRule.selector);
       if (element) {
         this.customCaptchaElement = element;
+        this.customRuleSubType = matchedRule.subType === 'slider' || matchedRule.subType === 'click-select'
+          ? matchedRule.subType
+          : null;
         if (matchedRule.inputSelector) {
           this.customInputElement = document.querySelector(matchedRule.inputSelector) as HTMLInputElement;
         }
         Logger.info('应用站点规则:', matchedRule.selector);
       }
     }
+  }
+
+  /**
+   * 站点规则命中的元素：不依赖关键词扫描，直接构造成 captcha 交给求解流程。
+   * 之前这里只把元素存进 customCaptchaElement 就再没人读，导致 userscript 的
+   * 站点规则实际不生效。规则元素可能是懒加载的，因此每轮都重试一次匹配。
+   */
+  private processCustomRuleCaptcha(): boolean {
+    if (!this.customCaptchaElement || !this.customCaptchaElement.isConnected) {
+      this.applyStoredSiteRule();
+    }
+    const element = this.customCaptchaElement;
+    if (!element || !element.isConnected) return false;
+
+    if (this.customRuleSubType) {
+      if (this.isInteractiveCoolingDown(element)) return false;
+      const captcha = this.detector.buildInteractiveCaptcha(element, this.customRuleSubType, 'rule');
+      if (!captcha) return false;
+      this.processDetectedCaptcha(captcha);
+      return true;
+    }
+
+    const tag = element.tagName.toLowerCase();
+    if (tag !== 'img' && tag !== 'canvas') return false;
+    if (this.isOcrCoolingDown(element)) return false;
+    if (!this.hasElementChanged(element)) return false;
+
+    const rect = element.getBoundingClientRect();
+    const captcha: DetectedCaptcha = {
+      id: `captcha-rule-${tag}`,
+      type: tag === 'canvas' ? 'canvas' : 'image',
+      element,
+      src: tag === 'img' ? (element as HTMLImageElement).src : undefined,
+      rect,
+      confidence: 100,
+      inputElement: this.customInputElement || this.detector.findRelatedInput(element),
+      elementInfo: {
+        tagName: tag,
+        id: (element as HTMLElement).id || null,
+        className: (element as HTMLElement).className?.toString?.() || '',
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        src: (element as HTMLImageElement).src,
+      },
+    };
+    this.processDetectedCaptcha(captcha);
+    return true;
   }
 
   private checkAgreementBoxes(): void {
@@ -278,12 +341,16 @@ class AutoDetector {
 
   private startIntervalCheck(): void {
     this.checkInterval = window.setInterval(() => {
+      if (document.hidden) return;
       void this.maybeAssistCloudflare();
+      // 站点规则优先：规则元素即便没有任何验证码关键词也要识别（懒加载元素每轮重试匹配）
+      if (this.processCustomRuleCaptcha()) return;
       // userscript 沿用交互式盲扫（滑块/点选仍受用户开关 gate）。扩展侧已改为订阅/规则驱动，
       // 故盲扫在 scan() 里默认关闭，这里显式开启。订阅化的 userscript 交互式列为后续跟进。
-      const captchas = this.detector.scan({ includeInteractive: true });
+      const captchas = this.detector.scanCached({ includeInteractive: true });
       if (!captchas || captchas.length === 0) return;
       for (const c of captchas) {
+        if (this.isOcrCoolingDown(c.element)) continue;
         if (this.hasElementChanged(c.element)) {
           this.processDetectedCaptcha(c);
           break;
@@ -396,6 +463,7 @@ class AutoDetector {
       if (!this.isCaptchaImage(img)) return;
     }
     if (!this.hasElementChanged(img)) return;
+    if (this.isOcrCoolingDown(img)) return;
     if (this.processingElements.has(img)) return;
     this.eventEmitter?.emit('detect:found', { element: img, type: 'img' });
     if (!triggerRecognize) return;
@@ -418,19 +486,25 @@ class AutoDetector {
       if (!this.isCaptchaCanvas(canvas)) return;
     }
     if (!this.hasElementChanged(canvas)) return;
+    if (this.isOcrCoolingDown(canvas)) return;
     if (this.processingElements.has(canvas)) return;
     this.eventEmitter?.emit('detect:found', { element: canvas, type: 'canvas' });
     if (!triggerRecognize) return;
     const input = this.findNearbyInput(canvas);
     if (!input) return;
     await new Promise(resolve => requestAnimationFrame(resolve));
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => {
-        if (b) resolve(b);
-        else reject(new Error('Canvas转换失败'));
-      }, 'image/png');
-    });
-    await this.recognizeAndFillBlob(canvas, blob, input);
+    try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('Canvas转换失败'));
+        }, 'image/png');
+      });
+      await this.recognizeAndFillBlob(canvas, blob, input);
+    } catch (error) {
+      Logger.warn('Canvas 验证码处理失败:', error);
+      this.setOcrCooldown(canvas, false);
+    }
   }
 
   private async checkSVG(svg: SVGElement, triggerRecognize: boolean): Promise<void> {
@@ -441,13 +515,19 @@ class AutoDetector {
       if (!this.isCaptchaSVG(svg)) return;
     }
     if (!this.hasElementChanged(svg)) return;
+    if (this.isOcrCoolingDown(svg)) return;
     if (this.processingElements.has(svg)) return;
     this.eventEmitter?.emit('detect:found', { element: svg, type: 'svg' });
     if (!triggerRecognize) return;
     const input = this.findNearbyInput(svg);
     if (!input) return;
-    const blob = await this.svgToBlob(svg);
-    await this.recognizeAndFillBlob(svg, blob, input);
+    try {
+      const blob = await this.svgToBlob(svg);
+      await this.recognizeAndFillBlob(svg, blob, input);
+    } catch (error) {
+      Logger.warn('SVG 验证码处理失败:', error);
+      this.setOcrCooldown(svg, false);
+    }
   }
 
   private async checkDiv(div: HTMLElement, triggerRecognize: boolean): Promise<void> {
@@ -460,6 +540,7 @@ class AutoDetector {
     const bgImage = div.style.backgroundImage;
     if (!bgImage) return;
     if (!this.hasElementChanged(div)) return;
+    if (this.isOcrCoolingDown(div)) return;
     if (this.processingElements.has(div)) return;
     this.eventEmitter?.emit('detect:found', { element: div, type: 'div' });
     if (!triggerRecognize) return;
@@ -469,21 +550,29 @@ class AutoDetector {
     if (!urlMatch) return;
     const imageUrl = urlMatch[1];
     const startTime = Date.now();
-    let resultText = '';
-    if (imageUrl.startsWith('data:')) {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      const result = await this.ocr.recognize(blob);
-      resultText = result.text;
-    } else {
-      const result = await this.ocr.recognize(imageUrl);
-      resultText = result.text;
+    try {
+      let resultText = '';
+      if (imageUrl.startsWith('data:')) {
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const result = await this.ocr.recognize(blob);
+        resultText = result.text;
+      } else {
+        const result = await this.ocr.recognize(imageUrl);
+        resultText = result.text;
+      }
+      const elapsed = Date.now() - startTime;
+      const processedText = this.processResult(resultText);
+      await this.fillInput(input, processedText);
+      this.markElementProcessed(div);
+      this.setOcrCooldown(div, true);
+      statsManager.record(window.location.hostname, elapsed);
+    } catch (error) {
+      // checkDiv 由 MutationObserver / 定时器以 fire-and-forget 方式调用，
+      // 这里必须自己吞掉异常，否则会是未处理的 Promise rejection。
+      Logger.warn('背景图验证码识别失败:', error);
+      this.setOcrCooldown(div, false);
     }
-    const elapsed = Date.now() - startTime;
-    const processedText = this.processResult(resultText);
-    await this.fillInput(input, processedText);
-    this.markElementProcessed(div);
-    statsManager.record(window.location.hostname, elapsed);
   }
 
   private async svgToBlob(svg: SVGElement): Promise<Blob> {
@@ -523,12 +612,14 @@ class AutoDetector {
       this.eventEmitter?.emit('recognize:complete', { element, result: { text: processedText } });
       await this.fillInput(input, processedText);
       this.markElementProcessed(element);
+      this.setOcrCooldown(element, true);
       const elapsed = Date.now() - startTime;
       statsManager.record(window.location.hostname, elapsed);
       Logger.timeEnd('recognizeAndFill');
       Logger.info('识别完成:', processedText);
     } catch (error) {
       Logger.error('识别失败:', error);
+      this.setOcrCooldown(element, false);
       this.eventEmitter?.emit('recognize:error', { element, error: error as Error });
     } finally {
       this.processingElements.delete(element);
@@ -546,11 +637,13 @@ class AutoDetector {
       this.eventEmitter?.emit('recognize:complete', { element, result: { text: processedText } });
       await this.fillInput(input, processedText);
       this.markElementProcessed(element);
+      this.setOcrCooldown(element, true);
       const elapsed = Date.now() - startTime;
       statsManager.record(window.location.hostname, elapsed);
       Logger.info('识别完成:', processedText);
     } catch (error) {
       Logger.error('识别失败:', error);
+      this.setOcrCooldown(element, false);
       this.eventEmitter?.emit('recognize:error', { element, error: error as Error });
     } finally {
       this.processingElements.delete(element);
@@ -659,6 +752,7 @@ class AutoDetector {
     } catch (error) {
       Logger.error('滑块辅助异常:', error);
       this.setInteractiveCooldown(captcha.element, false);
+      this.setOcrCooldown(captcha.element, false);
       pushEvent('error', { data: { where: 'slider', message: String((error as Error)?.message || error) } });
       this.eventEmitter?.emit('recognize:error', { element: captcha.element, error: error as Error });
     } finally {
@@ -673,6 +767,16 @@ class AutoDetector {
   }
   private setInteractiveCooldown(el: Element, ok: boolean): void {
     this.interactiveCooldown.set(el, Date.now() + (ok ? 30000 : 8000));
+  }
+
+  /** OCR 失败退避：失败后短时间内不再对同一元素重试（成功则清除）。 */
+  private isOcrCoolingDown(el: Element): boolean {
+    const until = this.ocrCooldown.get(el);
+    return until !== undefined && Date.now() < until;
+  }
+  private setOcrCooldown(el: Element, ok: boolean): void {
+    if (ok) this.ocrCooldown.delete(el);
+    else this.ocrCooldown.set(el, Date.now() + AutoDetector.OCR_COOLDOWN_FAIL_MS);
   }
 
   /**
@@ -716,8 +820,12 @@ class AutoDetector {
     const height = img.naturalHeight || img.height;
     if (width < CONSTANTS.MIN_CAPTCHA_WIDTH || height < CONSTANTS.MIN_CAPTCHA_HEIGHT) return false;
     if (width > CONSTANTS.MAX_CAPTCHA_WIDTH || height > CONSTANTS.MAX_CAPTCHA_HEIGHT) return false;
-    const text = (img.src + img.className + img.id + img.alt + (img.getAttribute('data-src') || '')).toLowerCase();
-    if (CONSTANTS.EXCLUDE_PATTERNS.some(pattern => text.includes(pattern))) return false;
+    // URL/alt 用完整排除词表；className/id 用剔除 'ad'/'bg' 的版本，避免误伤 Tailwind 工具类。
+    const urlText = (img.src + img.alt + (img.getAttribute('data-src') || '')).toLowerCase();
+    const styleText = (img.className + ' ' + img.id).toLowerCase();
+    if (CONSTANTS.EXCLUDE_PATTERNS.some(pattern => urlText.includes(pattern))) return false;
+    if (STYLE_EXCLUDE_PATTERNS.some(pattern => styleText.includes(pattern))) return false;
+    const text = `${urlText} ${styleText}`;
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
 
@@ -726,8 +834,8 @@ class AutoDetector {
     const height = canvas.height;
     if (width < CONSTANTS.MIN_CAPTCHA_WIDTH || height < CONSTANTS.MIN_CAPTCHA_HEIGHT) return false;
     if (width > CONSTANTS.MAX_CAPTCHA_WIDTH || height > CONSTANTS.MAX_CAPTCHA_HEIGHT) return false;
-    const text = (canvas.className + canvas.id + (canvas.getAttribute('data-type') || '')).toLowerCase();
-    if (CONSTANTS.EXCLUDE_PATTERNS.some(pattern => text.includes(pattern))) return false;
+    const text = (canvas.className + ' ' + canvas.id + ' ' + (canvas.getAttribute('data-type') || '')).toLowerCase();
+    if (STYLE_EXCLUDE_PATTERNS.some(pattern => text.includes(pattern))) return false;
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
 
@@ -757,7 +865,8 @@ class AutoDetector {
     const height = div.clientHeight;
     if (width < CONSTANTS.MIN_CAPTCHA_WIDTH || height < CONSTANTS.MIN_CAPTCHA_HEIGHT) return false;
     if (width > CONSTANTS.MAX_CAPTCHA_WIDTH || height > CONSTANTS.MAX_CAPTCHA_HEIGHT) return false;
-    const text = (div.className + div.id).toLowerCase();
+    const text = (div.className + ' ' + div.id).toLowerCase();
+    if (STYLE_EXCLUDE_PATTERNS.some(pattern => text.includes(pattern))) return false;
     return CONSTANTS.CAPTCHA_KEYWORDS.some((keyword) => text.includes(keyword));
   }
 
@@ -913,7 +1022,7 @@ class OCRApp {
 <b>${t('status.autoDownload')}</b> ${yn(config.autoDownload)}
 <b>${t('status.totalRecognitions')}</b> ${stats.total} ${t('common.times')}`;
 
-    Dialog.show({ title: t('status.title'), content });
+    Dialog.show({ title: t('status.title'), html: content });
   }
 
   private handleConfigChange(config: OCRConfig): void {

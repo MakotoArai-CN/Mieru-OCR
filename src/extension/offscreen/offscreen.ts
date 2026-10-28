@@ -1,299 +1,70 @@
-import { OCREngine } from '@core/ocr-engine';
-import { DetectionEngine } from '@core/detection-engine';
 import { labelBoxesWithEngines, decodeDataURLToImage } from '@core/interaction/click-select-solver';
-import { BUILTIN_MODEL_ID, BUNDLED_MODELS, getBundledModel, getModelData, getDetModelData, isBundledModelId } from '../model-store';
+import { BUILTIN_MODEL_ID } from '../model-store';
+import { createModelEngines } from '../model-engines';
+import { matchSliderImages } from '../slider-worker-client';
 
-/**
- * Offscreen document with multi-model support.
- *
- * - Caches up to 2 OCREngine instances (LRU-ish: keeps last used + builtin)
- * - On recognize, reads activeModelId from chrome.storage.local
- * - Falls back to builtin model if upload is missing/corrupt
- */
-
-interface EngineEntry {
-  id: string;
-  engine: OCREngine;
-  lastUsed: number;
-}
-
-const MAX_CACHED_ENGINES = 2;
-const engineCache: Map<string, EngineEntry> = new Map();
-
-function configureOrt(ort: any): void {
-  const cfg = (globalThis as any).ortConfig || {};
-  const base: string = cfg.base || chrome.runtime.getURL('/');
-
-  ort.env.wasm.numThreads = 1;
-  ort.env.wasm.simd = true;
-  ort.env.wasm.proxy = false;
-  ort.env.wasm.wasmPaths = base;
-
-  ort.env.logLevel = 'error';
-}
-
-function getOrtGlobal(): any {
-  return (globalThis as any).ort;
-}
-
-async function fetchBundledModel(id: string): Promise<{ model: ArrayBuffer; charsets: string[] }> {
-  const def = getBundledModel(id) || BUNDLED_MODELS[0];
-  const [modelRes, charsetsRes] = await Promise.all([
-    fetch(chrome.runtime.getURL(def.modelFile)),
-    fetch(chrome.runtime.getURL(def.charsetsFile)),
-  ]);
-  if (!modelRes.ok) throw new Error(`内置模型 ${def.modelFile} 加载失败 (HTTP ${modelRes.status})`);
-  if (!charsetsRes.ok) throw new Error(`字符表 ${def.charsetsFile} 加载失败 (HTTP ${charsetsRes.status})`);
-  return {
-    model: await modelRes.arrayBuffer(),
-    charsets: await charsetsRes.json(),
-  };
-}
-
-async function buildEngine(modelId: string): Promise<OCREngine> {
-  const ort = getOrtGlobal();
-  if (!ort) throw new Error('ort.min.js 未加载或全局 ort 不存在');
-  configureOrt(ort);
-
-  // Pull preprocessing config from BUNDLED_MODELS for bundled ids; user uploads
-  // get the safe default (simple /255, dynamic width).
-  const bundledDef = isBundledModelId(modelId) ? getBundledModel(modelId) : undefined;
-
-  const engine = new OCREngine({
-    getModel: async () => {
-      if (isBundledModelId(modelId)) {
-        return fetchBundledModel(modelId);
-      }
-      const data = await getModelData(modelId);
-      if (!data) {
-        console.warn(`[offscreen] Model ${modelId} not found, falling back to builtin`);
-        return fetchBundledModel(BUILTIN_MODEL_ID);
-      }
-      return { model: data.modelBlob, charsets: data.charsets };
-    },
-    getOrt: async () => ort,
-    wasmPaths: chrome.runtime.getURL('/'),
-    fixedWidth: bundledDef?.fixedWidth,
-    preprocess: bundledDef?.preprocess,
-    preprocessMean: bundledDef?.preprocessMean,
-    preprocessStd: bundledDef?.preprocessStd,
-  });
-
-  await engine.init();
-  return engine;
-}
-
-async function getEngine(modelId: string): Promise<OCREngine> {
-  const cached = engineCache.get(modelId);
-  if (cached) {
-    cached.lastUsed = Date.now();
-    return cached.engine;
-  }
-
-  const engine = await buildEngine(modelId);
-  engineCache.set(modelId, { id: modelId, engine, lastUsed: Date.now() });
-
-  // Evict least recently used if over capacity
-  if (engineCache.size > MAX_CACHED_ENGINES) {
-    let oldestId: string | null = null;
-    let oldestTime = Infinity;
-    for (const [id, entry] of engineCache) {
-      if (entry.lastUsed < oldestTime) {
-        oldestTime = entry.lastUsed;
-        oldestId = id;
-      }
-    }
-    if (oldestId) engineCache.delete(oldestId);
-  }
-
-  return engine;
-}
-
-/**
- * Ask the service worker for the active model id.
- * Offscreen documents in Chrome only get chrome.runtime — no chrome.storage —
- * so we can't read it directly here.
- */
-async function fetchActiveModelIdFromSW(): Promise<string> {
-  try {
-    const resp = await chrome.runtime.sendMessage({ action: 'getActiveModelId' });
-    if (resp?.success && typeof resp.modelId === 'string' && resp.modelId) {
-      return resp.modelId;
-    }
-  } catch (e) {
-    console.warn('[offscreen] 向 service worker 请求 activeModelId 失败:', (e as Error).message);
-  }
-  return BUILTIN_MODEL_ID;
-}
-
-async function getActiveEngine(): Promise<{ engine: OCREngine; modelId: string }> {
-  const modelId = await fetchActiveModelIdFromSW();
-  try {
-    const engine = await getEngine(modelId);
-    return { engine, modelId };
-  } catch (e) {
-    if (modelId !== BUILTIN_MODEL_ID) {
-      console.warn(`[offscreen] Active model ${modelId} failed to load: ${(e as Error).message}. Falling back to builtin.`);
-      const engine = await getEngine(BUILTIN_MODEL_ID);
-      return { engine, modelId: BUILTIN_MODEL_ID };
-    }
-    throw e;
-  }
-}
-
-/**
- * Detection engine (ddddocr common_det.onnx, YOLOX), lazily built and kept for
- * the offscreen document's lifetime. Used to find character boxes for
- * click-select captchas. Threads are left at the OCR engine's setting (1) — see
- * DetectionEngineOptions.numThreads.
- *
- * 1.2.3 起检测模型不再随扩展内置——由 service worker 的 ensureDetModel 按优先级
- * （本地上传 > 订阅指定下载 > 仓库镜像）写入 IndexedDB，这里只负责从 IndexedDB 读取。
- * 模型缺失时抛 DET_NOT_PROVISIONED，由上层触发 ensureDetModel 后重试。
- */
-let detectionEngine: DetectionEngine | null = null;
-let detectionEngineInit: Promise<DetectionEngine> | null = null;
-
-async function getDetectionEngine(): Promise<DetectionEngine> {
-  if (detectionEngine) return detectionEngine;
-  if (detectionEngineInit) return detectionEngineInit;
-
-  detectionEngineInit = (async () => {
-    const ort = getOrtGlobal();
+const engines = createModelEngines({
+  getURL: path => chrome.runtime.getURL(path),
+  getOrt: async () => {
+    const ort = (globalThis as any).ort;
     if (!ort) throw new Error('ort.min.js 未加载或全局 ort 不存在');
-    configureOrt(ort);
-    const engine = new DetectionEngine({
-      getModel: async () => {
-        const model = await getDetModelData();
-        if (!model) throw new Error('DET_NOT_PROVISIONED');
-        return { model };
-      },
-      getOrt: async () => ort,
-      wasmPaths: chrome.runtime.getURL('/'),
-    });
-    await engine.init();
-    detectionEngine = engine;
-    return engine;
-  })();
+    ort.env.wasm.proxy = false;
+    return ort;
+  },
+  getActiveModelId: async () => {
+    const response = await chrome.runtime.sendMessage({ action: 'getActiveModelId' });
+    return response?.success && response.modelId ? response.modelId : BUILTIN_MODEL_ID;
+  },
+});
 
-  try {
-    return await detectionEngineInit;
-  } catch (e) {
-    detectionEngineInit = null; // allow retry on next call
-    throw e;
-  }
-}
-
-/** 检测模型被重新下载 / 更新后，调用方发消息让我们丢弃缓存的引擎，下次重建。 */
-function invalidateDetectionEngine(): void {
-  detectionEngine = null;
-  detectionEngineInit = null;
-}
-
-/** Listen for storage changes to invalidate cached engines */
-if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-  chrome.storage.onChanged.addListener((changes: any, areaName: string) => {
-    if (areaName !== 'local') return;
-    if (changes.activeModelId) {
-      // Active model changed; we don't evict — just lazy-load on next recognize.
-      // The new model will be built on demand, old stays in cache.
-    }
-  });
-}
-
-chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
+chrome.runtime.onMessage.addListener((message: any, _sender: any, sendResponse: any) => {
   if (message?.action === 'offscreen:ping') {
     sendResponse({ ready: true });
     return false;
   }
-  if (message?.action === 'offscreen:recognize') {
-    handleRecognize(message, sendResponse);
-    return true;
-  }
-  if (message?.action === 'offscreen:detect-text') {
-    handleDetectText(message, sendResponse);
-    return true;
-  }
-  if (message?.action === 'offscreen:invalidate-model') {
-    // Called when a model is deleted — remove from cache
-    const id = message.modelId;
-    if (id) engineCache.delete(id);
-    sendResponse({ success: true });
-    return false;
-  }
-  if (message?.action === 'offscreen:invalidate-det-model') {
-    // 检测模型被重新下载 / 上传 / 清除后，丢弃缓存引擎，下次 detect 时重建。
-    invalidateDetectionEngine();
-    sendResponse({ success: true });
-    return false;
-  }
-  if (message?.action === 'offscreen:smoke-test') {
-    handleSmokeTest(message, sendResponse);
-    return true;
-  }
-  return false;
+  if (!['offscreen:recognize', 'offscreen:detect-text', 'offscreen:match-slider', 'offscreen:invalidate-model',
+    'offscreen:invalidate-det-model', 'offscreen:smoke-test'].includes(message?.action)) return false;
+  handleMessage(message).then(sendResponse, error => sendResponse({ success: false, error: error.message }));
+  return true;
 });
 
-async function handleRecognize(message: any, sendResponse: (response: any) => void) {
-  try {
-    const { engine, modelId } = await getActiveEngine();
-    if (message.imageData) {
-      const startTime = Date.now();
+async function handleMessage(message: any): Promise<any> {
+  if (message.action === 'offscreen:match-slider') {
+    return { success: true, result: await matchSliderImages(message.targetData, message.backgroundData) };
+  }
+  if (message.action === 'offscreen:invalidate-model') {
+    await engines.invalidateOCR(message.modelId);
+    return { success: true };
+  }
+  if (message.action === 'offscreen:invalidate-det-model') {
+    await engines.invalidateDetection();
+    return { success: true };
+  }
+  if (message.action === 'offscreen:smoke-test') {
+    if (!message.modelId) throw new Error('missing modelId');
+    await engines.smokeTest(message.modelId);
+    return { success: true };
+  }
+  if (!message.imageData) throw new Error('缺少图像数据');
+  if (message.action === 'offscreen:recognize') {
+    return engines.useOCR(async (engine, modelId, ctx) => {
+      const start = Date.now();
       const result = await engine.recognize(message.imageData);
-      const elapsed = Date.now() - startTime;
-      sendResponse({ success: true, text: result.text, elapsed, modelId });
-      return;
-    }
-    sendResponse({ success: false, error: '缺少图像数据' });
-  } catch (error) {
-    sendResponse({ success: false, error: (error as Error).message });
+      return {
+        success: true,
+        text: result.text,
+        elapsed: Date.now() - start,
+        modelId,
+        // 非空表示自定义模型加载失败、本次结果来自内置模型——UI 需要能提示用户。
+        fallbackFrom: ctx.fallbackFrom,
+      };
+    });
   }
-}
-
-/**
- * Detect + label character boxes for a click-select captcha.
- * message.imageData is a PNG dataURL of the captcha's main image (encoded by the
- * content script from its ImageLike). We decode it, run the detection engine to
- * find boxes, then OCR-label each box with the currently active OCR engine.
- * Returns boxes in the captcha image's own pixel coordinate system.
- */
-async function handleDetectText(message: any, sendResponse: (response: any) => void) {
-  try {
-    if (!message.imageData) {
-      sendResponse({ success: false, error: '缺少图像数据' });
-      return;
-    }
-    const startTime = Date.now();
-    const image = await decodeDataURLToImage(message.imageData);
-    const det = await getDetectionEngine();
-    const { engine: ocr } = await getActiveEngine();
-    const boxes = await labelBoxesWithEngines(image, det, ocr);
-    const elapsed = Date.now() - startTime;
-    sendResponse({ success: true, boxes, elapsed });
-  } catch (error) {
-    sendResponse({ success: false, error: (error as Error).message });
-  }
-}
-
-/**
- * Smoke test: try to construct a session from an arbitrary modelId without
- * caching it. Used by the upload UI to confirm the model can run before
- * the user keeps it.
- */
-async function handleSmokeTest(message: any, sendResponse: (response: any) => void) {
-  try {
-    const id = message.modelId;
-    if (!id) {
-      sendResponse({ success: false, error: 'missing modelId' });
-      return;
-    }
-    const engine = await buildEngine(id);
-    // If init() didn't throw, the session is good. Drop the temp engine.
-    void engine;
-    sendResponse({ success: true });
-  } catch (error) {
-    sendResponse({ success: false, error: (error as Error).message });
-  }
+  const start = Date.now();
+  const image = await decodeDataURLToImage(message.imageData);
+  const boxes = await engines.useDetection(det =>
+    engines.useOCR(ocr => labelBoxesWithEngines(image, det, ocr)));
+  return { success: true, boxes, elapsed: Date.now() - start };
 }
 
 console.log('Offscreen OCR 初始化完成（多模型支持）');

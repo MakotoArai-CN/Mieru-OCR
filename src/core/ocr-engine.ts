@@ -8,6 +8,7 @@ export interface OCREngineOptions {
   getModel: () => Promise<{ model: ArrayBuffer; charsets: string[] }>;
   getOrt?: () => Promise<any>;
   wasmPaths?: string;
+  numThreads?: number;
   /**
    * If set, input is pad/crop'd to this width. Required for our
    * custom-trained small model (192). Leave undefined for the original
@@ -27,6 +28,7 @@ export class OCREngine {
   private session: any = null;
   private charsets: string[] = [];
   private initialized = false;
+  private initializing: Promise<void> | null = null;
   private ort: any = null;
   private options: OCREngineOptions;
 
@@ -36,6 +38,13 @@ export class OCREngine {
 
   async init(): Promise<void> {
     if (this.initialized) return;
+    if (!this.initializing) {
+      this.initializing = this.initialize().finally(() => { this.initializing = null; });
+    }
+    return this.initializing;
+  }
+
+  private async initialize(): Promise<void> {
     console.log('🔧 初始化 OCR 引擎...');
 
     if (this.options.getOrt) {
@@ -51,7 +60,9 @@ export class OCREngine {
     if (this.options.wasmPaths) {
       this.ort.env.wasm.wasmPaths = this.options.wasmPaths;
     }
-    this.ort.env.wasm.numThreads = 4;
+    if (this.options.numThreads != null) {
+      this.ort.env.wasm.numThreads = this.options.numThreads;
+    }
     this.ort.env.wasm.simd = true;
     this.ort.env.logLevel = 'error';
 
@@ -191,11 +202,11 @@ export class OCREngine {
   }
 
   async destroy(): Promise<void> {
-    if (this.session) {
-      await this.session.release();
-      this.session = null;
-    }
+    await this.initializing?.catch(() => {});
+    const session = this.session;
+    this.session = null;
     this.initialized = false;
+    if (session) await session.release();
   }
 }
 

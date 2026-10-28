@@ -1,5 +1,6 @@
 import { showConfirm } from '../ui/modal';
 import { initLocale, t, translatePage } from '@core/i18n';
+import { ruleMatchesUrl } from '@core/url-match';
 
 let currentCaptcha: any = null;
 let recognizedText: string | null = null;
@@ -140,18 +141,18 @@ async function loadStatus(): Promise<void> {
     for (const key of Object.keys(rules)) {
       const rule = rules[key];
       if (!rule.enabled) continue;
-      
-      if (rule.fullUrl && currentUrl === rule.fullUrl) {
+
+      // 与 content.ts 使用同一套匹配语义（origin-path 默认忽略随机 query）。
+      // 旧逻辑要求 fullUrl 完全相等，规则命中后只要 URL 带了一次性参数，横幅就消失、
+      // 「删除规则」按钮也跟着不出现。
+      if (ruleMatchesUrl(rule, currentUrl)) {
         matchedRule = { key, rule };
         break;
       }
-      
-      if (rule.urlPattern && currentUrl.startsWith(rule.urlPattern)) {
-        matchedRule = { key, rule };
-        break;
-      }
-      
-      if (rule.hostname === currentHostname && !rule.fullUrl && !rule.urlPattern) {
+
+      // 纯 hostname 规则（无 fullUrl/urlPattern，或显式 urlMatch='hostname'）兜底
+      const isHostnameRule = rule.urlMatch ? rule.urlMatch === 'hostname' : (!rule.fullUrl && !rule.urlPattern);
+      if (isHostnameRule && rule.hostname === currentHostname) {
         matchedRule = { key, rule };
       }
     }

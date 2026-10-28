@@ -1,10 +1,10 @@
 declare const browser: any;
-import { OCREngine } from '@core/ocr-engine';
-import { DetectionEngine } from '@core/detection-engine';
+import { createModelEngines } from '../model-engines';
+import { matchSliderImages } from '../slider-worker-client';
 import { labelBoxesWithEngines, decodeDataURLToImage } from '@core/interaction/click-select-solver';
 import type { ExtensionSettings } from '@core/types';
 import { autoUpdateSubscriptions } from '../subscription-manager';
-import { BUILTIN_MODEL_ID, getActiveModelId, getModelData, getDetModelData } from '../model-store';
+import { getActiveModelId } from '../model-store';
 import { ensureDetModel } from '../det-model';
 import { recordAttempt, backoffCooldownMs, type RuleStat, type RuleStatsMap } from '@core/rule-stats';
 
@@ -24,13 +24,6 @@ let ocrStatus: OcrStatus = {
   updatedAt: Date.now(),
 };
 
-interface EngineEntry {
-  id: string;
-  engine: OCREngine;
-  lastUsed: number;
-}
-const MAX_CACHED_ENGINES = 2;
-const engineCache: Map<string, EngineEntry> = new Map();
 let ortInstance: any = null;
 
 function setOcrStatus(status: OcrEngineStatus, message?: string): void {
@@ -70,145 +63,15 @@ async function loadOrt(): Promise<any> {
   return ortInstance;
 }
 
-async function fetchBuiltinModel(): Promise<{ model: ArrayBuffer; charsets: string[] }> {
-  const [modelRes, charsetsRes] = await Promise.all([
-    fetch(browser.runtime.getURL('common.onnx')),
-    fetch(browser.runtime.getURL('charsets.json')),
-  ]);
-  return {
-    model: await modelRes.arrayBuffer(),
-    charsets: await charsetsRes.json(),
-  };
-}
-
-async function buildEngine(modelId: string): Promise<OCREngine> {
-  const ort = await loadOrt();
-  const engine = new OCREngine({
-    getModel: async () => {
-      if (modelId === BUILTIN_MODEL_ID) {
-        return fetchBuiltinModel();
-      }
-      const data = await getModelData(modelId);
-      if (!data) {
-        console.warn(`[Background Firefox] Model ${modelId} not found, falling back to builtin`);
-        return fetchBuiltinModel();
-      }
-      return { model: data.modelBlob, charsets: data.charsets };
-    },
-    getOrt: async () => ort,
-    wasmPaths: browser.runtime.getURL('/'),
-  });
-  await engine.init();
-  return engine;
-}
-
-async function getOCREngine(): Promise<OCREngine> {
-  let modelId: string;
-  try {
-    modelId = await getActiveModelId();
-  } catch {
-    modelId = BUILTIN_MODEL_ID;
-  }
-
-  const cached = engineCache.get(modelId);
-  if (cached) {
-    cached.lastUsed = Date.now();
-    return cached.engine;
-  }
-
-  try {
-    const engine = await buildEngine(modelId);
-    engineCache.set(modelId, { id: modelId, engine, lastUsed: Date.now() });
-    if (engineCache.size > MAX_CACHED_ENGINES) {
-      let oldestId: string | null = null;
-      let oldestTime = Infinity;
-      for (const [id, entry] of engineCache) {
-        if (entry.lastUsed < oldestTime) {
-          oldestTime = entry.lastUsed;
-          oldestId = id;
-        }
-      }
-      if (oldestId) engineCache.delete(oldestId);
-    }
-    return engine;
-  } catch (e) {
-    if (modelId !== BUILTIN_MODEL_ID) {
-      console.warn(`[Background Firefox] Active model ${modelId} failed: ${(e as Error).message}, falling back to builtin`);
-      const fallback = await buildEngine(BUILTIN_MODEL_ID);
-      engineCache.set(BUILTIN_MODEL_ID, { id: BUILTIN_MODEL_ID, engine: fallback, lastUsed: Date.now() });
-      return fallback;
-    }
-    throw e;
-  }
-}
-
-/**
- * Detection engine (ddddocr common_det.onnx, YOLOX), lazily built in this
- * background page. MV2 has no offscreen document, so detection + OCR labeling
- * both run here. Threads stay at the OCR engine's setting (1) — see
- * DetectionEngineOptions.numThreads.
- *
- * 1.2.3 起检测模型不再随扩展内置——先 ensureDetModel 按优先级（本地上传 > 订阅指定 >
- * 仓库镜像）provisioning 写入 IndexedDB，再从 IndexedDB 读取。
- */
-let detectionEngine: DetectionEngine | null = null;
-let detectionEngineInit: Promise<DetectionEngine> | null = null;
-
-async function getDetectionEngine(): Promise<DetectionEngine> {
-  if (detectionEngine) return detectionEngine;
-  if (detectionEngineInit) return detectionEngineInit;
-
-  detectionEngineInit = (async () => {
-    const ort = await loadOrt();
-    const engine = new DetectionEngine({
-      getModel: async () => {
-        let model = await getDetModelData();
-        if (!model) {
-          const res = await ensureDetModel();
-          if (!res.ready) throw new Error(res.reason || 'DET_NOT_PROVISIONED');
-          model = await getDetModelData();
-        }
-        if (!model) throw new Error('DET_NOT_PROVISIONED');
-        return { model };
-      },
-      getOrt: async () => ort,
-      wasmPaths: browser.runtime.getURL('/'),
-    });
-    await engine.init();
-    detectionEngine = engine;
-    return engine;
-  })();
-
-  try {
-    return await detectionEngineInit;
-  } catch (e) {
-    detectionEngineInit = null; // allow retry
-    throw e;
-  }
-}
-
-/** 检测模型被重新下载 / 上传 / 清除后，丢弃缓存引擎，下次 detect 时重建。 */
-function invalidateDetectionEngine(): void {
-  detectionEngine = null;
-  detectionEngineInit = null;
-}
-
-/**
- * OCR 模型被删除 / 替换后，把它从 engineCache 里逐出，下次识别时按新字节重建。
- * 不传 modelId 则整表清空（用于「不确定影响哪个」的兜底场景）。
- *
- * 必要性：engineCache 以 modelId 为键最多缓存 2 个引擎。删除模型后若不逐出，
- * 用同一 id 重新上传/启用时会拿到用旧字节构建的引擎。
- */
-function invalidateOCREngine(modelId?: string): void {
-  if (modelId) {
-    engineCache.delete(modelId);
-    console.log('[Background Firefox] 已逐出缓存引擎:', modelId);
-  } else {
-    engineCache.clear();
-    console.log('[Background Firefox] 已清空引擎缓存');
-  }
-}
+const engines = createModelEngines({
+  getOrt: loadOrt,
+  getURL: path => browser.runtime.getURL(path),
+  getActiveModelId,
+  ensureDetectionModel: async () => {
+    const result = await ensureDetModel();
+    if (!result.ready) throw new Error(result.reason || 'DET_NOT_PROVISIONED');
+  },
+});
 
 browser.runtime.onInstalled.addListener((details: any) => {
   console.log('[Background Firefox] 扩展安装/更新:', details.reason);
@@ -327,6 +190,13 @@ async function handleMessage(
 
   try {
     switch (message.action) {
+      case 'matchSlider':
+        sendResponse({ success: true, result: await matchSliderImages(message.targetData, message.backgroundData) });
+        break;
+      case 'fetchImageData':
+        // 跨域图片无 CORS 头时 content 侧 canvas 被污染，这里用扩展权限代抓。
+        sendResponse(await fetchImageAsDataURL(message.url));
+        break;
       case 'recognizeCaptcha':
         await handleRecognize(message, sendResponse);
         break;
@@ -379,11 +249,11 @@ async function handleMessage(
         await handleEnsureDetModel(sendResponse);
         break;
       case 'detModelChanged':
-        invalidateDetectionEngine();
+        await engines.invalidateDetection();
         sendResponse({ success: true });
         break;
       case 'invalidateModel':
-        invalidateOCREngine(message.modelId);
+        await engines.invalidateOCR(message.modelId);
         sendResponse({ success: true });
         break;
       case 'getRuleStat':
@@ -410,6 +280,34 @@ async function getDebugMode(): Promise<boolean> {
   }
 }
 
+/** ArrayBuffer → dataURL（背景页没有可直接复用的编码器，手工 base64）。 */
+function arrayBufferToDataURL(buffer: ArrayBuffer, mime: string): string {
+  const bytes = new Uint8Array(buffer);
+  const CHUNK = 0x2000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${mime || 'image/png'};base64,${btoa(binary)}`;
+}
+
+/** 用扩展权限抓取页面读不到的图片（跨域且无 CORS 头），以 dataURL 回传给 content。 */
+async function fetchImageAsDataURL(rawUrl: unknown): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
+  try {
+    const url = String(rawUrl || '');
+    if (!/^https?:\/\//i.test(url)) throw new Error('仅支持 http(s) 图片地址');
+    const resp = await fetch(url, { credentials: 'include', cache: 'force-cache' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const contentType = (resp.headers.get('content-type') || '').split(';')[0].trim();
+    if (!contentType.startsWith('image/')) throw new Error('目标不是图片');
+    const buffer = await resp.arrayBuffer();
+    if (buffer.byteLength === 0) throw new Error('图片内容为空');
+    return { success: true, dataUrl: arrayBufferToDataURL(buffer, contentType) };
+  } catch (error) {
+    return { success: false, error: (error as Error)?.message || String(error) };
+  }
+}
+
 async function handleRecognize(
   message: any,
   sendResponse: (response: any) => void
@@ -421,22 +319,30 @@ async function handleRecognize(
       console.log('[Background Firefox] 开始识别, 图像大小:', message.imageData?.length);
     }
     setOcrStatus('initializing', '正在初始化OCR引擎...');
-    const engine = await getOCREngine();
-
-    if (debugMode) {
-      console.log('[Background Firefox] OCR引擎就绪, 开始识别...');
-    }
-
-    const recognizeStart = Date.now();
-    const result = await engine.recognize(message.imageData);
-    const elapsed = Date.now() - recognizeStart;
+    const { result, elapsed, modelId, fallbackFrom } = await engines.useOCR(async (engine, id, ctx) => {
+      const recognizeStart = Date.now();
+      const result = await engine.recognize(message.imageData);
+      return {
+        result,
+        elapsed: Date.now() - recognizeStart,
+        modelId: id,
+        fallbackFrom: ctx.fallbackFrom,
+      };
+    });
 
     setOcrStatus('ready', '识别完成');
     if (debugMode) {
       console.log('[Background Firefox] 识别成功:', result.text, '耗时:', elapsed, 'ms');
     }
 
-    sendResponse({ success: true, text: result.text, elapsed, totalElapsed: Date.now() - startTime });
+    sendResponse({
+      success: true,
+      text: result.text,
+      elapsed,
+      totalElapsed: Date.now() - startTime,
+      modelId,
+      fallbackFrom,
+    });
   } catch (error) {
     const elapsed = Date.now() - startTime;
     setOcrStatus('fault', (error as Error).message);
@@ -462,9 +368,8 @@ async function handleDetectText(
     }
     const startTime = Date.now();
     const image = await decodeDataURLToImage(message.imageData);
-    const det = await getDetectionEngine();
-    const ocr = await getOCREngine();
-    const boxes = await labelBoxesWithEngines(image, det, ocr);
+    const boxes = await engines.useDetection(det =>
+      engines.useOCR(ocr => labelBoxesWithEngines(image, det, ocr)));
     sendResponse({ success: true, boxes, elapsed: Date.now() - startTime });
   } catch (error) {
     console.error('[Background Firefox] 文字检测异常:', error);
@@ -675,7 +580,7 @@ async function handleClearStats(sendResponse: (response: any) => void): Promise<
 async function handleEnsureDetModel(sendResponse: (response: any) => void): Promise<void> {
   try {
     const res = await ensureDetModel();
-    if (res.changed) invalidateDetectionEngine();
+    if (res.changed) await engines.invalidateDetection();
     sendResponse({ success: res.ready, ...res });
   } catch (e) {
     sendResponse({ success: false, ready: false, reason: (e as Error).message });

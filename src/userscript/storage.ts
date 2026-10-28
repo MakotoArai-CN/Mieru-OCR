@@ -24,6 +24,10 @@ export function getSiteRules(): Record<string, SiteRule & { hostname: string }> 
   return GM_getValue(SITE_RULES_KEY) || {};
 }
 
+export function saveSiteRules(rules: Record<string, SiteRule & { hostname: string }>): void {
+  GM_setValue(SITE_RULES_KEY, rules);
+}
+
 export function saveSiteRule(hostname: string, rule: Partial<SiteRule>): void {
   const rules = getSiteRules();
   const key = rule.fullUrl || rule.urlPattern || hostname;
@@ -50,14 +54,31 @@ export const statsManager = new StatisticsManager({
   set: (key: string, value: any) => GM_setValue(key, value),
 });
 
+/**
+ * glob（`*.example.com`）→ 正则。必须转义 `*` 之外的元字符：
+ * 以前直接把用户输入拼进 `new RegExp`，一条含 `[` / `(` 的白名单会让
+ * shouldExecuteScript() 抛 SyntaxError，脚本在所有站点直接失效。
+ */
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern
+    .trim()
+    .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp('^' + escaped + '$', 'i');
+}
+
 export function isWhitelisted(): boolean {
   const config = getConfig();
   if (!config.enableWhitelist) return true;
-  if (!config.whitelist || config.whitelist.length === 0) return false;
+  if (!Array.isArray(config.whitelist) || config.whitelist.length === 0) return false;
   const currentHost = window.location.hostname;
   return config.whitelist.some(pattern => {
-    const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$', 'i');
-    return regex.test(currentHost);
+    if (typeof pattern !== 'string' || !pattern.trim()) return false;
+    try {
+      return globToRegExp(pattern).test(currentHost);
+    } catch {
+      return false;
+    }
   });
 }
 

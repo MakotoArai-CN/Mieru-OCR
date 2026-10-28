@@ -1,5 +1,6 @@
 import { showConfirm } from '../ui/modal';
 import { initLocale, t, translatePage } from '@core/i18n';
+import { ruleMatchesUrl } from '@core/url-match';
 
 declare const browser: any;
 
@@ -133,15 +134,13 @@ async function loadStatus(): Promise<void> {
     for (const key of Object.keys(rules)) {
       const rule = rules[key];
       if (!rule?.enabled) continue;
-      if (rule.fullUrl && currentUrl === rule.fullUrl) {
+      // 与 content-firefox.ts 同一套匹配语义：默认 origin-path，忽略随机 query。
+      if (ruleMatchesUrl(rule, currentUrl)) {
         matched = { key, rule };
         break;
       }
-      if (rule.urlPattern && currentUrl.startsWith(rule.urlPattern)) {
-        matched = { key, rule };
-        break;
-      }
-      if (rule.hostname === currentHostname && !rule.fullUrl && !rule.urlPattern) {
+      const isHostnameRule = rule.urlMatch ? rule.urlMatch === 'hostname' : (!rule.fullUrl && !rule.urlPattern);
+      if (isHostnameRule && rule.hostname === currentHostname) {
         matched = { key, rule };
       }
     }

@@ -28,6 +28,23 @@ function setOcrStatus(status: OcrEngineStatus, message?: string): void {
   console.log('[Service Worker] OCR状态更新:', status, message);
 }
 
+/**
+ * 给发往 offscreen 的请求加超时。offscreen 的主线程被 ORT 同步推理占住时，
+ * `sendMessage` 会一直挂着——content 侧永远等不到响应，popup 永远 loading。
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label}超时（${Math.round(ms / 1000)} 秒无响应）`)),
+      ms,
+    );
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 async function ensureOffscreenDocument(): Promise<void> {
   const offscreenApi = (chrome as any).offscreen;
   if (!offscreenApi) {
@@ -269,6 +286,19 @@ async function handleMessage(
 
   try {
     switch (message.action) {
+      case 'matchSlider':
+        await ensureOffscreenDocument();
+        sendResponse(await withTimeout(
+          chrome.runtime.sendMessage({ ...message, action: 'offscreen:match-slider' }),
+          20000,
+          '滑块匹配',
+        ));
+        break;
+      case 'fetchImageData':
+        // content 侧跨域图片会污染 canvas（无 CORS 头，toDataURL 抛错）；扩展有
+        // <all_urls> 权限，能在 SW 里直接取字节再以 dataURL 回传。
+        sendResponse(await fetchImageAsDataURL(message.url));
+        break;
       case 'recognizeCaptcha':
         await handleRecognize(message, sendResponse);
         break;
@@ -367,6 +397,37 @@ async function getDebugMode(): Promise<boolean> {
   }
 }
 
+/** ArrayBuffer → dataURL（SW 里没有 FileReader，只能手工 base64）。 */
+function arrayBufferToDataURL(buffer: ArrayBuffer, mime: string): string {
+  const bytes = new Uint8Array(buffer);
+  const CHUNK = 0x2000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${mime || 'image/png'};base64,${btoa(binary)}`;
+}
+
+/**
+ * 用扩展的 host 权限抓取页面无法读取的图片（跨域且未返回 CORS 头）。
+ * content 侧 canvas 被污染时通过 `fetchImageData` 走这里。
+ */
+async function fetchImageAsDataURL(rawUrl: unknown): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
+  try {
+    const url = String(rawUrl || '');
+    if (!/^https?:\/\//i.test(url)) throw new Error('仅支持 http(s) 图片地址');
+    const resp = await fetch(url, { credentials: 'include', cache: 'force-cache' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const contentType = (resp.headers.get('content-type') || '').split(';')[0].trim();
+    if (!contentType.startsWith('image/')) throw new Error('目标不是图片');
+    const buffer = await resp.arrayBuffer();
+    if (buffer.byteLength === 0) throw new Error('图片内容为空');
+    return { success: true, dataUrl: arrayBufferToDataURL(buffer, contentType) };
+  } catch (error) {
+    return { success: false, error: (error as Error)?.message || String(error) };
+  }
+}
+
 async function handleRecognize(
   message: any,
   sendResponse: (response: any) => void
@@ -382,10 +443,14 @@ async function handleRecognize(
     if (debugMode) {
       console.log('[Service Worker] Offscreen document 就绪, 发送识别请求...');
     }
-    const resp = await chrome.runtime.sendMessage({
-      action: 'offscreen:recognize',
-      imageData: message.imageData,
-    });
+    const resp = await withTimeout(
+      chrome.runtime.sendMessage({
+        action: 'offscreen:recognize',
+        imageData: message.imageData,
+      }),
+      60000,
+      'OCR 识别',
+    );
     const totalElapsed = Date.now() - startTime;
 
     if (resp?.success) {
@@ -394,7 +459,15 @@ async function handleRecognize(
       if (debugMode) {
         console.log('[Service Worker] 识别成功:', resp.text, '耗时:', elapsed, 'ms');
       }
-      sendResponse({ success: true, text: resp.text, elapsed });
+      sendResponse({
+        success: true,
+        text: resp.text,
+        elapsed,
+        // modelId / fallbackFrom 透传给 content：自定义模型损坏时会静默回退内置模型，
+        // UI 必须能提示「这次用的不是你选的模型」。
+        modelId: resp.modelId,
+        fallbackFrom: resp.fallbackFrom,
+      });
     } else {
       setOcrStatus('fault', resp?.error || '识别失败');
       console.error('[Service Worker] 识别失败:', resp?.error);
@@ -420,10 +493,14 @@ async function handleDetectText(
 ): Promise<void> {
   try {
     await ensureOffscreenDocument();
-    const resp = await chrome.runtime.sendMessage({
-      action: 'offscreen:detect-text',
-      imageData: message.imageData,
-    });
+    const resp = await withTimeout(
+      chrome.runtime.sendMessage({
+        action: 'offscreen:detect-text',
+        imageData: message.imageData,
+      }),
+      90000,
+      '文字检测',
+    );
     sendResponse(resp || { success: false, error: 'offscreen 无响应' });
   } catch (error) {
     console.error('[Service Worker] 文字检测异常:', error);
@@ -610,10 +687,14 @@ async function handleClearStats(sendResponse: (response: any) => void): Promise<
 async function handleSmokeTestModel(message: any, sendResponse: (response: any) => void): Promise<void> {
   try {
     await ensureOffscreenDocument();
-    const resp = await chrome.runtime.sendMessage({
-      action: 'offscreen:smoke-test',
-      modelId: message.modelId,
-    });
+    const resp = await withTimeout(
+      chrome.runtime.sendMessage({
+        action: 'offscreen:smoke-test',
+        modelId: message.modelId,
+      }),
+      120000,
+      '模型自检',
+    );
     sendResponse(resp || { success: false, error: 'no response' });
   } catch (e) {
     sendResponse({ success: false, error: (e as Error).message });
@@ -628,10 +709,10 @@ async function handleInvalidateModel(message: any, sendResponse: (response: any)
     if (offscreenApi && typeof getContexts === 'function') {
       const existing = await getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
       if (Array.isArray(existing) && existing.length > 0) {
-        await chrome.runtime.sendMessage({
+        await withTimeout(chrome.runtime.sendMessage({
           action: 'offscreen:invalidate-model',
           modelId: message.modelId,
-        });
+        }), 10000, '模型缓存失效');
       }
     }
     sendResponse({ success: true });
@@ -661,7 +742,11 @@ async function invalidateOffscreenDetModel(): Promise<void> {
     if (offscreenApi && typeof getContexts === 'function') {
       const existing = await getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
       if (Array.isArray(existing) && existing.length > 0) {
-        await chrome.runtime.sendMessage({ action: 'offscreen:invalidate-det-model' });
+        await withTimeout(
+          chrome.runtime.sendMessage({ action: 'offscreen:invalidate-det-model' }),
+          10000,
+          '检测模型缓存失效',
+        );
       }
     }
   } catch { /* offscreen 不存在则无需失效 */ }

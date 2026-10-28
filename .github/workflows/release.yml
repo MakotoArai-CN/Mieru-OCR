@@ -67,7 +67,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Sync version to manifests
         run: |
@@ -84,6 +84,9 @@ jobs:
       # 类型检查放在构建之前：构建产物一旦上传就是发布物，类型错误必须在此拦下。
       - name: Type check
         run: bun run type-check
+
+      - name: Regression tests
+        run: bun run test
 
       - name: Build userscript
         run: bun run build
